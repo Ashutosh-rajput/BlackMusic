@@ -9,7 +9,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   final AudioPlayerService _audioService;
   StreamSubscription? _positionSubscription;
   StreamSubscription? _durationSubscription;
-  StreamSubscription? _playerStateSubscription;
 
   Song? _currentSong;
   List<Song> _queue = [];
@@ -30,32 +29,42 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<PreviousSongEvent>(_onPreviousSong);
     on<ToggleShuffleEvent>(_onToggleShuffle);
     on<ToggleRepeatEvent>(_onToggleRepeat);
+    on<PositionChangedEvent>(_onPositionChanged);
+    on<DurationChangedEvent>(_onDurationChanged);
 
     _listenToStreams();
   }
 
   void _listenToStreams() {
     _positionSubscription = _audioService.positionStream.listen((pos) {
-      if (state is PlayerPlaying) {
-        final current = state as PlayerPlaying;
-        emit(current.copyWith(position: pos));
-      } else if (state is PlayerPaused) {
-        final current = state as PlayerPaused;
-        emit(current.copyWith(position: pos));
-      }
+      add(PositionChangedEvent(pos));
     });
 
     _durationSubscription = _audioService.durationStream.listen((dur) {
       if (dur != null) {
-        if (state is PlayerPlaying) {
-          final current = state as PlayerPlaying;
-          emit(current.copyWith(duration: dur));
-        } else if (state is PlayerPaused) {
-          final current = state as PlayerPaused;
-          emit(current.copyWith(duration: dur));
-        }
+        add(DurationChangedEvent(dur));
       }
     });
+  }
+
+  void _onPositionChanged(PositionChangedEvent event, Emitter<PlayerState> emit) {
+    if (state is PlayerPlaying) {
+      final current = state as PlayerPlaying;
+      emit(current.copyWith(position: event.position));
+    } else if (state is PlayerPaused) {
+      final current = state as PlayerPaused;
+      emit(current.copyWith(position: event.position));
+    }
+  }
+
+  void _onDurationChanged(DurationChangedEvent event, Emitter<PlayerState> emit) {
+    if (state is PlayerPlaying) {
+      final current = state as PlayerPlaying;
+      emit(current.copyWith(duration: event.duration));
+    } else if (state is PlayerPaused) {
+      final current = state as PlayerPaused;
+      emit(current.copyWith(duration: event.duration));
+    }
   }
 
   Future<void> _onPlaySong(PlaySongEvent event, Emitter<PlayerState> emit) async {
@@ -224,7 +233,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   Future<void> close() {
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
-    _playerStateSubscription?.cancel();
     _audioService.dispose();
     return super.close();
   }

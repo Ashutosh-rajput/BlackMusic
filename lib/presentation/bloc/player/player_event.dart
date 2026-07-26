@@ -69,3 +69,19 @@ class ToggleShuffleEvent extends PlayerEvent {
 class ToggleRepeatEvent extends PlayerEvent {
   const ToggleRepeatEvent();
 }
+
+class PositionChangedEvent extends PlayerEvent {
+  final Duration position;
+  const PositionChangedEvent(this.position);
+
+  @override
+  List<Object?> get props => [position];
+}
+
+class DurationChangedEvent extends PlayerEvent {
+  final Duration duration;
+  const DurationChangedEvent(this.duration);
+
+  @override
+  List<Object?> get props => [duration];
+}

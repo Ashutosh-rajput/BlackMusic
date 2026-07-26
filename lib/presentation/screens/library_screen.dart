@@ -132,7 +132,7 @@ class LibraryScreen extends StatelessWidget {
                             Icon(
                               Icons.music_off_rounded,
                               size: 64,
-                              color: theme.colorScheme.onSurface.withOpacity(0.4),
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                             ),
                             const SizedBox(height: 16),
                             Text(
@@ -147,7 +147,7 @@ class LibraryScreen extends StatelessWidget {
                               'Tap the scan icon to scan your local storage',
                               style: GoogleFonts.outfit(
                                 fontSize: 14,
-                                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                               ),
                             ),
                           ],
@@ -252,7 +252,7 @@ class _SongListTile extends StatelessWidget {
           '${song.artist} • ${song.album}',
           style: GoogleFonts.outfit(
             fontSize: 13,
-            color: theme.colorScheme.onSurface.withOpacity(0.6),
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -264,7 +264,7 @@ class _SongListTile extends StatelessWidget {
               formatDuration(song.duration),
               style: GoogleFonts.outfit(
                 fontSize: 12,
-                color: theme.colorScheme.onSurface.withOpacity(0.5),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
               ),
             ),
             const SizedBox(width: 8),

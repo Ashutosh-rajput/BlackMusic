@@ -1,30 +1,33 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:flutter_application_1/main.dart';
+import 'package:pixel_player/data/models/song_model.dart';
+import 'package:pixel_player/presentation/bloc/player/player_state.dart';
+import 'package:pixel_player/presentation/bloc/library/library_state.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('Song model serialization and value equality test', () {
+    final now = DateTime.now();
+    final song1 = Song(
+      id: 1,
+      title: 'Pixel Audio',
+      artist: 'Artist',
+      album: 'Album',
+      filePath: '/path/to/song.mp3',
+      duration: const Duration(seconds: 180),
+      dateModified: now,
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    final json = song1.toJson();
+    final song2 = Song.fromJson(json);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(song1, equals(song2));
+    expect(song1.title, equals('Pixel Audio'));
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('Initial BLoC states verification', () {
+    const playerInitial = PlayerInitial();
+    const libraryInitial = LibraryInitial();
+
+    expect(playerInitial, isA<PlayerState>());
+    expect(libraryInitial, isA<LibraryState>());
   });
 }

@@ -47,13 +47,13 @@ class Settings extends Table {
 
 @DriftDatabase(tables: [Songs, Playlists, PlaylistSongs, Lyrics, Settings])
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(_openConnection());
+  AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
   int get schemaVersion => 1;
 
   // DAO helper methods
-  Future<List<SongData>> getAllSongs() => select(songs).get();
+  Future<List<Song>> getAllSongs() => select(songs).get();
 
   Future<int> insertSong(SongsCompanion song) => into(songs).insert(
         song,
@@ -63,12 +63,18 @@ class AppDatabase extends _$AppDatabase {
   Future<int> insertPlaylist(PlaylistsCompanion playlist) =>
       into(playlists).insert(playlist);
 
-  Future<List<PlaylistData>> getAllPlaylists() => select(playlists).get();
+  Future<List<Playlist>> getAllPlaylists() => select(playlists).get();
 
   Future<int> deleteSongById(int songId) =>
       (delete(songs)..where((t) => t.id.equals(songId))).go();
 }
 
 QueryExecutor _openConnection() {
-  return driftDatabase(name: 'pixel_player_db');
+  return driftDatabase(
+    name: 'pixel_player_db',
+    web: DriftWebOptions(
+      sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+      driftWorker: Uri.parse('drift_worker.js'),
+    ),
+  );
 }

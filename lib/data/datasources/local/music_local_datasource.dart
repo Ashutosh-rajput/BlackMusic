@@ -1,5 +1,5 @@
 import 'package:drift/drift.dart';
-import 'package:pixel_player/data/database/app_database.dart';
+import 'package:pixel_player/data/database/app_database.dart' as db;
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:logger/logger.dart';
 
@@ -14,7 +14,7 @@ abstract class MusicLocalDatasource {
 }
 
 class MusicLocalDatasourceImpl implements MusicLocalDatasource {
-  final AppDatabase _db;
+  final db.AppDatabase _db;
   final List<Song> _memoryCache = [];
 
   MusicLocalDatasourceImpl(this._db);
@@ -22,9 +22,9 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
   @override
   Future<List<Song>> getAllSongs() async {
     try {
-      final rows = await _db.getAllSongs();
+      final List<db.Song> rows = await _db.getAllSongs();
       if (rows.isNotEmpty) {
-        return rows.map((row) => Song(
+        final List<Song> mapped = rows.map((db.Song row) => Song(
           id: row.id,
           title: row.title,
           artist: row.artist,
@@ -37,6 +37,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           albumArtist: row.albumArtist,
           albumArt: row.albumArt,
         )).toList();
+        return mapped;
       }
     } catch (e) {
       logger.w('Database query error, returning memory cache: $e');
@@ -50,7 +51,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
     _memoryCache.add(song);
     try {
       await _db.insertSong(
-        SongsCompanion.insert(
+        db.SongsCompanion.insert(
           title: song.title,
           artist: song.artist,
           album: song.album,

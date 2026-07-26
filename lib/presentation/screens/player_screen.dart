@@ -112,7 +112,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 fontSize: 14,
                 letterSpacing: 2,
                 fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface.withOpacity(0.7),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
               ),
             ),
             actions: [
@@ -138,8 +138,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                         boxShadow: [
                           BoxShadow(
                             color: isDark
-                                ? Colors.black.withOpacity(0.6)
-                                : theme.colorScheme.primary.withOpacity(0.3),
+                                ? Colors.black.withValues(alpha: 0.6)
+                                : theme.colorScheme.primary.withValues(alpha: 0.3),
                             blurRadius: 30,
                             spreadRadius: 5,
                           ),
@@ -193,7 +193,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       '${currentSong.artist} • ${currentSong.album}',
                       style: GoogleFonts.outfit(
                         fontSize: 15,
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
                       textAlign: TextAlign.center,
                       maxLines: 1,
@@ -227,14 +227,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                             formatDuration(position),
                             style: GoogleFonts.outfit(
                               fontSize: 12,
-                              color: theme.colorScheme.onSurface.withOpacity(0.6),
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                             ),
                           ),
                           Text(
                             formatDuration(duration),
                             style: GoogleFonts.outfit(
                               fontSize: 12,
-                              color: theme.colorScheme.onSurface.withOpacity(0.6),
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                             ),
                           ),
                         ],
@@ -255,7 +255,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         Icons.shuffle_rounded,
                         color: isShuffle
                             ? theme.colorScheme.secondary
-                            : theme.colorScheme.onSurface.withOpacity(0.5),
+                            : theme.colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
                       iconSize: 26,
                       onPressed: () {
@@ -277,7 +277,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         color: theme.colorScheme.primary,
                         boxShadow: [
                           BoxShadow(
-                            color: theme.colorScheme.primary.withOpacity(0.4),
+                            color: theme.colorScheme.primary.withValues(alpha: 0.4),
                             blurRadius: 16,
                             offset: const Offset(0, 4),
                           ),
@@ -312,7 +312,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         Icons.repeat_rounded,
                         color: isRepeat
                             ? theme.colorScheme.secondary
-                            : theme.colorScheme.onSurface.withOpacity(0.5),
+                            : theme.colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
                       iconSize: 26,
                       onPressed: () {

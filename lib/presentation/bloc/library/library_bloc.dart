@@ -1,5 +1,4 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/services/file_service.dart';
 import 'package:pixel_player/services/permission_service.dart';
@@ -49,7 +48,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   ) async {
     emit(const LibraryLoading());
     try {
-      final granted = await _permissionService.requestMusicPermission();
+      await _permissionService.requestMusicPermission();
       final scannedSongs = await _fileService.scanMusicLibrary();
       await _repository.saveSongsBatch(scannedSongs);
       emit(LibraryLoaded(allSongs: scannedSongs, displayedSongs: scannedSongs));

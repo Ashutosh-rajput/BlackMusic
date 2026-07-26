@@ -28,10 +28,10 @@ class AppTheme {
       colorScheme: baseScheme,
       scaffoldBackgroundColor: isDark ? darkBackground : const Color(0xFFF4F5F7),
       textTheme: textTheme,
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: isDark ? darkCard : Colors.white,
         elevation: 4,
-        shadowColor: Colors.black.withOpacity(0.2),
+        shadowColor: Colors.black.withValues(alpha: 0.2),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       appBarTheme: AppBarTheme(
@@ -56,9 +56,9 @@ class AppTheme {
       ),
       sliderTheme: SliderThemeData(
         activeTrackColor: isDark ? baseScheme.primary : primarySeed,
-        inactiveTrackColor: (isDark ? Colors.white : Colors.black).withOpacity(0.15),
+        inactiveTrackColor: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.15),
         thumbColor: isDark ? baseScheme.primary : primarySeed,
-        overlayColor: (isDark ? baseScheme.primary : primarySeed).withOpacity(0.2),
+        overlayColor: (isDark ? baseScheme.primary : primarySeed).withValues(alpha: 0.2),
         trackHeight: 4,
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
       ),

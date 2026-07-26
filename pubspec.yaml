@@ -37,7 +37,7 @@ dependencies:
   cached_network_image: ^3.3.1
 
   # UI & Material Design
-  material_color_utilities: ^0.11.1
+  material_color_utilities: ^0.13.0
   google_fonts: ^6.2.1
 
   # Settings & Preferences
@@ -54,7 +54,11 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   build_runner: ^2.4.9
   drift_dev: ^2.18.0
-  bloc_test: ^9.1.7
+  bloc_test: ^10.0.0
+
+dependency_overrides:
+  permission_handler_apple: 9.3.0
+  path_provider_foundation: 2.4.0
 
 flutter:
   uses-material-design: true
