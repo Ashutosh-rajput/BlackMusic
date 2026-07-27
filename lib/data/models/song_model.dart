@@ -27,6 +27,28 @@ class Song extends Equatable {
     this.albumArt,
   });
 
+  String get folderName {
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      return 'Online Streams';
+    }
+    final parts = filePath.split(RegExp(r'[/\\]'));
+    if (parts.length > 1) {
+      return parts[parts.length - 2];
+    }
+    return 'Root';
+  }
+
+  String get folderPath {
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      return 'Online';
+    }
+    final parts = filePath.split(RegExp(r'[/\\]'));
+    if (parts.length > 1) {
+      return parts.sublist(0, parts.length - 1).join('/');
+    }
+    return '/';
+  }
+
   Song copyWith({
     int? id,
     String? title,

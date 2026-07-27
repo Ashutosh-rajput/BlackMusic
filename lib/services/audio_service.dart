@@ -1,3 +1,4 @@
+import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:logger/logger.dart';
 
@@ -16,7 +17,14 @@ class AudioPlayerService {
 
   AudioPlayer get player => _audioPlayer;
 
-  void _setupAudioPlayer() {
+  Future<void> _setupAudioPlayer() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+    } catch (e) {
+      _logger.w('Failed to configure AudioSession: $e');
+    }
+
     _audioPlayer.playbackEventStream.listen((event) {
       _logger.d('Playback event: ${event.processingState}');
     }, onError: (Object e, StackTrace st) {
@@ -26,16 +34,31 @@ class AudioPlayerService {
 
   Future<void> play(String path) async {
     try {
+      AudioSource source;
       if (path.startsWith('http://') || path.startsWith('https://')) {
-        await _audioPlayer.setUrl(path);
+        source = AudioSource.uri(
+          Uri.parse(path),
+          headers: const {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        );
       } else if (path.startsWith('asset://') || path.startsWith('assets/')) {
         final assetPath = path.replaceFirst('asset://', '');
-        await _audioPlayer.setAsset(assetPath);
+        source = AudioSource.uri(Uri.parse('asset:///$assetPath'));
       } else {
-        await _audioPlayer.setFilePath(path);
+        final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+        source = AudioSource.uri(Uri.file(cleanPath));
       }
+
+      await _audioPlayer.setAudioSource(source);
       await _audioPlayer.play();
+    } on PlayerInterruptedException {
+      _logger.i('Audio loading interrupted by user/new playback request.');
     } catch (e) {
+      if (e.toString().contains('Loading interrupted')) {
+        _logger.i('Audio loading interrupted: $e');
+        return;
+      }
       _logger.e('Error playing audio source ($path): $e');
       rethrow;
     }

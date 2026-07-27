@@ -15,50 +15,49 @@ dependencies:
   # State Management & BLoC
   flutter_bloc: ^9.0.0
   equatable: ^2.0.5
-  rxdart: ^0.27.7
+  rxdart: ^0.28.0
 
   # Service Locator & DI
-  get_it: ^8.0.0
+  get_it: ^9.2.1
 
   # Database
-  sqflite: ^2.3.3
   drift: ^2.18.0
-  drift_flutter: ^0.2.0
+  drift_flutter: ^0.3.1
+  sqlite3_flutter_libs: ^0.6.0
 
   # Audio Playback
-  just_audio: ^0.9.42
-  audio_session: ^0.1.16
+  just_audio: ^0.10.6
+  audio_session: ^0.2.4
 
   # File & Storage
-  path_provider: ^2.1.1
-  permission_handler: ^11.3.1
+  permission_handler: ^12.0.3
+  file_picker: ^8.1.2
 
   # Image Loading & Caching
   cached_network_image: ^3.3.1
 
   # UI & Material Design
   material_color_utilities: ^0.13.0
-  google_fonts: ^6.2.1
+  google_fonts: ^8.2.0
 
   # Settings & Preferences
   shared_preferences: ^2.2.2
 
   # Utilities
-  intl: ^0.19.0
+  intl: ^0.20.3
   logger: ^2.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
   build_runner: ^2.4.9
   drift_dev: ^2.18.0
   bloc_test: ^10.0.0
 
-dependency_overrides:
-  permission_handler_apple: 9.3.0
-  path_provider_foundation: 2.4.0
-
 flutter:
   uses-material-design: true
+
+dependency_overrides:
+  path_provider_android: 2.2.5

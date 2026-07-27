@@ -12,7 +12,11 @@ class LoadLibraryEvent extends LibraryEvent {
 }
 
 class ScanStorageEvent extends LibraryEvent {
-  const ScanStorageEvent();
+  final List<String>? customPaths;
+  const ScanStorageEvent({this.customPaths});
+
+  @override
+  List<Object?> get props => [customPaths];
 }
 
 class SearchSongsEvent extends LibraryEvent {

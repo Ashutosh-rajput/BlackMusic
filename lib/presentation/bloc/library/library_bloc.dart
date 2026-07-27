@@ -49,7 +49,9 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     emit(const LibraryLoading());
     try {
       await _permissionService.requestMusicPermission();
-      final scannedSongs = await _fileService.scanMusicLibrary();
+      final scannedSongs = await _fileService.scanMusicLibrary(
+        specificPaths: event.customPaths,
+      );
       await _repository.saveSongsBatch(scannedSongs);
       emit(LibraryLoaded(allSongs: scannedSongs, displayedSongs: scannedSongs));
     } catch (e) {

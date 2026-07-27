@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:just_audio/just_audio.dart' hide PlayerEvent, PlayerState;
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/services/audio_service.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
@@ -9,6 +10,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   final AudioPlayerService _audioService;
   StreamSubscription? _positionSubscription;
   StreamSubscription? _durationSubscription;
+  StreamSubscription? _playerStateSubscription;
 
   Song? _currentSong;
   List<Song> _queue = [];
@@ -43,6 +45,16 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _durationSubscription = _audioService.durationStream.listen((dur) {
       if (dur != null) {
         add(DurationChangedEvent(dur));
+      }
+    });
+
+    _playerStateSubscription = _audioService.playerStateStream.listen((playerState) {
+      if (playerState.processingState == ProcessingState.completed) {
+        if (_isRepeat && _currentSong != null) {
+          add(PlaySongEvent(_currentSong!, queue: _queue));
+        } else {
+          add(const NextSongEvent());
+        }
       }
     });
   }
@@ -233,6 +245,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   Future<void> close() {
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
+    _playerStateSubscription?.cancel();
     _audioService.dispose();
     return super.close();
   }

@@ -10,6 +10,7 @@ import 'package:pixel_player/presentation/bloc/library/library_state.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
+import 'package:pixel_player/presentation/widgets/folder_picker_dialog.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
@@ -57,8 +58,14 @@ class LibraryScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       IconButton.filledTonal(
+                        icon: const Icon(Icons.create_new_folder_rounded),
+                        tooltip: 'Add Custom Folder',
+                        onPressed: () => _showAddFolderDialog(context),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
                         icon: const Icon(Icons.find_in_page_rounded),
-                        tooltip: 'Scan Local Device',
+                        tooltip: 'Scan Device Storage',
                         onPressed: () {
                           context
                               .read<LibraryBloc>()
@@ -76,7 +83,7 @@ class LibraryScreen extends StatelessWidget {
                         selectedCategory = state.selectedCategory;
                       }
 
-                      final categories = ['All', 'Albums', 'Artists', 'Playlists'];
+                      final categories = ['All', 'Folders', 'Albums', 'Artists', 'Playlists'];
                       return SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(
@@ -112,7 +119,7 @@ class LibraryScreen extends StatelessWidget {
               ),
             ),
 
-            // Main Songs List
+            // Main Content Area
             Expanded(
               child: BlocBuilder<LibraryBloc, LibraryState>(
                 builder: (context, state) {
@@ -155,6 +162,10 @@ class LibraryScreen extends StatelessWidget {
                       );
                     }
 
+                    if (state.selectedCategory == 'Folders') {
+                      return _buildFolderList(context, songs);
+                    }
+
                     return ListView.builder(
                       itemCount: songs.length,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -190,6 +201,260 @@ class LibraryScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildFolderList(BuildContext context, List<Song> songs) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // Group songs by folderName
+    final Map<String, List<Song>> folderGroup = {};
+    for (var song in songs) {
+      final name = song.folderName;
+      folderGroup.putIfAbsent(name, () => []).add(song);
+    }
+
+    final folderNames = folderGroup.keys.toList()..sort();
+
+    return ListView.builder(
+      itemCount: folderNames.length,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemBuilder: (context, index) {
+        final folderName = folderNames[index];
+        final folderSongs = folderGroup[folderName]!;
+        final samplePath = folderSongs.first.folderPath;
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          elevation: 0,
+          color: isDark ? const Color(0xFF1E1E26) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.folder_special_rounded,
+                color: theme.colorScheme.onPrimaryContainer,
+                size: 28,
+              ),
+            ),
+            title: Text(
+              folderName,
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            subtitle: Text(
+              '$samplePath • ${folderSongs.length} track${folderSongs.length > 1 ? 's' : ''}',
+              style: GoogleFonts.outfit(
+                fontSize: 12,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.play_circle_fill_rounded, size: 32),
+              color: theme.colorScheme.primary,
+              onPressed: () {
+                context.read<PlayerBloc>().add(
+                      PlaySongEvent(folderSongs.first, queue: folderSongs),
+                    );
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => PlayerScreen(song: folderSongs.first),
+                  ),
+                );
+              },
+            ),
+            onTap: () {
+              _showFolderSongsBottomSheet(context, folderName, folderSongs);
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAddFolderDialog(BuildContext context) {
+    final controller = TextEditingController(text: '/storage/emulated/0/Download');
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text(
+                'Add & Scan Custom Folder',
+                style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Select or enter the directory path on your device to scan for music files:',
+                    style: GoogleFonts.outfit(fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: controller,
+                          decoration: InputDecoration(
+                            hintText: '/storage/emulated/0/Download',
+                            labelText: 'Folder Path',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        icon: const Icon(Icons.folder_open_rounded),
+                        tooltip: 'Browse Folders',
+                        onPressed: () async {
+                          final selected = await showDialog<String>(
+                            context: context,
+                            builder: (_) => FolderPickerDialog(
+                              initialPath: controller.text.trim(),
+                            ),
+                          );
+                          if (selected != null && selected.isNotEmpty) {
+                            setDialogState(() {
+                              controller.text = selected;
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final path = controller.text.trim();
+                    if (path.isNotEmpty) {
+                      context
+                          .read<LibraryBloc>()
+                          .add(ScanStorageEvent(customPaths: [path]));
+                    }
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Scan Folder'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showFolderSongsBottomSheet(
+      BuildContext context, String folderName, List<Song> folderSongs) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (_, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Column(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade400,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(Icons.folder_rounded, color: theme.colorScheme.primary, size: 28),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          folderName,
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: const Text('Play All'),
+                        onPressed: () {
+                          context.read<PlayerBloc>().add(
+                                PlaySongEvent(folderSongs.first, queue: folderSongs),
+                          );
+                          Navigator.pop(ctx);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PlayerScreen(song: folderSongs.first),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      itemCount: folderSongs.length,
+                      itemBuilder: (context, idx) {
+                        final song = folderSongs[idx];
+                        return _SongListTile(
+                          song: song,
+                          onTap: () {
+                            context.read<PlayerBloc>().add(
+                                  PlaySongEvent(song, queue: folderSongs),
+                                );
+                            Navigator.pop(ctx);
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => PlayerScreen(song: song),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

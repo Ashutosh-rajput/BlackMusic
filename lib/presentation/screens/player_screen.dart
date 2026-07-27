@@ -30,10 +30,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
 
     final playerState = context.read<PlayerBloc>().state;
-    if (playerState is PlayerPlaying && playerState.song.id == widget.song.id) {
-      _rotationController.repeat();
-    } else {
+    int? currentSongId;
+    if (playerState is PlayerPlaying) currentSongId = playerState.song.id;
+    if (playerState is PlayerPaused) currentSongId = playerState.song.id;
+    if (playerState is PlayerLoading) currentSongId = playerState.song?.id;
+
+    if (currentSongId != widget.song.id) {
       context.read<PlayerBloc>().add(PlaySongEvent(widget.song));
+    }
+
+    if (playerState is PlayerPlaying) {
       _rotationController.repeat();
     }
   }
