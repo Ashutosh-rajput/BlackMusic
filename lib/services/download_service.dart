@@ -127,18 +127,18 @@ class DownloadService {
       onProgress(0.20, 'Getting stream manifest...');
       final manifest = await yt.videos.streamsClient.getManifest(videoId);
 
-      // Select stream in order of audio efficiency & quality:
-      // 1. M4A audio-only streams (fastest, pure audio, high quality, small file size)
-      // 2. Any audio-only stream
-      // 3. Pre-muxed stream (fallback)
+      // Select stream in order of reliability & quality:
+      // 1. M4A audio-only streams
+      // 2. Pre-muxed MP4 streams (100% reliable direct download)
+      // 3. General audio streams (WebM fallback)
       StreamInfo? selectedStream;
       final m4aStreams = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'm4a').toList();
       if (m4aStreams.isNotEmpty) {
         selectedStream = m4aStreams.withHighestBitrate();
-      } else if (manifest.audioOnly.isNotEmpty) {
-        selectedStream = manifest.audioOnly.withHighestBitrate();
       } else if (manifest.muxed.isNotEmpty) {
         selectedStream = manifest.muxed.withHighestBitrate();
+      } else if (manifest.audioOnly.isNotEmpty) {
+        selectedStream = manifest.audioOnly.withHighestBitrate();
       }
 
       if (selectedStream != null) {
@@ -158,34 +158,66 @@ class DownloadService {
         }());
         onProgress(0.30, 'Downloading "${video.title}"...');
 
-        final stream = yt.videos.streamsClient.get(selectedStream);
-        final sink = activeFile.openWrite();
-        int downloaded = 0;
-
+        // Try Dio direct stream download first, fallback to YoutubeExplode streamsClient
         try {
-          await for (final chunk in stream) {
-            downloaded += chunk.length;
-            sink.add(chunk);
+          await _dio.download(
+            streamUrl.toString(),
+            savePath,
+            options: Options(
+              headers: const {
+                'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+              },
+              receiveTimeout: const Duration(seconds: 120),
+              connectTimeout: const Duration(seconds: 15),
+            ),
+            onReceiveProgress: (received, total) {
+              final effectiveTotal = total > 0 ? total : totalBytes;
+              if (effectiveTotal > 0) {
+                final p = 0.30 + (received / effectiveTotal) * 0.65;
+                onProgress(
+                  p.clamp(0.0, 0.95),
+                  'Downloading "${video.title}"... (${(p * 100).toInt()}%)',
+                );
+              } else {
+                onProgress(
+                  0.50,
+                  'Downloading "${video.title}"... ${(received / 1024 / 1024).toStringAsFixed(1)} MB',
+                );
+              }
+            },
+          );
+        } catch (dioErr) {
+          _logger.w('[YT_DOWNLOAD] Dio direct download failed ($dioErr), trying YoutubeExplode streamsClient...');
+          final stream = yt.videos.streamsClient.get(selectedStream);
+          final sink = activeFile.openWrite();
+          int downloaded = 0;
 
-            if (totalBytes > 0) {
-              final p = 0.30 + (downloaded / totalBytes) * 0.65;
-              onProgress(
-                p.clamp(0.0, 0.95),
-                'Downloading "${video.title}"... (${(p * 100).toInt()}%)',
-              );
-            } else {
-              onProgress(
-                0.50,
-                'Downloading "${video.title}"... ${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB',
-              );
+          try {
+            await for (final chunk in stream) {
+              downloaded += chunk.length;
+              sink.add(chunk);
+
+              if (totalBytes > 0) {
+                final p = 0.30 + (downloaded / totalBytes) * 0.65;
+                onProgress(
+                  p.clamp(0.0, 0.95),
+                  'Downloading "${video.title}"... (${(p * 100).toInt()}%)',
+                );
+              } else {
+                onProgress(
+                  0.50,
+                  'Downloading "${video.title}"... ${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB',
+                );
+              }
             }
+          } finally {
+            await sink.flush();
+            await sink.close();
           }
-        } finally {
-          await sink.flush();
-          await sink.close();
         }
 
-        _logger.i('[YT_DOWNLOAD 3/3] Download finished naturally. Saved $downloaded bytes.');
+        _logger.i('[YT_DOWNLOAD 3/3] Download finished naturally.');
 
         final savedLength = await activeFile.length();
         if (savedLength == 0 || (totalBytes > 0 && savedLength != totalBytes)) {
@@ -251,53 +283,74 @@ class DownloadService {
     try {
       onProgress(0, 1, 0.05, 'Fetching playlist info...');
       final playlist = await yt.playlists.get(cleanUrl);
-      final videoStream = yt.playlists.getVideos(playlist.id);
-      final videos = await videoStream.toList();
 
-      if (videos.isEmpty) {
-        throw Exception('Playlist is empty or unavailable.');
+      _logger.i("Title: ${playlist.title}");
+      _logger.i("ID: ${playlist.id}");
+      _logger.i("Video count reported: ${playlist.videoCount}");
+
+      final videoUrls = <String>[];
+      try {
+        await for (final video in yt.playlists.getVideos(playlist.id)) {
+          videoUrls.add(video.url);
+        }
+      } catch (e) {
+        _logger.w('yt.playlists.getVideos error: $e');
       }
 
-      final totalSongs = videos.length;
-      _logger.i('Starting playlist download: "${playlist.title}" ($totalSongs tracks)');
+      if (videoUrls.isEmpty) {
+        _logger.w('yt.playlists.getVideos returned 0 videos due to YouTube layout changes. Extracting video IDs via HTML fallback...');
+        try {
+          final response = await _dio.get(
+            cleanUrl,
+            options: Options(
+              headers: const {
+                'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+              },
+            ),
+          );
+          final html = response.data.toString();
+          final matches = RegExp(r'"videoId":"([a-zA-Z0-9_-]{11})"').allMatches(html);
+          final seenIds = <String>{};
+          for (final match in matches) {
+            final id = match.group(1);
+            if (id != null && seenIds.add(id)) {
+              videoUrls.add('https://www.youtube.com/watch?v=$id');
+            }
+          }
+        } catch (e) {
+          _logger.e('HTML playlist video extraction error: $e');
+        }
+      }
 
+      _logger.i('Total playlist videos queued for download: ${videoUrls.length}');
+
+      final totalSongs = videoUrls.length;
       for (int i = 0; i < totalSongs; i++) {
         if (isCanceled?.call() == true) {
-          _logger.i('Playlist download canceled at track ${i + 1}/$totalSongs.');
+          _logger.i('Playlist download canceled by user.');
           break;
         }
 
-        final video = videos[i];
-        final songTitle = _sanitizeFileName(video.title);
-
-        // Check duplicate before downloading
-        final musicDirPath = await _getMusicDirectoryPath();
-        final potentialM4a = File('$musicDirPath/$songTitle.m4a');
-        final potentialMp4 = File('$musicDirPath/$songTitle.mp4');
-
-        if (await potentialM4a.exists() || await potentialMp4.exists()) {
-          _logger.i('Skipping existing duplicate ${i + 1}/$totalSongs: "$songTitle"');
-          onProgress(i + 1, totalSongs, 1.0, 'Skipped duplicate: "${video.title}"');
-          continue;
-        }
-
-        onProgress(i + 1, totalSongs, 0.0, video.title);
+        final videoUrl = videoUrls[i];
+        final index = i + 1;
 
         try {
           final song = await _downloadYoutube(
-            video.url,
+            videoUrl,
             (songProgress, status) {
-              onProgress(i + 1, totalSongs, songProgress, '${video.title} ($status)');
+              onProgress(index, totalSongs, songProgress, status);
             },
           );
           if (song != null) {
             downloadedSongs.add(song);
           }
         } catch (e) {
-          _logger.w('Failed to download playlist track ${i + 1}/$totalSongs ("${video.title}"): $e');
+          _logger.w('Failed to download playlist track $index ("$videoUrl"): $e');
         }
       }
 
+      _logger.i('Finished downloading ${downloadedSongs.length}/$totalSongs playlist tracks.');
       return downloadedSongs;
     } catch (e) {
       _logger.e('Error downloading playlist: $e');
