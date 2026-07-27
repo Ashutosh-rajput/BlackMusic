@@ -770,11 +770,12 @@ class LibraryScreen extends StatelessWidget {
 
   void _showAddFolderDialog(BuildContext context) {
     final controller = TextEditingController(text: '/storage/emulated/0/Download');
+    final libraryBloc = context.read<LibraryBloc>();
     showDialog(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
+          builder: (dialogContext, setDialogState) {
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: Text(
@@ -809,7 +810,7 @@ class LibraryScreen extends StatelessWidget {
                         tooltip: 'Browse Folders',
                         onPressed: () async {
                           final selected = await showDialog<String>(
-                            context: context,
+                            context: dialogContext,
                             builder: (_) => FolderPickerDialog(
                               initialPath: controller.text.trim(),
                             ),
@@ -834,8 +835,7 @@ class LibraryScreen extends StatelessWidget {
                   onPressed: () {
                     final path = controller.text.trim();
                     if (path.isNotEmpty) {
-                      context
-                          .read<LibraryBloc>()
+                      libraryBloc
                           .add(ScanStorageEvent(customPaths: [path]));
                     }
                     Navigator.pop(ctx);
@@ -1058,6 +1058,7 @@ class _SongListTile extends StatelessWidget {
   static void _showCreatePlaylistDialogStatic(BuildContext context) {
     final nameController = TextEditingController();
     final descController = TextEditingController();
+    final libraryBloc = context.read<LibraryBloc>();
 
     showDialog(
       context: context,
@@ -1104,7 +1105,7 @@ class _SongListTile extends StatelessWidget {
               onPressed: () {
                 final name = nameController.text.trim();
                 if (name.isNotEmpty) {
-                  context.read<LibraryBloc>().add(CreatePlaylistEvent(
+                  libraryBloc.add(CreatePlaylistEvent(
                         name,
                         description: descController.text.trim(),
                       ));

@@ -59,7 +59,7 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> insertSong(SongsCompanion song) => into(songs).insert(
         song,
-        mode: InsertMode.insertOrReplace,
+        mode: InsertMode.insertOrIgnore,
       );
 
   Future<int> insertPlaylist(PlaylistsCompanion playlist) =>

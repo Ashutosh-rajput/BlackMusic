@@ -26,13 +26,17 @@ Future<void> getItSetup() async {
   );
 
   // Services
-  getIt.registerLazySingleton<AudioPlayerService>(() => AudioPlayerService());
+  getIt.registerLazySingleton<AudioPlayerService>(
+    () => AudioPlayerService(),
+    dispose: (service) => service.dispose(),
+  );
   getIt.registerLazySingleton<FileService>(() => FileService());
   getIt.registerLazySingleton<PermissionService>(() => PermissionService());
 
   // BLoCs
   getIt.registerLazySingleton<PlayerBloc>(
     () => PlayerBloc(audioService: getIt<AudioPlayerService>()),
+    dispose: (bloc) => bloc.close(),
   );
 
   getIt.registerLazySingleton<LibraryBloc>(
@@ -41,5 +45,6 @@ Future<void> getItSetup() async {
       fileService: getIt<FileService>(),
       permissionService: getIt<PermissionService>(),
     ),
+    dispose: (bloc) => bloc.close(),
   );
 }

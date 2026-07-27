@@ -1,4 +1,3 @@
-import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:logger/logger.dart';
 
@@ -18,12 +17,8 @@ class AudioPlayerService {
   AudioPlayer get player => _audioPlayer;
 
   Future<void> _setupAudioPlayer() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-    } catch (e) {
-      _logger.w('Failed to configure AudioSession: $e');
-    }
+    // AudioSession is already configured in main.dart — no duplicate config here
+    // to avoid race conditions on startup.
 
     _audioPlayer.playbackEventStream.listen((event) {
       _logger.d('Playback event: ${event.processingState}');

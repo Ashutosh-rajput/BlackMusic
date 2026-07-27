@@ -104,8 +104,12 @@ class FileService {
         title = parts.sublist(1).join(' - ').trim();
       }
 
+      // Use a more collision-resistant hash by combining path and length.
+      // The database unique constraint on filePath is the real safety net.
+      final pathHash = file.path.hashCode ^ (file.path.length * 37);
+
       return Song(
-        id: file.path.hashCode,
+        id: pathHash.abs(),
         title: title,
         artist: artist,
         album: 'Local Music',

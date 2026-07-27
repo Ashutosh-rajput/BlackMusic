@@ -94,6 +94,7 @@ class _MiniPlayerDock extends StatelessWidget {
 
         Song? currentSong;
         bool isPlaying = false;
+        bool isLoading = false;
 
         if (state is PlayerPlaying) {
           currentSong = state.song;
@@ -103,6 +104,7 @@ class _MiniPlayerDock extends StatelessWidget {
           isPlaying = false;
         } else if (state is PlayerLoading) {
           currentSong = state.song;
+          isLoading = true;
         }
 
         if (currentSong == null) return const SizedBox();
@@ -180,20 +182,30 @@ class _MiniPlayerDock extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: Icon(
-                    isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
+                if (isLoading)
+                  const Padding(
+                    padding: EdgeInsets.all(12.0),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else
+                  IconButton(
+                    icon: Icon(
+                      isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                    ),
+                    onPressed: () {
+                      if (isPlaying) {
+                        context.read<PlayerBloc>().add(const PauseEvent());
+                      } else {
+                        context.read<PlayerBloc>().add(const ResumeEvent());
+                      }
+                    },
                   ),
-                  onPressed: () {
-                    if (isPlaying) {
-                      context.read<PlayerBloc>().add(const PauseEvent());
-                    } else {
-                      context.read<PlayerBloc>().add(const ResumeEvent());
-                    }
-                  },
-                ),
                 IconButton(
                   icon: const Icon(Icons.skip_next_rounded),
                   onPressed: () {

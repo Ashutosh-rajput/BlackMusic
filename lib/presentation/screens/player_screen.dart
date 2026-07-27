@@ -20,6 +20,8 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _rotationController;
+  bool _isDragging = false;
+  double _dragPosition = 0.0;
 
   @override
   void initState() {
@@ -91,9 +93,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         final double sliderMax = duration.inMilliseconds.toDouble() > 0
             ? duration.inMilliseconds.toDouble()
             : 1.0;
-        final double sliderValue = position.inMilliseconds
-            .toDouble()
-            .clamp(0.0, sliderMax);
+        final double sliderValue = _isDragging
+            ? _dragPosition.clamp(0.0, sliderMax)
+            : position.inMilliseconds.toDouble().clamp(0.0, sliderMax);
 
         return Scaffold(
           appBar: AppBar(
@@ -115,7 +117,15 @@ class _PlayerScreenState extends State<PlayerScreen>
             actions: [
               IconButton(
                 icon: const Icon(Icons.more_vert),
-                onPressed: () => _showSpeedDialog(context),
+                onPressed: () {
+                  double currentRate = 1.0;
+                  if (state is PlayerPlaying) {
+                    currentRate = state.playbackRate;
+                  } else if (state is PlayerPaused) {
+                    currentRate = state.playbackRate;
+                  }
+                  _showSpeedDialog(context, currentRate);
+                },
               ),
             ],
           ),
@@ -209,7 +219,21 @@ class _PlayerScreenState extends State<PlayerScreen>
                       min: 0,
                       max: sliderMax,
                       value: sliderValue,
+                      onChangeStart: (value) {
+                        setState(() {
+                          _isDragging = true;
+                          _dragPosition = value;
+                        });
+                      },
                       onChanged: (value) {
+                        setState(() {
+                          _dragPosition = value;
+                        });
+                      },
+                      onChangeEnd: (value) {
+                        setState(() {
+                          _isDragging = false;
+                        });
                         context.read<PlayerBloc>().add(
                               SeekEvent(Duration(milliseconds: value.toInt())),
                             );
@@ -326,7 +350,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  void _showSpeedDialog(BuildContext context) {
+  void _showSpeedDialog(BuildContext context, double currentRate) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -349,9 +373,10 @@ class _PlayerScreenState extends State<PlayerScreen>
               Wrap(
                 spacing: 12,
                 children: [0.75, 1.0, 1.25, 1.5, 2.0].map((rate) {
+                  final isSelected = (rate - currentRate).abs() < 0.01;
                   return ChoiceChip(
                     label: Text('${rate}x'),
-                    selected: false,
+                    selected: isSelected,
                     onSelected: (selected) {
                       context
                           .read<PlayerBloc>()

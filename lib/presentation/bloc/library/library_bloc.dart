@@ -60,7 +60,9 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         specificPaths: event.customPaths,
       );
       await _repository.saveSongsBatch(scannedSongs);
-      emit(LibraryLoaded(allSongs: scannedSongs, displayedSongs: scannedSongs, playlists: currentPlaylists));
+      // Reload all songs from repository (includes both scanned and previously saved songs)
+      final allSongs = await _repository.getAllSongs();
+      emit(LibraryLoaded(allSongs: allSongs, displayedSongs: allSongs, playlists: currentPlaylists));
     } catch (e) {
       emit(LibraryError('Failed to scan storage: $e'));
     }
@@ -73,6 +75,11 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     if (state is LibraryLoaded) {
       final current = state as LibraryLoaded;
       final q = event.query.toLowerCase().trim();
+      // When query is empty, reuse the same allSongs reference to avoid unnecessary rebuilds
+      if (q.isEmpty) {
+        emit(current.copyWith(searchQuery: '', displayedSongs: current.allSongs));
+        return;
+      }
       final filtered = current.allSongs.where((s) {
         return s.title.toLowerCase().contains(q) ||
             s.artist.toLowerCase().contains(q) ||

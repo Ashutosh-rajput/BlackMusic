@@ -14,6 +14,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   Song? _currentSong;
   List<Song> _queue = [];
+  List<Song> _originalQueue = []; // Preserved for restoring order after shuffle
   bool _isShuffle = false;
   bool _isRepeat = false;
   bool _isChangingSong = false;
@@ -99,6 +100,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _currentSong = event.song;
       if (event.queue != null && event.queue!.isNotEmpty) {
         _queue = List.from(event.queue!);
+        _originalQueue = List.from(event.queue!);
       }
       emit(PlayerLoading(song: event.song));
       await _audioService.play(event.song.filePath);
@@ -218,36 +220,41 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
   }
 
-  Future<void> _onNextSong(NextSongEvent event, Emitter<PlayerState> emit) async {
+  void _onNextSong(NextSongEvent event, Emitter<PlayerState> emit) {
     if (_queue.isEmpty || _currentSong == null) return;
     if (_isShuffle && _queue.length > 1) {
       final available = _queue.where((s) => s.id != _currentSong!.id).toList();
       available.shuffle();
-      add(PlaySongEvent(available.first, queue: _queue));
+      add(PlaySongEvent(available.first));
     } else {
       final currentIndex = _queue.indexWhere((s) => s.id == _currentSong!.id);
       if (currentIndex != -1 && currentIndex < _queue.length - 1) {
-        add(PlaySongEvent(_queue[currentIndex + 1], queue: _queue));
+        add(PlaySongEvent(_queue[currentIndex + 1]));
       } else if (_queue.isNotEmpty) {
-        add(PlaySongEvent(_queue.first, queue: _queue));
+        add(PlaySongEvent(_queue.first));
       }
     }
   }
 
-  Future<void> _onPreviousSong(PreviousSongEvent event, Emitter<PlayerState> emit) async {
+  void _onPreviousSong(PreviousSongEvent event, Emitter<PlayerState> emit) {
     if (_queue.isEmpty || _currentSong == null) return;
     final currentIndex = _queue.indexWhere((s) => s.id == _currentSong!.id);
     if (currentIndex > 0) {
-      add(PlaySongEvent(_queue[currentIndex - 1], queue: _queue));
+      add(PlaySongEvent(_queue[currentIndex - 1]));
     } else if (_queue.isNotEmpty) {
-      add(PlaySongEvent(_queue.last, queue: _queue));
+      add(PlaySongEvent(_queue.last));
     }
   }
 
   void _onToggleShuffle(ToggleShuffleEvent event, Emitter<PlayerState> emit) {
     _isShuffle = !_isShuffle;
     if (_isShuffle && _queue.isNotEmpty) {
+      // Save original order before shuffling
+      _originalQueue = List.from(_queue);
       _queue.shuffle();
+    } else if (!_isShuffle && _originalQueue.isNotEmpty) {
+      // Restore original order when shuffle is turned off
+      _queue = List.from(_originalQueue);
     }
     if (state is PlayerPlaying) {
       emit((state as PlayerPlaying).copyWith(isShuffle: _isShuffle, queue: _queue));
