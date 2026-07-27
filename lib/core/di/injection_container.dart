@@ -35,7 +35,10 @@ Future<void> getItSetup() async {
 
   // BLoCs
   getIt.registerLazySingleton<PlayerBloc>(
-    () => PlayerBloc(audioService: getIt<AudioPlayerService>()),
+    () => PlayerBloc(
+      audioService: getIt<AudioPlayerService>(),
+      repository: getIt<MusicRepository>(),
+    ),
     dispose: (bloc) => bloc.close(),
   );
 

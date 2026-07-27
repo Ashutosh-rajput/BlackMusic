@@ -2,12 +2,14 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerEvent, PlayerState;
 import 'package:pixel_player/data/models/song_model.dart';
+import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/services/audio_service.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 
 class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   final AudioPlayerService _audioService;
+  final MusicRepository? _repository;
   StreamSubscription? _positionSubscription;
   StreamSubscription? _durationSubscription;
   StreamSubscription? _playerStateSubscription;
@@ -19,8 +21,11 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   bool _isRepeat = false;
   bool _isChangingSong = false;
 
-  PlayerBloc({required AudioPlayerService audioService})
-      : _audioService = audioService,
+  PlayerBloc({
+    required AudioPlayerService audioService,
+    MusicRepository? repository,
+  })  : _audioService = audioService,
+        _repository = repository,
         super(const PlayerInitial()) {
     on<PlaySongEvent>(_onPlaySong);
     on<PauseEvent>(_onPause);
@@ -51,12 +56,17 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     });
 
     _playerStateSubscription = _audioService.playerStateStream.listen((playerState) {
+      if (playerState.processingState == ProcessingState.ready && playerState.playing) {
+        _isChangingSong = false;
+      }
+
       if (_isChangingSong) return; // Prevent race conditions during song switching
+
       if (playerState.processingState == ProcessingState.completed) {
         final pos = _audioService.player.position;
         final dur = _audioService.player.duration;
-        // Only auto-advance if the song actually played to its end (within 500ms threshold)
-        if (dur != null && dur > Duration.zero && pos >= dur - const Duration(milliseconds: 500)) {
+        // Only auto-advance if the song actually played to its end
+        if (dur != null && dur > Duration.zero && pos >= dur - const Duration(milliseconds: 1000)) {
           _isChangingSong = true;
           if (_isRepeat && _currentSong != null) {
             add(PlaySongEvent(_currentSong!));
@@ -112,17 +122,21 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       await _audioService.play(song.filePath);
 
       final dur = _audioService.player.duration ?? song.duration;
+      Song activeSong = song;
+      if (dur > Duration.zero && (song.duration == Duration.zero || (song.duration - dur).inSeconds.abs() > 1)) {
+        activeSong = song.copyWith(duration: dur);
+        _currentSong = activeSong;
+        _repository?.updateSong(activeSong);
+      }
+
       emit(PlayerPlaying(
-        song: song,
+        song: activeSong,
         position: Duration.zero,
         duration: dur,
         isShuffle: _isShuffle,
         isRepeat: _isRepeat,
         queue: _queue,
       ));
-      // Brief guard to let audio player states settle before allowing auto-advance
-      await Future.delayed(const Duration(milliseconds: 300));
-      _isChangingSong = false;
     } catch (e) {
       _isChangingSong = false;
       if (e.toString().contains('Loading interrupted')) {

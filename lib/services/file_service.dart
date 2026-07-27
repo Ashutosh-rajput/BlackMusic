@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:just_audio/just_audio.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:logger/logger.dart';
 
@@ -108,13 +109,27 @@ class FileService {
       // The database unique constraint on filePath is the real safety net.
       final pathHash = file.path.hashCode ^ (file.path.length * 37);
 
+      // Extract real audio duration using AudioPlayer metadata reader
+      Duration duration = Duration.zero;
+      final player = AudioPlayer();
+      try {
+        final d = await player.setFilePath(file.path);
+        if (d != null && d > Duration.zero) {
+          duration = d;
+        }
+      } catch (e) {
+        _logger.w('Could not read duration for ${file.path}: $e');
+      } finally {
+        await player.dispose();
+      }
+
       return Song(
         id: pathHash.abs(),
         title: title,
         artist: artist,
         album: 'Local Music',
         filePath: file.path,
-        duration: const Duration(minutes: 3, seconds: 30),
+        duration: duration,
         fileSize: await file.length(),
         dateModified: await file.lastModified(),
         genre: 'Audio Track',

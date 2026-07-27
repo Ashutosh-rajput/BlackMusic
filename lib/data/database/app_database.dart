@@ -62,6 +62,11 @@ class AppDatabase extends _$AppDatabase {
         mode: InsertMode.insertOrIgnore,
       );
 
+  Future<int> updateSongDuration(String filePath, int durationMs) {
+    return (update(songs)..where((t) => t.filePath.equals(filePath)))
+        .write(SongsCompanion(duration: Value(durationMs)));
+  }
+
   Future<int> insertPlaylist(PlaylistsCompanion playlist) =>
       into(playlists).insert(playlist);
 

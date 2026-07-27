@@ -84,7 +84,13 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
 
   @override
   Future<void> updateSong(Song song) async {
-    await insertSong(song);
+    _memoryCache.removeWhere((s) => s.id == song.id || s.filePath == song.filePath);
+    _memoryCache.add(song);
+    try {
+      await _db.updateSongDuration(song.filePath, song.duration.inMilliseconds);
+    } catch (e) {
+      logger.w('Database update error: $e');
+    }
   }
 
   @override
