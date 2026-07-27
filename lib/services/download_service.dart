@@ -311,12 +311,13 @@ class DownloadService {
           );
           final html = response.data.toString();
           final matches = RegExp(r'"videoId":"([a-zA-Z0-9_-]{11})"').allMatches(html);
-          final seenIds = <String>{};
+          final videoIds = <String>{};
           for (final match in matches) {
             final id = match.group(1);
-            if (id != null && seenIds.add(id)) {
-              videoUrls.add('https://www.youtube.com/watch?v=$id');
-            }
+            if (id != null) videoIds.add(id);
+          }
+          for (final id in videoIds) {
+            videoUrls.add('https://www.youtube.com/watch?v=$id');
           }
         } catch (e) {
           _logger.e('HTML playlist video extraction error: $e');
