@@ -32,6 +32,12 @@ dependencies:
   # File & Storage
   permission_handler: ^12.0.3
   file_picker: ^8.1.2
+  path_provider: ^2.1.5
+
+  # Network & Downloading
+  dio: ^5.7.0
+  youtube_explode_dart: ^2.5.3
+  receive_sharing_intent: ^1.8.0
 
   # Image Loading & Caching
   cached_network_image: ^3.3.1

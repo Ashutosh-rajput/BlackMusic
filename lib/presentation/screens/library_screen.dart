@@ -12,6 +12,7 @@ import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
 import 'package:pixel_player/presentation/widgets/folder_picker_dialog.dart';
+import 'package:pixel_player/presentation/widgets/download_dialog.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
@@ -62,6 +63,12 @@ class LibraryScreen extends StatelessWidget {
                         icon: const Icon(Icons.create_new_folder_rounded),
                         tooltip: 'Add Custom Folder',
                         onPressed: () => _showAddFolderDialog(context),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        icon: const Icon(Icons.cloud_download_rounded),
+                        tooltip: 'Download from URL (YouTube/MP3)',
+                        onPressed: () => DownloadDialog.show(context),
                       ),
                       const SizedBox(width: 8),
                       IconButton.filledTonal(
