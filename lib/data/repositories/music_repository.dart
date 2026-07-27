@@ -1,5 +1,6 @@
 import 'package:pixel_player/data/datasources/local/music_local_datasource.dart';
 import 'package:pixel_player/data/models/song_model.dart';
+import 'package:pixel_player/data/models/playlist_model.dart';
 import 'package:logger/logger.dart';
 
 final _logger = Logger();
@@ -11,6 +12,12 @@ abstract class MusicRepository {
   Future<void> deleteSong(int songId);
   Future<List<Song>> searchSongs(String query);
   Future<void> saveSongsBatch(List<Song> songs);
+
+  Future<List<PlaylistModel>> getPlaylists();
+  Future<PlaylistModel> createPlaylist(String name, String? description);
+  Future<void> deletePlaylist(int playlistId);
+  Future<void> addSongToPlaylist(int playlistId, Song song);
+  Future<void> removeSongFromPlaylist(int playlistId, int songId);
 }
 
 class MusicRepositoryImpl implements MusicRepository {
@@ -83,5 +90,30 @@ class MusicRepositoryImpl implements MusicRepository {
       _logger.e('Error batch saving songs: $e');
       rethrow;
     }
+  }
+
+  @override
+  Future<List<PlaylistModel>> getPlaylists() async {
+    return await _localDatasource.getPlaylists();
+  }
+
+  @override
+  Future<PlaylistModel> createPlaylist(String name, String? description) async {
+    return await _localDatasource.createPlaylist(name, description);
+  }
+
+  @override
+  Future<void> deletePlaylist(int playlistId) async {
+    await _localDatasource.deletePlaylist(playlistId);
+  }
+
+  @override
+  Future<void> addSongToPlaylist(int playlistId, Song song) async {
+    await _localDatasource.addSongToPlaylist(playlistId, song);
+  }
+
+  @override
+  Future<void> removeSongFromPlaylist(int playlistId, int songId) async {
+    await _localDatasource.removeSongFromPlaylist(playlistId, songId);
   }
 }

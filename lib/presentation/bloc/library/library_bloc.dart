@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pixel_player/data/models/playlist_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/services/file_service.dart';
 import 'package:pixel_player/services/permission_service.dart';
@@ -22,6 +23,10 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     on<ScanStorageEvent>(_onScanStorage);
     on<SearchSongsEvent>(_onSearchSongs);
     on<SelectCategoryEvent>(_onSelectCategory);
+    on<CreatePlaylistEvent>(_onCreatePlaylist);
+    on<DeletePlaylistEvent>(_onDeletePlaylist);
+    on<AddSongToPlaylistEvent>(_onAddSongToPlaylist);
+    on<RemoveSongFromPlaylistEvent>(_onRemoveSongFromPlaylist);
   }
 
   Future<void> _onLoadLibrary(
@@ -35,10 +40,11 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         songs = FileService.getSeedSongs();
         await _repository.saveSongsBatch(songs);
       }
-      emit(LibraryLoaded(allSongs: songs, displayedSongs: songs));
+      final playlists = await _repository.getPlaylists();
+      emit(LibraryLoaded(allSongs: songs, displayedSongs: songs, playlists: playlists));
     } catch (e) {
       final seeds = FileService.getSeedSongs();
-      emit(LibraryLoaded(allSongs: seeds, displayedSongs: seeds));
+      emit(LibraryLoaded(allSongs: seeds, displayedSongs: seeds, playlists: const []));
     }
   }
 
@@ -46,6 +52,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     ScanStorageEvent event,
     Emitter<LibraryState> emit,
   ) async {
+    final currentPlaylists = state is LibraryLoaded ? (state as LibraryLoaded).playlists : const <PlaylistModel>[];
     emit(const LibraryLoading());
     try {
       await _permissionService.requestMusicPermission();
@@ -53,7 +60,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         specificPaths: event.customPaths,
       );
       await _repository.saveSongsBatch(scannedSongs);
-      emit(LibraryLoaded(allSongs: scannedSongs, displayedSongs: scannedSongs));
+      emit(LibraryLoaded(allSongs: scannedSongs, displayedSongs: scannedSongs, playlists: currentPlaylists));
     } catch (e) {
       emit(LibraryError('Failed to scan storage: $e'));
     }
@@ -82,6 +89,54 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     if (state is LibraryLoaded) {
       final current = state as LibraryLoaded;
       emit(current.copyWith(selectedCategory: event.category));
+    }
+  }
+
+  Future<void> _onCreatePlaylist(
+    CreatePlaylistEvent event,
+    Emitter<LibraryState> emit,
+  ) async {
+    if (state is LibraryLoaded) {
+      final current = state as LibraryLoaded;
+      await _repository.createPlaylist(event.name, event.description);
+      final updatedPlaylists = await _repository.getPlaylists();
+      emit(current.copyWith(playlists: updatedPlaylists));
+    }
+  }
+
+  Future<void> _onDeletePlaylist(
+    DeletePlaylistEvent event,
+    Emitter<LibraryState> emit,
+  ) async {
+    if (state is LibraryLoaded) {
+      final current = state as LibraryLoaded;
+      await _repository.deletePlaylist(event.playlistId);
+      final updatedPlaylists = await _repository.getPlaylists();
+      emit(current.copyWith(playlists: updatedPlaylists));
+    }
+  }
+
+  Future<void> _onAddSongToPlaylist(
+    AddSongToPlaylistEvent event,
+    Emitter<LibraryState> emit,
+  ) async {
+    if (state is LibraryLoaded) {
+      final current = state as LibraryLoaded;
+      await _repository.addSongToPlaylist(event.playlistId, event.song);
+      final updatedPlaylists = await _repository.getPlaylists();
+      emit(current.copyWith(playlists: updatedPlaylists));
+    }
+  }
+
+  Future<void> _onRemoveSongFromPlaylist(
+    RemoveSongFromPlaylistEvent event,
+    Emitter<LibraryState> emit,
+  ) async {
+    if (state is LibraryLoaded) {
+      final current = state as LibraryLoaded;
+      await _repository.removeSongFromPlaylist(event.playlistId, event.songId);
+      final updatedPlaylists = await _repository.getPlaylists();
+      emit(current.copyWith(playlists: updatedPlaylists));
     }
   }
 }

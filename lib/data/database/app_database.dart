@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:sqlite3_flutter_libs/sqlite3_flutter_libs.dart';
 
 part 'app_database.g.dart';
 
@@ -65,11 +67,54 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<Playlist>> getAllPlaylists() => select(playlists).get();
 
+  Future<int> deletePlaylistById(int playlistId) =>
+      (delete(playlists)..where((t) => t.id.equals(playlistId))).go();
+
+  Future<int> deletePlaylistSongs(int playlistId) =>
+      (delete(playlistSongs)..where((t) => t.playlistId.equals(playlistId))).go();
+
+  Future<int> addSongToPlaylist(int playlistId, int songId) async {
+    final existing = await (select(playlistSongs)
+          ..where((t) => t.playlistId.equals(playlistId) & t.songId.equals(songId)))
+        .getSingleOrNull();
+    if (existing != null) return existing.id;
+
+    final count = await (select(playlistSongs)
+          ..where((t) => t.playlistId.equals(playlistId)))
+        .get()
+        .then((l) => l.length);
+
+    return into(playlistSongs).insert(
+      PlaylistSongsCompanion.insert(
+        playlistId: playlistId,
+        songId: songId,
+        position: count,
+      ),
+    );
+  }
+
+  Future<List<int>> getSongIdsForPlaylist(int playlistId) async {
+    final rows = await (select(playlistSongs)
+          ..where((t) => t.playlistId.equals(playlistId))
+          ..orderBy([(t) => OrderingTerm.asc(t.position)]))
+        .get();
+    return rows.map((r) => r.songId).toList();
+  }
+
+  Future<int> removeSongFromPlaylist(int playlistId, int songId) {
+    return (delete(playlistSongs)
+          ..where((t) => t.playlistId.equals(playlistId) & t.songId.equals(songId)))
+        .go();
+  }
+
   Future<int> deleteSongById(int songId) =>
       (delete(songs)..where((t) => t.id.equals(songId))).go();
 }
 
 QueryExecutor _openConnection() {
+  if (Platform.isAndroid) {
+    applyWorkaroundToOpenSqlite3OnOldAndroidVersions();
+  }
   return driftDatabase(
     name: 'pixel_player_db',
     web: DriftWebOptions(

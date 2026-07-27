@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:pixel_player/data/models/song_model.dart';
 
 abstract class LibraryEvent extends Equatable {
   const LibraryEvent();
@@ -28,9 +29,44 @@ class SearchSongsEvent extends LibraryEvent {
 }
 
 class SelectCategoryEvent extends LibraryEvent {
-  final String category; // 'All', 'Albums', 'Artists', 'Playlists'
+  final String category; // 'All', 'Folders', 'Albums', 'Artists', 'Playlists'
   const SelectCategoryEvent(this.category);
 
   @override
   List<Object?> get props => [category];
+}
+
+class CreatePlaylistEvent extends LibraryEvent {
+  final String name;
+  final String? description;
+  const CreatePlaylistEvent(this.name, {this.description});
+
+  @override
+  List<Object?> get props => [name, description];
+}
+
+class DeletePlaylistEvent extends LibraryEvent {
+  final int playlistId;
+  const DeletePlaylistEvent(this.playlistId);
+
+  @override
+  List<Object?> get props => [playlistId];
+}
+
+class AddSongToPlaylistEvent extends LibraryEvent {
+  final int playlistId;
+  final Song song;
+  const AddSongToPlaylistEvent(this.playlistId, this.song);
+
+  @override
+  List<Object?> get props => [playlistId, song];
+}
+
+class RemoveSongFromPlaylistEvent extends LibraryEvent {
+  final int playlistId;
+  final int songId;
+  const RemoveSongFromPlaylistEvent(this.playlistId, this.songId);
+
+  @override
+  List<Object?> get props => [playlistId, songId];
 }
