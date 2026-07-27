@@ -67,6 +67,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         Duration position = Duration.zero;
         Duration duration = widget.song.duration;
         bool isPlaying = false;
+        bool isLoading = false;
         bool isShuffle = false;
         bool isRepeat = false;
 
@@ -86,6 +87,14 @@ class _PlayerScreenState extends State<PlayerScreen>
               ? state.duration
               : currentSong.duration;
           isPlaying = false;
+          isShuffle = state.isShuffle;
+          isRepeat = state.isRepeat;
+        } else if (state is PlayerLoading) {
+          if (state.song != null) {
+            currentSong = state.song!;
+          }
+          duration = currentSong.duration;
+          isLoading = true;
           isShuffle = state.isShuffle;
           isRepeat = state.isRepeat;
         }
@@ -304,22 +313,33 @@ class _PlayerScreenState extends State<PlayerScreen>
                           ),
                         ],
                       ),
-                      child: IconButton(
-                        icon: Icon(
-                          isPlaying
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          color: Colors.white,
-                        ),
-                        iconSize: 38,
-                        onPressed: () {
-                          if (isPlaying) {
-                            context.read<PlayerBloc>().add(const PauseEvent());
-                          } else {
-                            context.read<PlayerBloc>().add(const ResumeEvent());
-                          }
-                        },
-                      ),
+                      child: isLoading
+                          ? const Center(
+                              child: SizedBox(
+                                width: 28,
+                                height: 28,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 3,
+                                ),
+                              ),
+                            )
+                          : IconButton(
+                              icon: Icon(
+                                isPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                color: Colors.white,
+                              ),
+                              iconSize: 38,
+                              onPressed: () {
+                                if (isPlaying) {
+                                  context.read<PlayerBloc>().add(const PauseEvent());
+                                } else {
+                                  context.read<PlayerBloc>().add(const ResumeEvent());
+                                }
+                              },
+                            ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.skip_next_rounded),

@@ -14,10 +14,17 @@ class PlayerInitial extends PlayerState {
 
 class PlayerLoading extends PlayerState {
   final Song? song;
-  const PlayerLoading({this.song});
+  final bool isShuffle;
+  final bool isRepeat;
+
+  const PlayerLoading({
+    this.song,
+    this.isShuffle = false,
+    this.isRepeat = false,
+  });
 
   @override
-  List<Object?> get props => [song];
+  List<Object?> get props => [song, isShuffle, isRepeat];
 }
 
 class PlayerPlaying extends PlayerState {
