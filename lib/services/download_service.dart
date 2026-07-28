@@ -7,16 +7,79 @@ import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:logger/logger.dart';
 
+import 'package:flutter/foundation.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
 
 final _logger = Logger();
+
+class ActiveDownload {
+  final String id;
+  final String url;
+  final String title;
+  final double progress;
+  final String statusMessage;
+  final bool isCompleted;
+  final bool isCancelled;
+  final String? errorMessage;
+
+  ActiveDownload({
+    required this.id,
+    required this.url,
+    required this.title,
+    required this.progress,
+    required this.statusMessage,
+    this.isCompleted = false,
+    this.isCancelled = false,
+    this.errorMessage,
+  });
+
+  ActiveDownload copyWith({
+    String? id,
+    String? url,
+    String? title,
+    double? progress,
+    String? statusMessage,
+    bool? isCompleted,
+    bool? isCancelled,
+    String? errorMessage,
+  }) {
+    return ActiveDownload(
+      id: id ?? this.id,
+      url: url ?? this.url,
+      title: title ?? this.title,
+      progress: progress ?? this.progress,
+      statusMessage: statusMessage ?? this.statusMessage,
+      isCompleted: isCompleted ?? this.isCompleted,
+      isCancelled: isCancelled ?? this.isCancelled,
+      errorMessage: errorMessage ?? this.errorMessage,
+    );
+  }
+}
 
 class DownloadService {
   final MusicRepository _repository;
   final Dio _dio = Dio();
   final DownloadNotificationService _notificationService = DownloadNotificationService();
 
+  CancelToken? _cancelToken;
+  bool _isCanceled = false;
+
+  final ValueNotifier<ActiveDownload?> activeDownloadNotifier = ValueNotifier(null);
+
   DownloadService(this._repository);
+
+  /// Cancel active download operation
+  void cancelCurrentDownload() {
+    _isCanceled = true;
+    _cancelToken?.cancel("User cancelled download");
+    final current = activeDownloadNotifier.value;
+    if (current != null) {
+      activeDownloadNotifier.value = current.copyWith(
+        isCancelled: true,
+        statusMessage: 'Download cancelled by user',
+      );
+    }
+  }
 
   /// Main entry point: Detects link platform and downloads high-quality audio file.
   Future<Song?> downloadFromUrl({
@@ -154,19 +217,32 @@ class DownloadService {
         final totalBytes = selectedStream.size.totalBytes;
         final streamUrl = selectedStream.url;
         final notifId = videoId.hashCode.abs();
+        _cancelToken = CancelToken();
+        _isCanceled = false;
+
         _logger.i('[YT_DOWNLOAD 1/3] Video: "$title" ($videoId)');
         _logger.i('[YT_DOWNLOAD 2/3] Stream selected: $ext, bitrate: ${selectedStream.bitrate}, totalBytes: $totalBytes');
         assert(() {
           _logger.i('[YT_DOWNLOAD URL] Stream Direct Link: $streamUrl');
           return true;
         }());
-        onProgress(0.30, 'Downloading "${video.title}"...');
+
+        final initialStatus = 'Downloading "${video.title}"...';
+        onProgress(0.30, initialStatus);
+        activeDownloadNotifier.value = ActiveDownload(
+          id: videoId,
+          url: cleanUrl,
+          title: video.title,
+          progress: 0.30,
+          statusMessage: initialStatus,
+        );
 
         // Try Dio direct stream download first, fallback to YoutubeExplode streamsClient
         try {
           await _dio.download(
             streamUrl.toString(),
             savePath,
+            cancelToken: _cancelToken,
             options: Options(
               headers: const {
                 'User-Agent':
@@ -176,15 +252,24 @@ class DownloadService {
               connectTimeout: const Duration(seconds: 15),
             ),
             onReceiveProgress: (received, total) {
+              if (_isCanceled) return;
               final effectiveTotal = total > 0 ? total : totalBytes;
               if (effectiveTotal > 0) {
                 final p = 0.30 + (received / effectiveTotal) * 0.65;
                 final progressInt = (p * 100).toInt();
                 final recMb = (received / 1024 / 1024).toStringAsFixed(1);
                 final totMb = (effectiveTotal / 1024 / 1024).toStringAsFixed(1);
+                final statusMsg = 'Downloading "${video.title}"... ($progressInt%)';
                 onProgress(
                   p.clamp(0.0, 0.95),
-                  'Downloading "${video.title}"... ($progressInt%)',
+                  statusMsg,
+                );
+                activeDownloadNotifier.value = ActiveDownload(
+                  id: videoId,
+                  url: cleanUrl,
+                  title: video.title,
+                  progress: p.clamp(0.0, 0.95),
+                  statusMessage: statusMsg,
                 );
                 _notificationService.showDownloadProgress(
                   id: notifId,
@@ -200,7 +285,15 @@ class DownloadService {
               }
             },
           );
-        } catch (dioErr) {
+        } on DioException catch (dioErr) {
+          if (CancelToken.isCancel(dioErr) || _isCanceled) {
+            _logger.i('[YT_DOWNLOAD] Download cancelled by user.');
+            await _notificationService.cancelNotification(notifId);
+            if (await activeFile.exists()) {
+              await activeFile.delete();
+            }
+            return null;
+          }
           _logger.w('[YT_DOWNLOAD] Dio direct download failed ($dioErr), trying YoutubeExplode streamsClient...');
           final stream = yt.videos.streamsClient.get(selectedStream);
           final sink = activeFile.openWrite();
@@ -208,15 +301,24 @@ class DownloadService {
 
           try {
             await for (final chunk in stream) {
+              if (_isCanceled) break;
               downloaded += chunk.length;
               sink.add(chunk);
 
               if (totalBytes > 0) {
                 final p = 0.30 + (downloaded / totalBytes) * 0.65;
                 final progressInt = (p * 100).toInt();
+                final statusMsg = 'Downloading "${video.title}"... ($progressInt%)';
                 onProgress(
                   p.clamp(0.0, 0.95),
-                  'Downloading "${video.title}"... ($progressInt%)',
+                  statusMsg,
+                );
+                activeDownloadNotifier.value = ActiveDownload(
+                  id: videoId,
+                  url: cleanUrl,
+                  title: video.title,
+                  progress: p.clamp(0.0, 0.95),
+                  statusMessage: statusMsg,
                 );
                 _notificationService.showDownloadProgress(
                   id: notifId,
@@ -230,6 +332,15 @@ class DownloadService {
             await sink.flush();
             await sink.close();
           }
+        }
+
+        if (_isCanceled) {
+          _logger.i('[YT_DOWNLOAD] Cleaned up after cancellation.');
+          await _notificationService.cancelNotification(notifId);
+          if (await activeFile.exists()) {
+            await activeFile.delete();
+          }
+          return null;
         }
 
         _logger.i('[YT_DOWNLOAD 3/3] Download finished naturally.');
@@ -260,6 +371,14 @@ class DownloadService {
 
         await _repository.addSong(song);
         onProgress(1.0, 'Download complete!');
+        activeDownloadNotifier.value = ActiveDownload(
+          id: videoId,
+          url: cleanUrl,
+          title: video.title,
+          progress: 1.0,
+          statusMessage: 'Download complete!',
+          isCompleted: true,
+        );
         await _notificationService.cancelNotification(notifId);
         await _notificationService.showDownloadCompleted(
           id: notifId,
@@ -270,6 +389,9 @@ class DownloadService {
       }
       throw Exception('No valid audio stream found for this video.');
     } catch (e) {
+      if (_isCanceled) {
+        return null;
+      }
       if (activeFile != null && await activeFile.exists()) {
         try {
           _logger.w('[YT_DOWNLOAD] Cleaning up partial download file: ${activeFile.path}');
@@ -277,6 +399,14 @@ class DownloadService {
         } catch (_) {}
       }
       _logger.e('YouTube download failed: $e');
+      activeDownloadNotifier.value = ActiveDownload(
+        id: cleanUrl,
+        url: cleanUrl,
+        title: 'Song Download',
+        progress: 0.0,
+        statusMessage: 'Failed to download track',
+        errorMessage: e.toString(),
+      );
       _notificationService.showDownloadFailed(
         id: cleanUrl.hashCode.abs(),
         title: 'Song Download',

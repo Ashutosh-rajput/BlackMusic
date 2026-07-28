@@ -10,6 +10,7 @@ import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pixel_player/services/settings_service.dart';
+import 'package:pixel_player/services/download_service.dart';
 
 final getIt = GetIt.instance;
 
@@ -38,6 +39,9 @@ Future<void> getItSetup() async {
   );
   getIt.registerLazySingleton<FileService>(() => FileService());
   getIt.registerLazySingleton<PermissionService>(() => PermissionService());
+  getIt.registerLazySingleton<DownloadService>(
+    () => DownloadService(getIt<MusicRepository>()),
+  );
   getIt.registerLazySingleton<SettingsService>(
     () => SettingsService(
       prefs: getIt<SharedPreferences>(),
