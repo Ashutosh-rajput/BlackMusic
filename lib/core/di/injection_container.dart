@@ -74,6 +74,7 @@ Future<void> getItSetup() async {
       repository: getIt<MusicRepository>(),
       fileService: getIt<FileService>(),
       permissionService: getIt<PermissionService>(),
+      settingsService: getIt<SettingsService>(),
     ),
     dispose: (bloc) => bloc.close(),
   );

@@ -4,6 +4,7 @@ import 'package:pixel_player/data/models/playlist_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/services/file_service.dart';
 import 'package:pixel_player/services/permission_service.dart';
+import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/presentation/bloc/library/library_event.dart';
 import 'package:pixel_player/presentation/bloc/library/library_state.dart';
 
@@ -11,15 +12,18 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   final MusicRepository _repository;
   final FileService _fileService;
   final PermissionService _permissionService;
+  final SettingsService? _settingsService;
   StreamSubscription<void>? _librarySubscription;
 
   LibraryBloc({
     required MusicRepository repository,
     required FileService fileService,
     required PermissionService permissionService,
+    SettingsService? settingsService,
   })  : _repository = repository,
         _fileService = fileService,
         _permissionService = permissionService,
+        _settingsService = settingsService,
         super(const LibraryInitial()) {
     on<LoadLibraryEvent>(_onLoadLibrary);
     on<ScanStorageEvent>(_onScanStorage);
@@ -70,6 +74,8 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
       await _permissionService.requestMusicPermission();
       final scannedSongs = await _fileService.scanMusicLibrary(
         specificPaths: event.customPaths,
+        ignoreShortAudio: event.ignoreShortAudio ?? true,
+        showHiddenFiles: event.showHiddenFiles ?? false,
       );
       await _repository.saveSongsBatch(scannedSongs);
       // Reload all songs from repository (includes both scanned and previously saved songs)
@@ -92,6 +98,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         emit(current.copyWith(searchQuery: '', displayedSongs: current.allSongs));
         return;
       }
+      _settingsService?.addSearchQuery(event.query);
       final filtered = current.allSongs.where((s) {
         return s.title.toLowerCase().contains(q) ||
             s.artist.toLowerCase().contains(q) ||

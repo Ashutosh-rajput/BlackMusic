@@ -497,6 +497,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   setState(() => _autoScanMusicFolder = val);
                   _settingsService.setAutoScanMusicFolder(val);
+                  if (val) {
+                    context.read<LibraryBloc>().add(ScanStorageEvent(
+                      ignoreShortAudio: _ignoreShortAudio,
+                      showHiddenFiles: _showHiddenFiles,
+                    ));
+                  }
                 },
               ),
               _divider(),
@@ -511,7 +517,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     builder: (_) => const FolderPickerDialog(),
                   );
                   if (selected != null && selected.isNotEmpty) {
-                    bloc.add(ScanStorageEvent(customPaths: [selected]));
+                    bloc.add(ScanStorageEvent(
+                      customPaths: [selected],
+                      ignoreShortAudio: _ignoreShortAudio,
+                      showHiddenFiles: _showHiddenFiles,
+                    ));
                     if (mounted) {
                       _showSnackBar('Scanning folder: $selected');
                     }
@@ -527,6 +537,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   setState(() => _ignoreShortAudio = val);
                   _settingsService.setIgnoreShortAudio(val);
+                  context.read<LibraryBloc>().add(ScanStorageEvent(
+                    ignoreShortAudio: val,
+                    showHiddenFiles: _showHiddenFiles,
+                  ));
                 },
               ),
               _divider(),
@@ -551,6 +565,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   setState(() => _showHiddenFiles = val);
                   _settingsService.setShowHiddenFiles(val);
+                  context.read<LibraryBloc>().add(ScanStorageEvent(
+                    ignoreShortAudio: _ignoreShortAudio,
+                    showHiddenFiles: val,
+                  ));
                 },
               ),
             ],
@@ -589,7 +607,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: _tileTitle('Clear Search History'),
                 subtitle: _tileSubtitle('Remove all saved search suggestions'),
                 trailing: const Icon(Icons.history_toggle_off_rounded),
-                onTap: () => _showSnackBar('Search history cleared.'),
+                onTap: () async {
+                  await _settingsService.clearSearchHistory();
+                  _showSnackBar('Search history cleared.');
+                },
               ),
             ],
           ),

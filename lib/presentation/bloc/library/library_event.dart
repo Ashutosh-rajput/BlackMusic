@@ -14,10 +14,17 @@ class LoadLibraryEvent extends LibraryEvent {
 
 class ScanStorageEvent extends LibraryEvent {
   final List<String>? customPaths;
-  const ScanStorageEvent({this.customPaths});
+  final bool? ignoreShortAudio;
+  final bool? showHiddenFiles;
+
+  const ScanStorageEvent({
+    this.customPaths,
+    this.ignoreShortAudio,
+    this.showHiddenFiles,
+  });
 
   @override
-  List<Object?> get props => [customPaths];
+  List<Object?> get props => [customPaths, ignoreShortAudio, showHiddenFiles];
 }
 
 class SearchSongsEvent extends LibraryEvent {

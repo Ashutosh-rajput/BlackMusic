@@ -61,6 +61,7 @@ class SettingsService {
   static const _keyDownloadNotifications = 'setting_download_notifications';
   static const _keyLastPlayedSongId = 'setting_last_played_song_id';
   static const _keyLastPlayedPositionMs = 'setting_last_played_position_ms';
+  static const _keySearchHistoryList = 'setting_search_history_list';
 
   // Getters
   bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
@@ -127,6 +128,25 @@ class SettingsService {
     }
   }
   Future<void> setLastPlayedPositionMs(int ms) => _prefs.setInt(_keyLastPlayedPositionMs, ms);
+
+  // Search History Management
+  List<String> getSearchHistory() => _prefs.getStringList(_keySearchHistoryList) ?? [];
+
+  Future<void> addSearchQuery(String query) async {
+    final q = query.trim();
+    if (q.isEmpty || !saveSearchHistory) return;
+    final list = getSearchHistory();
+    list.removeWhere((item) => item.toLowerCase() == q.toLowerCase());
+    list.insert(0, q);
+    if (list.length > 20) {
+      list.removeRange(20, list.length);
+    }
+    await _prefs.setStringList(_keySearchHistoryList, list);
+  }
+
+  Future<void> clearSearchHistory() async {
+    await _prefs.remove(_keySearchHistoryList);
+  }
 
   // Real Storage & File Operations
   Future<StorageStats> calculateStorageSizes() async {
