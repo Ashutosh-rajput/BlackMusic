@@ -70,3 +70,11 @@ class RemoveSongFromPlaylistEvent extends LibraryEvent {
   @override
   List<Object?> get props => [playlistId, songId];
 }
+
+class ToggleFavoriteEvent extends LibraryEvent {
+  final Song song;
+  const ToggleFavoriteEvent(this.song);
+
+  @override
+  List<Object?> get props => [song];
+}

@@ -27,6 +27,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     on<DeletePlaylistEvent>(_onDeletePlaylist);
     on<AddSongToPlaylistEvent>(_onAddSongToPlaylist);
     on<RemoveSongFromPlaylistEvent>(_onRemoveSongFromPlaylist);
+    on<ToggleFavoriteEvent>(_onToggleFavorite);
   }
 
   Future<void> _onLoadLibrary(
@@ -40,7 +41,11 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         songs = FileService.getSeedSongs();
         await _repository.saveSongsBatch(songs);
       }
-      final playlists = await _repository.getPlaylists();
+      var playlists = await _repository.getPlaylists();
+      if (!playlists.any((p) => p.name.toLowerCase() == 'favorites')) {
+        await _repository.createPlaylist('Favorites', 'Default favorites playlist');
+        playlists = await _repository.getPlaylists();
+      }
       emit(LibraryLoaded(allSongs: songs, displayedSongs: songs, playlists: playlists));
     } catch (e) {
       final seeds = FileService.getSeedSongs();
@@ -144,6 +149,34 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
       await _repository.removeSongFromPlaylist(event.playlistId, event.songId);
       final updatedPlaylists = await _repository.getPlaylists();
       emit(current.copyWith(playlists: updatedPlaylists));
+    }
+  }
+
+  Future<void> _onToggleFavorite(
+    ToggleFavoriteEvent event,
+    Emitter<LibraryState> emit,
+  ) async {
+    if (state is LibraryLoaded) {
+      final current = state as LibraryLoaded;
+      var playlists = current.playlists;
+      var favIndex = playlists.indexWhere((p) => p.name.toLowerCase() == 'favorites');
+      if (favIndex == -1) {
+        await _repository.createPlaylist('Favorites', 'Default favorites playlist');
+        playlists = await _repository.getPlaylists();
+        favIndex = playlists.indexWhere((p) => p.name.toLowerCase() == 'favorites');
+      }
+
+      if (favIndex != -1) {
+        final favPlaylist = playlists[favIndex];
+        final isFav = favPlaylist.songs.any((s) => s.id == event.song.id);
+        if (isFav) {
+          await _repository.removeSongFromPlaylist(favPlaylist.id, event.song.id);
+        } else {
+          await _repository.addSongToPlaylist(favPlaylist.id, event.song);
+        }
+        final updatedPlaylists = await _repository.getPlaylists();
+        emit(current.copyWith(playlists: updatedPlaylists));
+      }
     }
   }
 }

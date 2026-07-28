@@ -530,10 +530,124 @@ class LibraryScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    final libraryState = context.watch<LibraryBloc>().state;
+    final allSongs = libraryState is LibraryLoaded ? libraryState.allSongs : <Song>[];
+
+    final recentlyAdded = List<Song>.from(allSongs)
+      ..sort((a, b) => b.dateModified.compareTo(a.dateModified));
+    final downloaded = allSongs.where((s) => !s.filePath.startsWith('http')).toList();
+
     return Column(
       children: [
+        // SMART PLAYLISTS CARDS
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Smart Playlists',
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () {
+                        if (recentlyAdded.isNotEmpty) {
+                          context.read<PlayerBloc>().add(
+                                PlaySongEvent(recentlyAdded.first, queue: recentlyAdded),
+                              );
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PlayerScreen(song: recentlyAdded.first),
+                            ),
+                          );
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E1E26) : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.auto_awesome_rounded, color: theme.colorScheme.primary),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Recently Added',
+                              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            Text(
+                              '${recentlyAdded.length} tracks',
+                              style: GoogleFonts.outfit(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () {
+                        if (downloaded.isNotEmpty) {
+                          context.read<PlayerBloc>().add(
+                                PlaySongEvent(downloaded.first, queue: downloaded),
+                              );
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PlayerScreen(song: downloaded.first),
+                            ),
+                          );
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E1E26) : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: theme.colorScheme.secondary.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.download_for_offline_rounded, color: theme.colorScheme.secondary),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Downloaded',
+                              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            Text(
+                              '${downloaded.length} tracks',
+                              style: GoogleFonts.outfit(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 24),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

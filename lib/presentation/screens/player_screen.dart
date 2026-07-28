@@ -4,10 +4,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/core/utils/duration_formatter.dart';
+import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
+import 'package:pixel_player/presentation/bloc/library/library_event.dart';
+import 'package:pixel_player/presentation/bloc/library/library_state.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/presentation/widgets/queue_bottom_sheet.dart';
+import 'package:pixel_player/presentation/widgets/sleep_timer_dialog.dart';
 
 class PlayerScreen extends StatefulWidget {
   final Song song;
@@ -197,31 +201,70 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
               ),
               const SizedBox(height: 30),
-              // Song Info
+              // Song Info with Heart (Favorite) Button
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
                   children: [
-                    Text(
-                      currentSong.title,
-                      style: GoogleFonts.outfit(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            currentSong.title,
+                            style: GoogleFonts.outfit(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${currentSong.artist} • ${currentSong.album}',
+                            style: GoogleFonts.outfit(
+                              fontSize: 14,
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${currentSong.artist} • ${currentSong.album}',
-                      style: GoogleFonts.outfit(
-                        fontSize: 15,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                      ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Builder(
+                      builder: (context) {
+                        final libState = context.watch<LibraryBloc>().state;
+                        bool isFavorite = false;
+                        if (libState is LibraryLoaded) {
+                          final favIndex = libState.playlists.indexWhere((p) => p.name.toLowerCase() == 'favorites');
+                          if (favIndex != -1) {
+                            isFavorite = libState.playlists[favIndex].songs.any((s) => s.id == currentSong.id);
+                          }
+                        }
+
+                        return IconButton(
+                          icon: Icon(
+                            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                            color: isFavorite ? Colors.redAccent : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                          ),
+                          iconSize: 28,
+                          onPressed: () {
+                            context.read<LibraryBloc>().add(ToggleFavoriteEvent(currentSong));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  isFavorite
+                                      ? 'Removed from Favorites'
+                                      : 'Added to Favorites',
+                                  style: GoogleFonts.outfit(),
+                                ),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -400,7 +443,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               const SizedBox(height: 16),
               Wrap(
                 spacing: 12,
-                children: [0.75, 1.0, 1.25, 1.5, 2.0].map((rate) {
+                children: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((rate) {
                   final isSelected = (rate - currentRate).abs() < 0.01;
                   return ChoiceChip(
                     label: Text('${rate}x'),
@@ -413,6 +456,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                     },
                   );
                 }).toList(),
+              ),
+              const Divider(height: 32),
+              ListTile(
+                leading: const Icon(Icons.bedtime_rounded),
+                title: Text('Sleep Timer', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  SleepTimerDialog.show(context);
+                },
               ),
             ],
           ),
