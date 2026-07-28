@@ -126,7 +126,7 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> {
 
           return MaterialApp(
             navigatorKey: _navigatorKey,
-            title: 'PixelPlayer',
+            title: 'BlackMusic',
             debugShowCheckedModeBanner: false,
             theme: light,
             darkTheme: dark,

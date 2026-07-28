@@ -67,7 +67,7 @@ class DownloadNotificationService {
         ongoing: true,
         autoCancel: false,
         color: _primaryPurple,
-        subText: 'Pixel Player',
+        subText: 'BlackMusic',
         category: AndroidNotificationCategory.progress,
         styleInformation: BigTextStyleInformation(
           '$statusText • $safeProgress%',

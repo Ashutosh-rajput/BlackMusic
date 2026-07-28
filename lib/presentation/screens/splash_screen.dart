@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/library/library_event.dart';
@@ -83,24 +84,24 @@ class _SplashScreenState extends State<SplashScreen>
               ScaleTransition(
                 scale: _scaleAnimation,
                 child: Container(
-                  width: 110,
-                  height: 110,
+                  width: 170,
+                  height: 170,
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.15),
+                    color: Colors.white.withValues(alpha: 0.95),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 30,
-                        spreadRadius: 5,
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 36,
+                        spreadRadius: 6,
                       ),
                     ],
                   ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.graphic_eq_rounded,
-                      size: 64,
-                      color: Color(0xFF00E676),
+                  child: Center(
+                    child: SvgPicture.asset(
+                      'assets/logo.svg',
+                      fit: BoxFit.contain,
                     ),
                   ),
                 ),
@@ -111,9 +112,9 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Column(
                   children: [
                     Text(
-                      'PixelPlayer',
+                      'blackmusic',
                       style: GoogleFonts.outfit(
-                        fontSize: 36,
+                        fontSize: 38,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                         letterSpacing: 1.2,
