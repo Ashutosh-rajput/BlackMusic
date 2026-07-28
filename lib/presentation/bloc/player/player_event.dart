@@ -122,6 +122,14 @@ class ToggleShuffleEvent extends PlayerEvent {
   const ToggleShuffleEvent();
 }
 
+class SetShuffleEvent extends PlayerEvent {
+  final bool enabled;
+  const SetShuffleEvent(this.enabled);
+
+  @override
+  List<Object?> get props => [enabled];
+}
+
 class ToggleRepeatEvent extends PlayerEvent {
   const ToggleRepeatEvent();
 }

@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerEvent, PlayerState;
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/services/audio_service.dart';
+import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 
 class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   final AudioPlayerService _audioService;
   final MusicRepository? _repository;
+  final SettingsService? _settingsService;
   StreamSubscription? _positionSubscription;
   StreamSubscription? _durationSubscription;
   StreamSubscription? _playerStateSubscription;
@@ -27,9 +30,16 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   PlayerBloc({
     required AudioPlayerService audioService,
     MusicRepository? repository,
+    SettingsService? settingsService,
   })  : _audioService = audioService,
         _repository = repository,
+        _settingsService = settingsService,
         super(const PlayerInitial()) {
+    _isShuffle = settingsService?.shuffleByDefault ?? false;
+    _autoPlayNext = settingsService?.autoPlayNext ?? true;
+    _repeatMode = settingsService?.repeatMode ?? 'Off';
+    _isRepeat = _repeatMode != 'Off';
+
     on<PlaySongEvent>(_onPlaySong);
     on<PlayQueueEvent>(_onPlayQueue);
     on<PlaySongAtIndexEvent>(_onPlaySongAtIndex);
@@ -47,6 +57,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<NextSongEvent>(_onNextSong);
     on<PreviousSongEvent>(_onPreviousSong);
     on<ToggleShuffleEvent>(_onToggleShuffle);
+    on<SetShuffleEvent>(_onSetShuffle);
     on<ToggleRepeatEvent>(_onToggleRepeat);
     on<SetRepeatModeEvent>(_onSetRepeatMode);
     on<SetAutoPlayNextEvent>(_onSetAutoPlayNext);
@@ -83,10 +94,24 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     });
 
     _currentIndexSubscription = _audioService.player.currentIndexStream.listen((index) {
-      if (index != null && index >= 0 && index < _queue.length) {
-        final newSong = _queue[index];
-        if (_currentSong?.id != newSong.id) {
-          _currentSong = newSong;
+      if (index != null && index >= 0 && !_isChangingSong) {
+        final list = _audioService.player.sequenceState.sequence;
+        if (index < list.length) {
+          final tag = list[index].tag;
+          if (tag is MediaItem) {
+            final songId = int.tryParse(tag.id);
+            if (songId != null) {
+              final matchingSong = _queue.firstWhere(
+                (s) => s.id == songId,
+                orElse: () => _currentSong ?? (_queue.isNotEmpty ? _queue.first : null)!,
+              );
+              _currentSong = matchingSong;
+              return;
+            }
+          }
+        }
+        if (index < _queue.length) {
+          _currentSong = _queue[index];
         }
       }
     });
@@ -349,9 +374,19 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   void _emitUpdatedQueueState(Emitter<PlayerState> emit) {
     if (state is PlayerPlaying) {
-      emit((state as PlayerPlaying).copyWith(queue: List.from(_queue)));
+      emit((state as PlayerPlaying).copyWith(
+        queue: List.from(_queue),
+        isShuffle: _isShuffle,
+        isRepeat: _isRepeat,
+        repeatMode: _repeatMode,
+      ));
     } else if (state is PlayerPaused) {
-      emit((state as PlayerPaused).copyWith(queue: List.from(_queue)));
+      emit((state as PlayerPaused).copyWith(
+        queue: List.from(_queue),
+        isShuffle: _isShuffle,
+        isRepeat: _isRepeat,
+        repeatMode: _repeatMode,
+      ));
     }
   }
 
@@ -361,13 +396,14 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       if (state is PlayerPlaying) {
         final playing = state as PlayerPlaying;
         emit(PlayerPaused(
-          song: playing.song,
+          song: _currentSong ?? playing.song,
           position: playing.position,
           duration: playing.duration,
           volume: playing.volume,
           playbackRate: playing.playbackRate,
           isShuffle: playing.isShuffle,
           isRepeat: playing.isRepeat,
+          repeatMode: playing.repeatMode,
           queue: playing.queue,
         ));
       }
@@ -495,22 +531,48 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   void _onToggleShuffle(ToggleShuffleEvent event, Emitter<PlayerState> emit) {
     _isShuffle = !_isShuffle;
-    if (_isShuffle && _queue.isNotEmpty) {
-      _originalQueue = List.from(_queue);
-      _queue.shuffle();
-    } else if (!_isShuffle && _originalQueue.isNotEmpty) {
-      _queue = List.from(_originalQueue);
-    }
+    _settingsService?.setShuffleByDefault(_isShuffle);
+    _applyShuffleQueueState();
     _emitUpdatedQueueState(emit);
   }
 
+  void _onSetShuffle(SetShuffleEvent event, Emitter<PlayerState> emit) {
+    _isShuffle = event.enabled;
+    _settingsService?.setShuffleByDefault(_isShuffle);
+    _applyShuffleQueueState();
+    _emitUpdatedQueueState(emit);
+  }
+
+  void _applyShuffleQueueState() {
+    if (_isShuffle && _queue.isNotEmpty) {
+      if (_originalQueue.isEmpty) {
+        _originalQueue = List.from(_queue);
+      }
+      _queue.shuffle();
+      if (_currentSong != null) {
+        _queue.removeWhere((s) => s.id == _currentSong!.id);
+        _queue.insert(0, _currentSong!);
+      }
+    } else if (!_isShuffle && _originalQueue.isNotEmpty) {
+      _queue = List.from(_originalQueue);
+    }
+  }
+
   void _onToggleRepeat(ToggleRepeatEvent event, Emitter<PlayerState> emit) {
-    _isRepeat = !_isRepeat;
-    _repeatMode = _isRepeat ? 'One' : 'Off';
+    if (_repeatMode == 'Off') {
+      _repeatMode = 'One';
+      _isRepeat = true;
+    } else if (_repeatMode == 'One') {
+      _repeatMode = 'All';
+      _isRepeat = true;
+    } else {
+      _repeatMode = 'Off';
+      _isRepeat = false;
+    }
     if (state is PlayerPlaying) {
-      emit((state as PlayerPlaying).copyWith(isRepeat: _isRepeat));
+      emit((state as PlayerPlaying).copyWith(isRepeat: _isRepeat, repeatMode: _repeatMode));
     } else if (state is PlayerPaused) {
-      emit((state as PlayerPaused).copyWith(isRepeat: _isRepeat));
+      emit((state as PlayerPaused).copyWith(isRepeat: _isRepeat, repeatMode: _repeatMode));
     }
   }
 
@@ -518,9 +580,9 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _repeatMode = event.mode;
     _isRepeat = event.mode != 'Off';
     if (state is PlayerPlaying) {
-      emit((state as PlayerPlaying).copyWith(isRepeat: _isRepeat));
+      emit((state as PlayerPlaying).copyWith(isRepeat: _isRepeat, repeatMode: _repeatMode));
     } else if (state is PlayerPaused) {
-      emit((state as PlayerPaused).copyWith(isRepeat: _isRepeat));
+      emit((state as PlayerPaused).copyWith(isRepeat: _isRepeat, repeatMode: _repeatMode));
     }
   }
 

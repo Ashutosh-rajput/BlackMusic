@@ -212,6 +212,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   setState(() => _shuffleByDefault = val);
                   _settingsService.setShuffleByDefault(val);
+                  context.read<PlayerBloc>().add(SetShuffleEvent(val));
                 },
               ),
               _divider(),

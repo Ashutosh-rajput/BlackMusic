@@ -74,7 +74,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         bool isPlaying = false;
         bool isLoading = false;
         bool isShuffle = false;
-        bool isRepeat = false;
+        String repeatMode = 'Off';
 
         if (state is PlayerPlaying) {
           currentSong = state.song;
@@ -84,7 +84,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               : currentSong.duration;
           isPlaying = true;
           isShuffle = state.isShuffle;
-          isRepeat = state.isRepeat;
+          repeatMode = state.repeatMode;
         } else if (state is PlayerPaused) {
           currentSong = state.song;
           position = state.position;
@@ -93,7 +93,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               : currentSong.duration;
           isPlaying = false;
           isShuffle = state.isShuffle;
-          isRepeat = state.isRepeat;
+          repeatMode = state.repeatMode;
         } else if (state is PlayerLoading) {
           if (state.song != null) {
             currentSong = state.song!;
@@ -101,7 +101,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           duration = currentSong.duration;
           isLoading = true;
           isShuffle = state.isShuffle;
-          isRepeat = state.isRepeat;
+          repeatMode = state.repeatMode;
         }
 
         final double sliderMax = duration.inMilliseconds.toDouble() > 0
@@ -401,11 +401,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                     IconButton(
                       icon: Icon(
-                        Icons.repeat_rounded,
-                        color: isRepeat
+                        repeatMode == 'One'
+                            ? Icons.repeat_one_rounded
+                            : Icons.repeat_rounded,
+                        color: repeatMode != 'Off'
                             ? theme.colorScheme.secondary
                             : theme.colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
+                      tooltip: 'Repeat Mode: $repeatMode',
                       iconSize: 26,
                       onPressed: () {
                         context.read<PlayerBloc>().add(const ToggleRepeatEvent());

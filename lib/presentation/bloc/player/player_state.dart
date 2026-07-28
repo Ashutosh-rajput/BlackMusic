@@ -16,15 +16,17 @@ class PlayerLoading extends PlayerState {
   final Song? song;
   final bool isShuffle;
   final bool isRepeat;
+  final String repeatMode;
 
   const PlayerLoading({
     this.song,
     this.isShuffle = false,
     this.isRepeat = false,
+    this.repeatMode = 'Off',
   });
 
   @override
-  List<Object?> get props => [song, isShuffle, isRepeat];
+  List<Object?> get props => [song, isShuffle, isRepeat, repeatMode];
 }
 
 class PlayerPlaying extends PlayerState {
@@ -35,6 +37,7 @@ class PlayerPlaying extends PlayerState {
   final double playbackRate;
   final bool isShuffle;
   final bool isRepeat;
+  final String repeatMode;
   final List<Song> queue;
 
   const PlayerPlaying({
@@ -45,6 +48,7 @@ class PlayerPlaying extends PlayerState {
     this.playbackRate = 1.0,
     this.isShuffle = false,
     this.isRepeat = false,
+    this.repeatMode = 'Off',
     this.queue = const [],
   });
 
@@ -56,6 +60,7 @@ class PlayerPlaying extends PlayerState {
     double? playbackRate,
     bool? isShuffle,
     bool? isRepeat,
+    String? repeatMode,
     List<Song>? queue,
   }) {
     return PlayerPlaying(
@@ -66,6 +71,7 @@ class PlayerPlaying extends PlayerState {
       playbackRate: playbackRate ?? this.playbackRate,
       isShuffle: isShuffle ?? this.isShuffle,
       isRepeat: isRepeat ?? this.isRepeat,
+      repeatMode: repeatMode ?? this.repeatMode,
       queue: queue ?? this.queue,
     );
   }
@@ -79,6 +85,7 @@ class PlayerPlaying extends PlayerState {
         playbackRate,
         isShuffle,
         isRepeat,
+        repeatMode,
         queue,
       ];
 }
@@ -91,6 +98,7 @@ class PlayerPaused extends PlayerState {
   final double playbackRate;
   final bool isShuffle;
   final bool isRepeat;
+  final String repeatMode;
   final List<Song> queue;
 
   const PlayerPaused({
@@ -101,6 +109,7 @@ class PlayerPaused extends PlayerState {
     this.playbackRate = 1.0,
     this.isShuffle = false,
     this.isRepeat = false,
+    this.repeatMode = 'Off',
     this.queue = const [],
   });
 
@@ -112,6 +121,7 @@ class PlayerPaused extends PlayerState {
     double? playbackRate,
     bool? isShuffle,
     bool? isRepeat,
+    String? repeatMode,
     List<Song>? queue,
   }) {
     return PlayerPaused(
@@ -122,6 +132,7 @@ class PlayerPaused extends PlayerState {
       playbackRate: playbackRate ?? this.playbackRate,
       isShuffle: isShuffle ?? this.isShuffle,
       isRepeat: isRepeat ?? this.isRepeat,
+      repeatMode: repeatMode ?? this.repeatMode,
       queue: queue ?? this.queue,
     );
   }
@@ -135,6 +146,7 @@ class PlayerPaused extends PlayerState {
         playbackRate,
         isShuffle,
         isRepeat,
+        repeatMode,
         queue,
       ];
 }

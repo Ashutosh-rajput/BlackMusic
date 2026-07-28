@@ -55,6 +55,7 @@ Future<void> getItSetup() async {
     () => PlayerBloc(
       audioService: getIt<AudioPlayerService>(),
       repository: getIt<MusicRepository>(),
+      settingsService: getIt<SettingsService>(),
     ),
     dispose: (bloc) => bloc.close(),
   );
