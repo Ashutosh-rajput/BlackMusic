@@ -137,12 +137,74 @@ class DownloadService {
     downloadQueueNotifier.value = queue;
   }
 
+  Future<List<String>> _getPlaylistTrackUrls(String playlistUrl) async {
+    final trackUrls = <String>[];
+    final yt = YoutubeExplode();
+
+    try {
+      final playlistId = PlaylistId(playlistUrl).value;
+      await for (final video in yt.playlists.getVideos(playlistId)) {
+        trackUrls.add(video.url);
+      }
+    } catch (_) {}
+    yt.close();
+
+    if (trackUrls.isEmpty) {
+      final htmlUrls = await _fetchPlaylistVideoUrlsHtml(playlistUrl);
+      trackUrls.addAll(htmlUrls);
+    }
+
+    return trackUrls;
+  }
+
   /// Enqueue download for background multi-track execution
   Future<void> enqueueDownload({required String url, String? title}) async {
     final cleanUrl = _extractFirstUrl(url.trim());
     if (cleanUrl.isEmpty) return;
-    final downloadId = _downloadId(cleanUrl);
 
+    if (_isPlaylistUrl(cleanUrl)) {
+      final tempId = _downloadId(cleanUrl);
+      final currentList = List<ActiveDownload>.from(downloadQueueNotifier.value);
+      if (!currentList.any((d) => d.id == tempId)) {
+        currentList.add(ActiveDownload(
+          id: tempId,
+          url: cleanUrl,
+          title: title ?? 'Parsing Playlist Tracks...',
+          progress: 0.0,
+          statusMessage: 'Scanning playlist...',
+          status: DownloadStatus.queued,
+        ));
+        downloadQueueNotifier.value = currentList;
+      }
+
+      final trackUrls = await _getPlaylistTrackUrls(cleanUrl);
+
+      // Remove temporary placeholder
+      final updatedList = List<ActiveDownload>.from(downloadQueueNotifier.value);
+      updatedList.removeWhere((d) => d.id == tempId);
+
+      if (trackUrls.isNotEmpty) {
+        for (int i = 0; i < trackUrls.length; i++) {
+          final tUrl = trackUrls[i];
+          final tId = _downloadId(tUrl);
+          if (!updatedList.any((d) => d.id == tId)) {
+            updatedList.add(ActiveDownload(
+              id: tId,
+              url: tUrl,
+              title: 'Playlist Track ${i + 1} of ${trackUrls.length}',
+              progress: 0.0,
+              statusMessage: 'Queued...',
+              status: DownloadStatus.queued,
+            ));
+          }
+        }
+        downloadQueueNotifier.value = updatedList;
+        unawaited(_processQueue());
+        return;
+      }
+    }
+
+    final downloadId = _downloadId(cleanUrl);
     final existingList = List<ActiveDownload>.from(downloadQueueNotifier.value);
     final existingIndex = existingList.indexWhere((d) => d.id == downloadId);
 
