@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
+import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/screens/library_screen.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
 import 'package:pixel_player/presentation/screens/playlists_screen.dart';
@@ -132,25 +132,13 @@ class _MiniPlayerDock extends StatelessWidget {
             ),
             child: Row(
               children: [
-                ClipRRect(
+                AlbumArtWidget(
+                  albumArt: currentSong.albumArt,
+                  width: 44,
+                  height: 44,
                   borderRadius: BorderRadius.circular(10),
-                  child: SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: currentSong.albumArt != null
-                        ? CachedNetworkImage(
-                            imageUrl: currentSong.albumArt!,
-                            fit: BoxFit.cover,
-                            errorWidget: (ctx, url, err) => Container(
-                              color: theme.colorScheme.primaryContainer,
-                              child: const Icon(Icons.music_note, size: 24),
-                            ),
-                          )
-                        : Container(
-                            color: theme.colorScheme.primaryContainer,
-                            child: const Icon(Icons.music_note, size: 24),
-                          ),
-                  ),
+                  fallbackIcon: Icons.music_note_rounded,
+                  iconSize: 24,
                 ),
                 const SizedBox(width: 12),
                 Expanded(

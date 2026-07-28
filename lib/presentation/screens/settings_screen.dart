@@ -26,6 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String _repeatMode;
   late bool _shuffleByDefault;
   late bool _resumeLastSong;
+  late bool _showPlayerWaveform;
   late double _defaultVolume;
 
   // Download Settings State
@@ -83,6 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _repeatMode = _settingsService.repeatMode;
     _shuffleByDefault = _settingsService.shuffleByDefault;
     _resumeLastSong = _settingsService.resumeLastSong;
+    _showPlayerWaveform = _settingsService.showPlayerWaveform;
     _defaultVolume = _settingsService.defaultVolume;
 
     _downloadQuality = _settingsService.downloadQuality;
@@ -220,6 +222,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   setState(() => _resumeLastSong = val);
                   _settingsService.setResumeLastSong(val);
+                },
+              ),
+              _divider(),
+              SwitchListTile(
+                title: _tileTitle('Player Audio Waveform'),
+                subtitle: _tileSubtitle('Show dynamic animated wave visualizer in player screen'),
+                value: _showPlayerWaveform,
+                activeThumbColor: _accentColor,
+                onChanged: (val) {
+                  setState(() => _showPlayerWaveform = val);
+                  _settingsService.setShowPlayerWaveform(val);
                 },
               ),
               _divider(),

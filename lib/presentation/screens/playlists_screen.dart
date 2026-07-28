@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pixel_player/data/models/playlist_model.dart';
 import 'package:pixel_player/data/models/song_model.dart';
+import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/library/library_event.dart';
 import 'package:pixel_player/presentation/bloc/library/library_state.dart';
@@ -10,7 +11,6 @@ import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 class PlaylistsScreen extends StatelessWidget {
   const PlaylistsScreen({super.key});
@@ -291,25 +291,13 @@ class PlaylistsScreen extends StatelessWidget {
                             : playlist.songs.map((song) {
                                 final artDim = context.watch<ThemeCubit>().state.albumArtDimension * 0.85;
                                 return ListTile(
-                                  leading: ClipRRect(
+                                  leading: AlbumArtWidget(
+                                    albumArt: song.albumArt,
+                                    width: artDim,
+                                    height: artDim,
                                     borderRadius: BorderRadius.circular(8),
-                                    child: SizedBox(
-                                      width: artDim,
-                                      height: artDim,
-                                      child: song.albumArt != null
-                                          ? CachedNetworkImage(
-                                              imageUrl: song.albumArt!,
-                                              fit: BoxFit.cover,
-                                              errorWidget: (_, __, ___) => Container(
-                                                color: theme.colorScheme.primaryContainer,
-                                                child: const Icon(Icons.music_note, size: 20),
-                                              ),
-                                            )
-                                          : Container(
-                                              color: theme.colorScheme.primaryContainer,
-                                              child: const Icon(Icons.music_note, size: 20),
-                                            ),
-                                    ),
+                                    fallbackIcon: Icons.music_note_rounded,
+                                    iconSize: 20,
                                   ),
                                   title: Text(
                                     song.title,

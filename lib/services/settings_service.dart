@@ -63,24 +63,34 @@ class SettingsService {
   static const _keyLastPlayedPositionMs = 'setting_last_played_position_ms';
   static const _keySearchHistoryList = 'setting_search_history_list';
 
+  static const _keyShowPlayerWaveform = 'setting_show_player_waveform';
+
   // Getters
   bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
   String get repeatMode => _prefs.getString(_keyRepeatMode) ?? 'Off';
   bool get shuffleByDefault => _prefs.getBool(_keyShuffleByDefault) ?? false;
   bool get resumeLastSong => _prefs.getBool(_keyResumeLastSong) ?? true;
   double get defaultVolume => _prefs.getDouble(_keyDefaultVolume) ?? 0.8;
-  String get downloadQuality => _prefs.getString(_keyDownloadQuality) ?? 'Best';
+  String get downloadQuality =>
+      _prefs.getString(_keyDownloadQuality) ?? 'Best';
   String get downloadFormat => _prefs.getString(_keyDownloadFormat) ?? 'M4A';
-  bool get autoDownloadPlaylistMetadata => _prefs.getBool(_keyAutoDownloadPlaylistMetadata) ?? true;
-  bool get skipAlreadyDownloaded => _prefs.getBool(_keySkipAlreadyDownloaded) ?? true;
-  bool get downloadOnlyOnWifi => _prefs.getBool(_keyDownloadOnlyOnWifi) ?? false;
-  int get maxSimultaneousDownloads => _prefs.getInt(_keyMaxSimultaneousDownloads) ?? 2;
+  bool get autoDownloadPlaylistMetadata =>
+      _prefs.getBool(_keyAutoDownloadPlaylistMetadata) ?? true;
+  bool get skipAlreadyDownloaded =>
+      _prefs.getBool(_keySkipAlreadyDownloaded) ?? true;
+  bool get downloadOnlyOnWifi =>
+      _prefs.getBool(_keyDownloadOnlyOnWifi) ?? false;
+  int get maxSimultaneousDownloads =>
+      _prefs.getInt(_keyMaxSimultaneousDownloads) ?? 2;
   String get themeMode => _prefs.getString(_keyThemeMode) ?? 'Dark';
   int get accentColorIndex => _prefs.getInt(_keyAccentColorIndex) ?? 0;
   bool get amoledBlackMode => _prefs.getBool(_keyAmoledBlackMode) ?? true;
   String get fontSize => _prefs.getString(_keyFontSize) ?? 'Medium';
   String get albumArtSize => _prefs.getString(_keyAlbumArtSize) ?? 'Medium';
-  bool get autoScanMusicFolder => _prefs.getBool(_keyAutoScanMusicFolder) ?? true;
+  bool get autoScanMusicFolder =>
+      _prefs.getBool(_keyAutoScanMusicFolder) ?? false;
+  bool get showPlayerWaveform =>
+      _prefs.getBool(_keyShowPlayerWaveform) ?? true;
   bool get ignoreShortAudio => _prefs.getBool(_keyIgnoreShortAudio) ?? true;
   bool get showHiddenFiles => _prefs.getBool(_keyShowHiddenFiles) ?? false;
   bool get includeOnlineResults => _prefs.getBool(_keyIncludeOnlineResults) ?? true;
@@ -111,6 +121,7 @@ class SettingsService {
   Future<void> setFontSize(String value) => _prefs.setString(_keyFontSize, value);
   Future<void> setAlbumArtSize(String value) => _prefs.setString(_keyAlbumArtSize, value);
   Future<void> setAutoScanMusicFolder(bool value) => _prefs.setBool(_keyAutoScanMusicFolder, value);
+  Future<void> setShowPlayerWaveform(bool value) => _prefs.setBool(_keyShowPlayerWaveform, value);
   Future<void> setIgnoreShortAudio(bool value) => _prefs.setBool(_keyIgnoreShortAudio, value);
   Future<void> setShowHiddenFiles(bool value) => _prefs.setBool(_keyShowHiddenFiles, value);
   Future<void> setIncludeOnlineResults(bool value) => _prefs.setBool(_keyIncludeOnlineResults, value);

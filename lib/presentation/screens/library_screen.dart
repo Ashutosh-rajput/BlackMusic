@@ -13,7 +13,9 @@ import 'package:pixel_player/presentation/bloc/library/library_event.dart';
 import 'package:pixel_player/presentation/bloc/library/library_state.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
+import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
+import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/folder_picker_dialog.dart';
 import 'package:pixel_player/presentation/widgets/download_queue_sheet.dart';
 import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
@@ -660,30 +662,40 @@ class _SongListTile extends StatelessWidget {
     final theme = Theme.of(context);
     final themeState = context.watch<ThemeCubit>().state;
     final artDimension = themeState.albumArtDimension;
+    final playerState = context.watch<PlayerBloc>().state;
+
+    final isCurrentSong =
+        (playerState is PlayerPlaying && playerState.song.id == song.id) ||
+            (playerState is PlayerPaused && playerState.song.id == song.id);
+    final isPlaying =
+        playerState is PlayerPlaying && playerState.song.id == song.id;
+
+    final titleColor =
+        isCurrentSong ? theme.colorScheme.primary : theme.colorScheme.onSurface;
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(vertical: 4),
-      leading: Container(
+      leading: AlbumArtWidget(
+        albumArt: song.albumArt,
         width: artDimension,
         height: artDimension,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Center(
-          child: Icon(
-            Icons.music_note_rounded,
-            color: theme.colorScheme.onPrimaryContainer,
-            size: (artDimension * 0.5).clamp(16.0, 36.0),
-          ),
-        ),
+        borderRadius: BorderRadius.circular(8),
+        fallbackIcon:
+            isCurrentSong ? Icons.graphic_eq_rounded : Icons.music_note_rounded,
+        fallbackBgColor: isCurrentSong
+            ? theme.colorScheme.primary
+            : theme.colorScheme.primaryContainer,
+        fallbackIconColor: isCurrentSong
+            ? theme.colorScheme.onPrimary
+            : theme.colorScheme.onPrimaryContainer,
       ),
       title: Text(
         song.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: GoogleFonts.outfit(
-          fontWeight: FontWeight.w600,
+          fontWeight: isCurrentSong ? FontWeight.bold : FontWeight.w600,
+          color: titleColor,
         ),
       ),
       subtitle: Text(
@@ -691,16 +703,100 @@ class _SongListTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: GoogleFonts.outfit(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+          color: isCurrentSong
+              ? theme.colorScheme.primary.withValues(alpha: 0.8)
+              : theme.colorScheme.onSurface.withValues(alpha: 0.6),
         ),
       ),
-      trailing: Text(
-        formatDuration(song.duration),
-        style: GoogleFonts.outfit(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-        ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isPlaying)
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: _PlayingEqualizerBars(),
+            )
+          else if (isCurrentSong)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Icon(Icons.pause_circle_rounded,
+                  color: theme.colorScheme.primary, size: 20),
+            ),
+          Text(
+            formatDuration(song.duration),
+            style: GoogleFonts.outfit(
+              color: isCurrentSong
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              fontWeight: isCurrentSong ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
       ),
       onTap: onTap,
+    );
+  }
+}
+
+class _PlayingEqualizerBars extends StatefulWidget {
+  const _PlayingEqualizerBars();
+
+  @override
+  State<_PlayingEqualizerBars> createState() => _PlayingEqualizerBarsState();
+}
+
+class _PlayingEqualizerBarsState extends State<_PlayingEqualizerBars>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+
+    return AnimatedBuilder(
+      animation: _animController,
+      builder: (context, _) {
+        final value = _animController.value;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            _bar((8 + (value * 12)).clamp(4.0, 20.0), color),
+            const SizedBox(width: 2.5),
+            _bar((18 - (value * 12)).clamp(4.0, 20.0), color),
+            const SizedBox(width: 2.5),
+            _bar((6 + (value * 14)).clamp(4.0, 20.0), color),
+            const SizedBox(width: 2.5),
+            _bar((16 - (value * 10)).clamp(4.0, 20.0), color),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _bar(double height, Color color) {
+    return Container(
+      width: 3,
+      height: height,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(1.5),
+      ),
     );
   }
 }

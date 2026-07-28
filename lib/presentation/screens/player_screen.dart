@@ -1,7 +1,7 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/core/utils/duration_formatter.dart';
 import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
@@ -10,6 +10,9 @@ import 'package:pixel_player/presentation/bloc/library/library_state.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
+import 'package:pixel_player/core/di/injection_container.dart';
+import 'package:pixel_player/services/settings_service.dart';
+import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/queue_bottom_sheet.dart';
 import 'package:pixel_player/presentation/widgets/sleep_timer_dialog.dart';
 
@@ -23,8 +26,9 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _rotationController;
+  late AnimationController _waveController;
   bool _isDragging = false;
   double _dragPosition = 0.0;
 
@@ -35,16 +39,22 @@ class _PlayerScreenState extends State<PlayerScreen>
       duration: const Duration(seconds: 20),
       vsync: this,
     );
+    _waveController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
 
     final playerState = context.read<PlayerBloc>().state;
     if (playerState is PlayerPlaying) {
       _rotationController.repeat();
+      _waveController.repeat();
     }
   }
 
   @override
   void dispose() {
     _rotationController.dispose();
+    _waveController.dispose();
     super.dispose();
   }
 
@@ -53,9 +63,15 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (!_rotationController.isAnimating) {
         _rotationController.repeat();
       }
+      if (!_waveController.isAnimating) {
+        _waveController.repeat();
+      }
     } else {
       if (_rotationController.isAnimating) {
         _rotationController.stop();
+      }
+      if (_waveController.isAnimating) {
+        _waveController.stop();
       }
     }
   }
@@ -173,28 +189,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                           ),
                         ],
                       ),
-                      child: ClipOval(
-                        child: currentSong.albumArt != null
-                            ? CachedNetworkImage(
-                                imageUrl: currentSong.albumArt!,
-                                fit: BoxFit.cover,
-                                placeholder: (ctx, url) => Container(
-                                  color: theme.colorScheme.surfaceContainerHigh,
-                                  child: const Icon(Icons.music_note, size: 80),
-                                ),
-                                errorWidget: (ctx, url, err) => Container(
-                                  color: theme.colorScheme.surfaceContainerHigh,
-                                  child: const Icon(Icons.music_note, size: 80),
-                                ),
-                              )
-                            : Container(
-                                color: theme.colorScheme.primaryContainer,
-                                child: Icon(
-                                  Icons.disc_full_rounded,
-                                  size: 140,
-                                  color: theme.colorScheme.onPrimaryContainer,
-                                ),
-                              ),
+                      child: AlbumArtWidget(
+                        albumArt: currentSong.albumArt,
+                        width: 280,
+                        height: 280,
+                        isCircular: true,
+                        fallbackIcon: Icons.disc_full_rounded,
+                        iconSize: 140,
                       ),
                     ),
                   ),
@@ -270,33 +271,50 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
               ),
               const SizedBox(height: 20),
-              // Progress Slider & Timers
+              // Progress Slider with Live Sine Wave Track & Timers
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
                   children: [
-                    Slider(
-                      min: 0,
-                      max: sliderMax,
-                      value: sliderValue,
-                      onChangeStart: (value) {
-                        setState(() {
-                          _isDragging = true;
-                          _dragPosition = value;
-                        });
-                      },
-                      onChanged: (value) {
-                        setState(() {
-                          _dragPosition = value;
-                        });
-                      },
-                      onChangeEnd: (value) {
-                        setState(() {
-                          _isDragging = false;
-                        });
-                        context.read<PlayerBloc>().add(
-                              SeekEvent(Duration(milliseconds: value.toInt())),
-                            );
+                    AnimatedBuilder(
+                      animation: _waveController,
+                      builder: (context, child) {
+                        final showWave = getIt<SettingsService>().showPlayerWaveform;
+                        return SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackShape: SineWaveSliderTrackShape(
+                              waveAnimationValue: _waveController.value,
+                              isPlaying: isPlaying && showWave,
+                            ),
+                            activeTrackColor: theme.colorScheme.primary,
+                            inactiveTrackColor: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                            thumbColor: theme.colorScheme.primary,
+                          ),
+                          child: Slider(
+                            min: 0,
+                            max: sliderMax,
+                            value: sliderValue,
+                            onChangeStart: (value) {
+                              setState(() {
+                                _isDragging = true;
+                                _dragPosition = value;
+                              });
+                            },
+                            onChanged: (value) {
+                              setState(() {
+                                _dragPosition = value;
+                              });
+                            },
+                            onChangeEnd: (value) {
+                              setState(() {
+                                _isDragging = false;
+                              });
+                              context.read<PlayerBloc>().add(
+                                    SeekEvent(Duration(milliseconds: value.toInt())),
+                                  );
+                            },
+                          ),
+                        );
                       },
                     ),
                     Padding(
@@ -475,5 +493,93 @@ class _PlayerScreenState extends State<PlayerScreen>
         );
       },
     );
+  }
+}
+
+class SineWaveSliderTrackShape extends RoundedRectSliderTrackShape {
+  final double waveAnimationValue;
+  final bool isPlaying;
+
+  SineWaveSliderTrackShape({
+    required this.waveAnimationValue,
+    required this.isPlaying,
+  });
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isEnabled = true,
+    bool isDiscrete = false,
+    required TextDirection textDirection,
+    double additionalActiveTrackHeight = 0,
+  }) {
+    final Rect trackRect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+
+    final Canvas canvas = context.canvas;
+    final activeColor = sliderTheme.activeTrackColor ?? Colors.purpleAccent;
+    final inactiveColor = sliderTheme.inactiveTrackColor ?? Colors.white24;
+
+    // 1. Inactive track (right side of thumb handle)
+    final inactivePaint = Paint()
+      ..color = inactiveColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.round;
+
+    if (thumbCenter.dx < trackRect.right) {
+      canvas.drawLine(
+        Offset(thumbCenter.dx, trackRect.center.dy),
+        Offset(trackRect.right, trackRect.center.dy),
+        inactivePaint,
+      );
+    }
+
+    // 2. Active track (left side of thumb handle) with animated Sine Wave
+    final activeWidth = thumbCenter.dx - trackRect.left;
+    if (activeWidth > 0) {
+      final activePaint = Paint()
+        ..color = activeColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = isPlaying ? 3.5 : 3.0
+        ..strokeCap = StrokeCap.round;
+
+      if (!isPlaying || activeWidth < 12) {
+        canvas.drawLine(
+          Offset(trackRect.left, trackRect.center.dy),
+          Offset(thumbCenter.dx, trackRect.center.dy),
+          activePaint,
+        );
+      } else {
+        final path = Path();
+        path.moveTo(trackRect.left, trackRect.center.dy);
+
+        final double amplitude = 5.5;
+        final double frequency = 0.08;
+        final double phase = waveAnimationValue * 2 * math.pi;
+
+        for (double x = trackRect.left; x <= thumbCenter.dx; x += 1.5) {
+          final relativeX = x - trackRect.left;
+          final double edgeFade =
+              math.sin(math.pi * (relativeX / activeWidth)).clamp(0.0, 1.0);
+          final double y = trackRect.center.dy +
+              (math.sin((relativeX * frequency) - phase) * amplitude * edgeFade);
+          path.lineTo(x, y);
+        }
+
+        canvas.drawPath(path, activePaint);
+      }
+    }
   }
 }
