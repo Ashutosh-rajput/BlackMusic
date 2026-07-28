@@ -92,18 +92,25 @@ class LibraryScreen extends StatelessWidget {
                       }
 
                       final categories = ['All', 'Folders', 'Albums', 'Artists'];
-                      return SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: categories.map((cat) {
-                            final isSelected = selectedCategory == cat;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
+                      return Row(
+                        children: categories.map((cat) {
+                          final isSelected = selectedCategory == cat;
+                          return Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 3),
                               child: ChoiceChip(
-                                label: Text(cat),
+                                label: Center(
+                                  child: Text(
+                                    cat,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                                 selected: isSelected,
                                 selectedColor: theme.colorScheme.primary,
+                                showCheckmark: false,
                                 labelStyle: GoogleFonts.outfit(
+                                  fontSize: 13,
                                   color: isSelected
                                       ? Colors.white
                                       : theme.colorScheme.onSurface,
@@ -117,9 +124,9 @@ class LibraryScreen extends StatelessWidget {
                                       .add(SelectCategoryEvent(cat));
                                 },
                               ),
-                            );
-                          }).toList(),
-                        ),
+                            ),
+                          );
+                        }).toList(),
                       );
                     },
                   ),

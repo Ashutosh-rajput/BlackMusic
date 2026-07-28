@@ -4,6 +4,8 @@ import 'package:pixel_player/core/di/injection_container.dart';
 import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/library/library_event.dart';
+import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
+import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -175,6 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   setState(() => _autoPlayNext = val);
                   _settingsService.setAutoPlayNext(val);
+                  context.read<PlayerBloc>().add(SetAutoPlayNextEvent(val));
                 },
               ),
               _divider(),
@@ -195,6 +198,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (val != null) {
                       setState(() => _repeatMode = val);
                       _settingsService.setRepeatMode(val);
+                      context.read<PlayerBloc>().add(SetRepeatModeEvent(val));
                     }
                   },
                 ),
@@ -232,6 +236,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onChanged: (val) {
                     setState(() => _defaultVolume = val);
                     _settingsService.setDefaultVolume(val);
+                    context.read<PlayerBloc>().add(SetVolumeEvent(val));
                   },
                 ),
                 trailing: Text(

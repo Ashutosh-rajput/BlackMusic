@@ -126,6 +126,22 @@ class ToggleRepeatEvent extends PlayerEvent {
   const ToggleRepeatEvent();
 }
 
+class SetRepeatModeEvent extends PlayerEvent {
+  final String mode;
+  const SetRepeatModeEvent(this.mode);
+
+  @override
+  List<Object?> get props => [mode];
+}
+
+class SetAutoPlayNextEvent extends PlayerEvent {
+  final bool enabled;
+  const SetAutoPlayNextEvent(this.enabled);
+
+  @override
+  List<Object?> get props => [enabled];
+}
+
 class PositionChangedEvent extends PlayerEvent {
   final Duration position;
   const PositionChangedEvent(this.position);
