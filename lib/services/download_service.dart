@@ -7,11 +7,14 @@ import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:logger/logger.dart';
 
+import 'package:pixel_player/services/download_notification_service.dart';
+
 final _logger = Logger();
 
 class DownloadService {
   final MusicRepository _repository;
   final Dio _dio = Dio();
+  final DownloadNotificationService _notificationService = DownloadNotificationService();
 
   DownloadService(this._repository);
 
@@ -150,6 +153,7 @@ class DownloadService {
 
         final totalBytes = selectedStream.size.totalBytes;
         final streamUrl = selectedStream.url;
+        final notifId = videoId.hashCode.abs();
         _logger.i('[YT_DOWNLOAD 1/3] Video: "$title" ($videoId)');
         _logger.i('[YT_DOWNLOAD 2/3] Stream selected: $ext, bitrate: ${selectedStream.bitrate}, totalBytes: $totalBytes');
         assert(() {
@@ -175,9 +179,18 @@ class DownloadService {
               final effectiveTotal = total > 0 ? total : totalBytes;
               if (effectiveTotal > 0) {
                 final p = 0.30 + (received / effectiveTotal) * 0.65;
+                final progressInt = (p * 100).toInt();
+                final recMb = (received / 1024 / 1024).toStringAsFixed(1);
+                final totMb = (effectiveTotal / 1024 / 1024).toStringAsFixed(1);
                 onProgress(
                   p.clamp(0.0, 0.95),
-                  'Downloading "${video.title}"... (${(p * 100).toInt()}%)',
+                  'Downloading "${video.title}"... ($progressInt%)',
+                );
+                _notificationService.showDownloadProgress(
+                  id: notifId,
+                  title: video.title,
+                  statusText: '$recMb MB / $totMb MB',
+                  progress: progressInt,
                 );
               } else {
                 onProgress(
@@ -200,14 +213,16 @@ class DownloadService {
 
               if (totalBytes > 0) {
                 final p = 0.30 + (downloaded / totalBytes) * 0.65;
+                final progressInt = (p * 100).toInt();
                 onProgress(
                   p.clamp(0.0, 0.95),
-                  'Downloading "${video.title}"... (${(p * 100).toInt()}%)',
+                  'Downloading "${video.title}"... ($progressInt%)',
                 );
-              } else {
-                onProgress(
-                  0.50,
-                  'Downloading "${video.title}"... ${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB',
+                _notificationService.showDownloadProgress(
+                  id: notifId,
+                  title: video.title,
+                  statusText: '$progressInt%',
+                  progress: progressInt,
                 );
               }
             }
@@ -245,6 +260,12 @@ class DownloadService {
 
         await _repository.addSong(song);
         onProgress(1.0, 'Download complete!');
+        await _notificationService.cancelNotification(notifId);
+        await _notificationService.showDownloadCompleted(
+          id: notifId,
+          title: video.title,
+          subTitle: '${video.title} downloaded successfully',
+        );
         return song;
       }
       throw Exception('No valid audio stream found for this video.');
@@ -256,6 +277,11 @@ class DownloadService {
         } catch (_) {}
       }
       _logger.e('YouTube download failed: $e');
+      _notificationService.showDownloadFailed(
+        id: cleanUrl.hashCode.abs(),
+        title: 'Song Download',
+        errorReason: 'Failed to download track',
+      );
       throw Exception(
         'Unable to download this track. The video may be unavailable, age-restricted, or temporarily unsupported.',
       );
@@ -283,6 +309,7 @@ class DownloadService {
     try {
       onProgress(0, 1, 0.05, 'Fetching playlist info...');
       final playlist = await yt.playlists.get(cleanUrl);
+      final playlistNotifId = playlist.id.hashCode.abs();
 
       _logger.i("Title: ${playlist.title}");
       _logger.i("ID: ${playlist.id}");
@@ -335,12 +362,21 @@ class DownloadService {
 
         final videoUrl = videoUrls[i];
         final index = i + 1;
+        final overallPercent = ((index / totalSongs) * 100).toInt();
 
         try {
           final song = await _downloadYoutube(
             videoUrl,
             (songProgress, status) {
               onProgress(index, totalSongs, songProgress, status);
+              _notificationService.showPlaylistProgress(
+                id: playlistNotifId,
+                playlistTitle: playlist.title,
+                currentSongTitle: status,
+                currentTrack: index,
+                totalTracks: totalSongs,
+                overallProgress: overallPercent,
+              );
             },
           );
           if (song != null) {
@@ -352,6 +388,12 @@ class DownloadService {
       }
 
       _logger.i('Finished downloading ${downloadedSongs.length}/$totalSongs playlist tracks.');
+      await _notificationService.cancelNotification(playlistNotifId);
+      await _notificationService.showDownloadCompleted(
+        id: playlistNotifId,
+        title: playlist.title,
+        subTitle: '✅ Downloaded ${downloadedSongs.length}/$totalSongs tracks',
+      );
       return downloadedSongs;
     } catch (e) {
       _logger.e('Error downloading playlist: $e');
