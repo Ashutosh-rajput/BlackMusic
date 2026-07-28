@@ -656,7 +656,51 @@ class DownloadService {
   }
 
   bool _isPlaylistUrl(String url) {
-    return url.contains('list=') || url.contains('/playlist');
+    // YouTube Mix radios (list=RD...) are dynamic radio streams, not static playlists.
+    if (url.contains('list=RD')) {
+      return false;
+    }
+    // If it's a dedicated playlist link (youtube.com/playlist?list=...)
+    if (url.contains('/playlist')) {
+      return true;
+    }
+    // If it contains list= without a specific video v= parameter
+    if (url.contains('list=') && !url.contains('v=')) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<List<String>> _fetchPlaylistVideoUrlsHtml(String playlistUrl) async {
+    try {
+      _logger.i('[PLAYLIST_HTML] Fetching playlist HTML via Dio...');
+      final response = await _dio.get(
+        playlistUrl,
+        options: Options(
+          headers: const {
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+          },
+          receiveTimeout: const Duration(seconds: 15),
+          connectTimeout: const Duration(seconds: 10),
+        ),
+      );
+      final html = response.data.toString();
+      final matches = RegExp(r'"videoId":"([a-zA-Z0-9_-]{11})"').allMatches(html);
+      final videoIds = <String>{};
+      for (final match in matches) {
+        final id = match.group(1);
+        if (id != null && id.isNotEmpty) {
+          videoIds.add(id);
+        }
+      }
+      _logger.i(
+          '[PLAYLIST_HTML] Found ${videoIds.length} unique video IDs via HTML fallback');
+      return videoIds.map((id) => 'https://www.youtube.com/watch?v=$id').toList();
+    } catch (e) {
+      _logger.w('[PLAYLIST_HTML] HTML fallback failed: $e');
+      return [];
+    }
   }
 
   Future<List<Song>> downloadPlaylist({
@@ -667,42 +711,68 @@ class DownloadService {
   }) async {
     final yt = YoutubeExplode();
     final downloadedSongs = <Song>[];
+    List<String> trackUrls = [];
 
     try {
       onProgress(0, 1, 0.0, 'Fetching playlist details...');
-      final playlist = await yt.playlists.get(url);
-      final videoList = await yt.playlists.getVideos(playlist.id).toList();
+      try {
+        final playlistId = PlaylistId(url).value;
+        final playlist = await yt.playlists.get(playlistId);
 
-      if (videoList.isEmpty) {
+        onProgress(0, 1, 0.05, 'Loading playlist tracks...');
+        await for (final video in yt.playlists.getVideos(playlist.id)) {
+          trackUrls.add(video.url);
+        }
+      } catch (e) {
+        _logger.w('[PLAYLIST_DOWNLOAD] YoutubeExplode playlist stream notice: $e');
+      }
+
+      // HTML Fallback via Dio regex if YoutubeExplode yielded 0 videos or failed
+      if (trackUrls.isEmpty) {
+        onProgress(0, 1, 0.05, 'Scanning playlist HTML...');
+        trackUrls = await _fetchPlaylistVideoUrlsHtml(url);
+      }
+
+      // Single Video Fallback if URL contains a video ID
+      if (trackUrls.isEmpty) {
+        try {
+          final videoId = VideoId(url).value;
+          trackUrls.add('https://www.youtube.com/watch?v=$videoId');
+        } catch (_) {}
+      }
+
+      if (trackUrls.isEmpty) {
+        yt.close();
         throw Exception('No videos found in this playlist.');
       }
 
-      final totalSongs = videoList.length;
+      final totalSongs = trackUrls.length;
       _logger.i(
-          '[PLAYLIST_DOWNLOAD] Enqueuing $totalSongs tracks from playlist "${playlist.title}"');
+          '[PLAYLIST_DOWNLOAD] Enqueuing $totalSongs tracks from playlist');
 
-      for (int i = 0; i < videoList.length; i++) {
+      for (int i = 0; i < trackUrls.length; i++) {
         if (_isCancelled(downloadId)) {
           _logger.i('[PLAYLIST_DOWNLOAD] Playlist download cancelled.');
           break;
         }
 
-        final video = videoList[i];
-        final videoUrl = video.url;
+        final videoUrl = trackUrls[i];
         final trackNumber = i + 1;
 
-        onProgress(trackNumber, totalSongs, 0.05, video.title);
+        onProgress(trackNumber, totalSongs, 0.05,
+            'Track $trackNumber of $totalSongs');
 
         try {
-          final song = await _downloadFromYoutube(videoUrl, (progress, status) {
-            onProgress(trackNumber, totalSongs, progress, video.title);
+          final song =
+              await _downloadFromYoutube(videoUrl, (progress, status) {
+            onProgress(trackNumber, totalSongs, progress, status);
           }, downloadId);
           if (song != null) {
             downloadedSongs.add(song);
           }
         } catch (e) {
           _logger.w(
-              '[PLAYLIST_DOWNLOAD] Error downloading track $trackNumber (${video.title}): $e');
+              '[PLAYLIST_DOWNLOAD] Error downloading track $trackNumber ($videoUrl): $e');
         }
       }
 

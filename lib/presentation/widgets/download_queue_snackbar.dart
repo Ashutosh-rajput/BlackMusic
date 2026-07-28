@@ -8,16 +8,17 @@ void showDownloadQueuedSnackBar(
   required String title,
   VoidCallback? onViewQueue,
 }) {
+  final messenger = ScaffoldMessenger.of(context);
   final theme = Theme.of(context);
   final colors = theme.colorScheme;
-  final messenger = ScaffoldMessenger.of(context);
 
-  messenger.hideCurrentSnackBar();
+  messenger.clearSnackBars();
   messenger.showSnackBar(
     SnackBar(
       behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 3),
-      elevation: 0,
+      duration: const Duration(seconds: 4),
+      dismissDirection: DismissDirection.horizontal,
+      elevation: 4,
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       padding: EdgeInsets.zero,
       backgroundColor: colors.surfaceContainerHigh,
@@ -76,7 +77,10 @@ void showDownloadQueuedSnackBar(
           : SnackBarAction(
               label: 'QUEUE',
               textColor: colors.primary,
-              onPressed: onViewQueue,
+              onPressed: () {
+                messenger.hideCurrentSnackBar();
+                onViewQueue();
+              },
             ),
     ),
   );

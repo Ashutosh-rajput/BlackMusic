@@ -8,10 +8,16 @@ import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
 
 class DownloadDialog extends StatefulWidget {
   final String? initialUrl;
+  final BuildContext parentContext;
 
-  const DownloadDialog({super.key, this.initialUrl});
+  const DownloadDialog({
+    super.key,
+    this.initialUrl,
+    required this.parentContext,
+  });
 
   static Future<void> show(BuildContext context, {String? initialUrl}) async {
+    final parentCtx = context;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -22,7 +28,10 @@ class DownloadDialog extends StatefulWidget {
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(ctx).viewInsets.bottom,
         ),
-        child: DownloadDialog(initialUrl: initialUrl),
+        child: DownloadDialog(
+          initialUrl: initialUrl,
+          parentContext: parentCtx,
+        ),
       ),
     );
   }
@@ -66,13 +75,19 @@ class _DownloadDialogState extends State<DownloadDialog> {
 
     _downloadService.enqueueDownload(url: url);
 
-    if (mounted) {
+    final parentCtx = widget.parentContext;
+    Navigator.pop(context);
+
+    if (parentCtx.mounted) {
       showDownloadQueuedSnackBar(
-        context,
+        parentCtx,
         title: url,
-        onViewQueue: () => DownloadQueueSheet.show(context),
+        onViewQueue: () {
+          if (parentCtx.mounted) {
+            DownloadQueueSheet.show(parentCtx);
+          }
+        },
       );
-      Navigator.pop(context);
     }
   }
 

@@ -286,6 +286,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                               waveAnimationValue: _waveController.value,
                               isPlaying: isPlaying && showWave,
                             ),
+                            thumbShape: SnakeHeadSliderThumbShape(
+                              thumbRadius: 11.0,
+                              waveAnimationValue: _waveController.value,
+                              isPlaying: isPlaying && showWave,
+                            ),
                             activeTrackColor: theme.colorScheme.primary,
                             inactiveTrackColor: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                             thumbColor: theme.colorScheme.primary,
@@ -581,5 +586,128 @@ class SineWaveSliderTrackShape extends RoundedRectSliderTrackShape {
         canvas.drawPath(path, activePaint);
       }
     }
+  }
+}
+
+class SnakeHeadSliderThumbShape extends SliderComponentShape {
+  final double thumbRadius;
+  final double waveAnimationValue;
+  final bool isPlaying;
+
+  const SnakeHeadSliderThumbShape({
+    this.thumbRadius = 11.0,
+    required this.waveAnimationValue,
+    required this.isPlaying,
+  });
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) {
+    return Size.fromRadius(thumbRadius);
+  }
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final Canvas canvas = context.canvas;
+    final primaryColor = sliderTheme.thumbColor ?? Colors.purpleAccent;
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+
+    if (isPlaying) {
+      final tilt = math.sin(waveAnimationValue * 2 * math.pi) * 0.12;
+      canvas.rotate(tilt);
+    }
+
+    // 1. Draw Snake Head Path (pointing forward ->)
+    final headPath = Path();
+    headPath.moveTo(-thumbRadius * 0.8, -thumbRadius * 0.5);
+    headPath.cubicTo(
+      -thumbRadius * 0.2,
+      -thumbRadius * 0.9,
+      thumbRadius * 0.6,
+      -thumbRadius * 0.7,
+      thumbRadius * 1.2,
+      0.0,
+    );
+    headPath.cubicTo(
+      thumbRadius * 0.6,
+      thumbRadius * 0.7,
+      -thumbRadius * 0.2,
+      thumbRadius * 0.9,
+      -thumbRadius * 0.8,
+      thumbRadius * 0.5,
+    );
+    headPath.close();
+
+    final headPaint = Paint()
+      ..color = primaryColor
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(headPath, headPaint);
+
+    // 2. Draw Snake Eyes
+    final eyePaint = Paint()
+      ..color = isPlaying ? Colors.white : Colors.black87
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(
+      Offset(thumbRadius * 0.4, -thumbRadius * 0.3),
+      1.8,
+      eyePaint,
+    );
+    canvas.drawCircle(
+      Offset(thumbRadius * 0.4, thumbRadius * 0.3),
+      1.8,
+      eyePaint,
+    );
+
+    if (isPlaying) {
+      final pupilPaint = Paint()
+        ..color = Colors.black
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(
+        Offset(thumbRadius * 0.45, -thumbRadius * 0.3),
+        0.8,
+        pupilPaint,
+      );
+      canvas.drawCircle(
+        Offset(thumbRadius * 0.45, thumbRadius * 0.3),
+        0.8,
+        pupilPaint,
+      );
+
+      // Flickering red tongue when playing
+      final tonguePhase = math.sin(waveAnimationValue * 4 * math.pi);
+      if (tonguePhase > 0.2) {
+        final tonguePaint = Paint()
+          ..color = Colors.redAccent
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.4
+          ..strokeCap = StrokeCap.round;
+
+        final tonguePath = Path();
+        tonguePath.moveTo(thumbRadius * 1.2, 0.0);
+        tonguePath.lineTo(thumbRadius * 1.55, 0.0);
+        tonguePath.lineTo(thumbRadius * 1.75, -thumbRadius * 0.22);
+        tonguePath.moveTo(thumbRadius * 1.55, 0.0);
+        tonguePath.lineTo(thumbRadius * 1.75, thumbRadius * 0.22);
+
+        canvas.drawPath(tonguePath, tonguePaint);
+      }
+    }
+
+    canvas.restore();
   }
 }
