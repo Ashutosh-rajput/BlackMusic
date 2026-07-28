@@ -9,6 +9,7 @@ import 'package:pixel_player/presentation/bloc/library/library_state.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
+import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class PlaylistsScreen extends StatelessWidget {
@@ -281,12 +282,13 @@ class PlaylistsScreen extends StatelessWidget {
                                 )
                               ]
                             : playlist.songs.map((song) {
+                                final artDim = context.watch<ThemeCubit>().state.albumArtDimension * 0.85;
                                 return ListTile(
                                   leading: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: SizedBox(
-                                      width: 40,
-                                      height: 40,
+                                      width: artDim,
+                                      height: artDim,
                                       child: song.albumArt != null
                                           ? CachedNetworkImage(
                                               imageUrl: song.albumArt!,

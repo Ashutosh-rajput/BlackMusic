@@ -33,6 +33,30 @@ class ThemeSettingsState extends Equatable {
     );
   }
 
+  double get fontScale {
+    switch (fontSize) {
+      case 'Small':
+        return 0.85;
+      case 'Large':
+        return 1.15;
+      case 'Medium':
+      default:
+        return 1.0;
+    }
+  }
+
+  double get albumArtDimension {
+    switch (albumArtSize) {
+      case 'Compact':
+        return 40.0;
+      case 'Large':
+        return 60.0;
+      case 'Medium':
+      default:
+        return 50.0;
+    }
+  }
+
   @override
   List<Object?> get props => [
         themeMode,

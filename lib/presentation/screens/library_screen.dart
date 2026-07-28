@@ -13,6 +13,7 @@ import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
 import 'package:pixel_player/presentation/widgets/folder_picker_dialog.dart';
 import 'package:pixel_player/presentation/widgets/download_dialog.dart';
+import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
@@ -622,6 +623,7 @@ class _SongListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final artDimension = context.watch<ThemeCubit>().state.albumArtDimension;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -634,8 +636,8 @@ class _SongListTile extends StatelessWidget {
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(10),
           child: SizedBox(
-            width: 50,
-            height: 50,
+            width: artDimension,
+            height: artDimension,
             child: song.albumArt != null
                 ? CachedNetworkImage(
                     imageUrl: song.albumArt!,

@@ -125,6 +125,14 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> {
             theme: light,
             darkTheme: dark,
             themeMode: mode,
+            builder: (context, child) {
+              return MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(themeState.fontScale),
+                ),
+                child: child!,
+              );
+            },
             home: const SplashScreen(),
           );
         },
