@@ -162,8 +162,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 120),
         children: [
-          // 🎵 PLAYBACK SECTION
-          _buildSectionHeader('🎵 Playback'),
+          // PLAYBACK SECTION
+          _buildSectionHeader('Playback'),
           _buildCardContainer(
             isDark: isDark,
             children: [
@@ -244,8 +244,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // 📥 DOWNLOADS SECTION
-          _buildSectionHeader('📥 Downloads'),
+          // DOWNLOADS SECTION
+          _buildSectionHeader('Downloads'),
           _buildCardContainer(
             isDark: isDark,
             children: [
@@ -364,8 +364,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // 🎨 APPEARANCE SECTION
-          _buildSectionHeader('🎨 Appearance'),
+          // APPEARANCE SECTION
+          _buildSectionHeader('Appearance'),
           _buildCardContainer(
             isDark: isDark,
             children: [
@@ -482,8 +482,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // 📚 LIBRARY SECTION
-          _buildSectionHeader('📚 Library'),
+          // LIBRARY SECTION
+          _buildSectionHeader('Library'),
           _buildCardContainer(
             isDark: isDark,
             children: [
@@ -551,8 +551,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // 🔍 SEARCH SECTION
-          _buildSectionHeader('🔍 Search'),
+          // SEARCH SECTION
+          _buildSectionHeader('Search'),
           _buildCardContainer(
             isDark: isDark,
             children: [
@@ -589,8 +589,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // 📡 NETWORK & ADVANCED
-          _buildSectionHeader('📡 Network & Advanced'),
+          // NETWORK & ADVANCED
+          _buildSectionHeader('Network & Advanced'),
           _buildCardContainer(
             isDark: isDark,
             children: [
@@ -630,8 +630,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // 🔔 NOTIFICATIONS SECTION
-          _buildSectionHeader('🔔 Notifications'),
+          // NOTIFICATIONS SECTION
+          _buildSectionHeader('Notifications'),
           _buildCardContainer(
             isDark: isDark,
             children: [
@@ -672,8 +672,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // 💾 STORAGE & CACHE SECTION
-          _buildSectionHeader('💾 Storage & Cache'),
+          // STORAGE & CACHE SECTION
+          _buildSectionHeader('Storage & Cache'),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(

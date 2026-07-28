@@ -28,6 +28,13 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         _repository = repository,
         super(const PlayerInitial()) {
     on<PlaySongEvent>(_onPlaySong);
+    on<PlayQueueEvent>(_onPlayQueue);
+    on<PlaySongAtIndexEvent>(_onPlaySongAtIndex);
+    on<InsertNextEvent>(_onInsertNext);
+    on<AddToQueueEvent>(_onAddToQueue);
+    on<RemoveFromQueueEvent>(_onRemoveFromQueue);
+    on<ReorderQueueEvent>(_onReorderQueue);
+    on<ClearQueueEvent>(_onClearQueue);
     on<PauseEvent>(_onPause);
     on<ResumeEvent>(_onResume);
     on<StopEvent>(_onStop);
@@ -98,11 +105,8 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
   }
 
-  /// Shared internal play method — called by _onPlaySong, _onNextSong, _onPreviousSong.
-  /// Sets _isChangingSong atomically to prevent the stream listener from firing
-  /// a duplicate advance during song transitions.
+  /// Shared internal play method
   Future<void> _playSongInternal(Song song, Emitter<PlayerState> emit) async {
-    // Allow replaying the same song if it has completed (for repeat mode)
     if (_currentSong?.id == song.id &&
         state is PlayerPlaying &&
         _audioService.player.playing &&
@@ -140,7 +144,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     } catch (e) {
       _isChangingSong = false;
       if (e.toString().contains('Loading interrupted')) {
-        return; // Silently handle interruption from rapid skipping
+        return;
       }
       emit(PlayerError('Failed to play song: $e'));
     }
@@ -150,8 +154,115 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     if (event.queue != null && event.queue!.isNotEmpty) {
       _queue = List.from(event.queue!);
       _originalQueue = List.from(event.queue!);
+    } else if (!_queue.any((s) => s.id == event.song.id)) {
+      _queue.add(event.song);
+      _originalQueue.add(event.song);
     }
     await _playSongInternal(event.song, emit);
+  }
+
+  Future<void> _onPlayQueue(PlayQueueEvent event, Emitter<PlayerState> emit) async {
+    if (event.queue.isEmpty) return;
+    _queue = List.from(event.queue);
+    _originalQueue = List.from(event.queue);
+
+    if (_isShuffle) {
+      _queue.shuffle();
+    }
+
+    final safeIndex = event.initialIndex.clamp(0, _queue.length - 1);
+    await _playSongInternal(_queue[safeIndex], emit);
+  }
+
+  Future<void> _onPlaySongAtIndex(PlaySongAtIndexEvent event, Emitter<PlayerState> emit) async {
+    if (event.index < 0 || event.index >= _queue.length) return;
+    await _playSongInternal(_queue[event.index], emit);
+  }
+
+  Future<void> _onInsertNext(InsertNextEvent event, Emitter<PlayerState> emit) async {
+    if (_queue.isEmpty) {
+      _queue = [event.song];
+      _originalQueue = [event.song];
+      await _playSongInternal(event.song, emit);
+      return;
+    }
+
+    final currentIndex = _currentSong != null ? _queue.indexWhere((s) => s.id == _currentSong!.id) : -1;
+    final targetIndex = currentIndex != -1 ? currentIndex + 1 : _queue.length;
+
+    // Remove if already in queue to prevent duplicate confusion
+    _queue.removeWhere((s) => s.id == event.song.id);
+    _originalQueue.removeWhere((s) => s.id == event.song.id);
+
+    final safeTarget = targetIndex.clamp(0, _queue.length);
+    _queue.insert(safeTarget, event.song);
+    _originalQueue.insert(safeTarget, event.song);
+
+    _emitUpdatedQueueState(emit);
+  }
+
+  Future<void> _onAddToQueue(AddToQueueEvent event, Emitter<PlayerState> emit) async {
+    if (_queue.isEmpty) {
+      _queue = [event.song];
+      _originalQueue = [event.song];
+      await _playSongInternal(event.song, emit);
+      return;
+    }
+
+    if (!_queue.any((s) => s.id == event.song.id)) {
+      _queue.add(event.song);
+      _originalQueue.add(event.song);
+    }
+
+    _emitUpdatedQueueState(emit);
+  }
+
+  Future<void> _onRemoveFromQueue(RemoveFromQueueEvent event, Emitter<PlayerState> emit) async {
+    if (event.index < 0 || event.index >= _queue.length) return;
+
+    final removedSong = _queue.removeAt(event.index);
+    _originalQueue.removeWhere((s) => s.id == removedSong.id);
+
+    if (removedSong.id == _currentSong?.id) {
+      if (_queue.isNotEmpty) {
+        final nextIndex = event.index.clamp(0, _queue.length - 1);
+        await _playSongInternal(_queue[nextIndex], emit);
+      } else {
+        await _onStop(const StopEvent(), emit);
+      }
+    } else {
+      _emitUpdatedQueueState(emit);
+    }
+  }
+
+  void _onReorderQueue(ReorderQueueEvent event, Emitter<PlayerState> emit) {
+    if (event.oldIndex < 0 || event.oldIndex >= _queue.length) return;
+    int newIndex = event.newIndex;
+    if (newIndex > event.oldIndex) newIndex -= 1;
+    newIndex = newIndex.clamp(0, _queue.length - 1);
+
+    final item = _queue.removeAt(event.oldIndex);
+    _queue.insert(newIndex, item);
+
+    _emitUpdatedQueueState(emit);
+  }
+
+  void _onClearQueue(ClearQueueEvent event, Emitter<PlayerState> emit) {
+    _queue.clear();
+    _originalQueue.clear();
+    if (_currentSong != null) {
+      _queue.add(_currentSong!);
+      _originalQueue.add(_currentSong!);
+    }
+    _emitUpdatedQueueState(emit);
+  }
+
+  void _emitUpdatedQueueState(Emitter<PlayerState> emit) {
+    if (state is PlayerPlaying) {
+      emit((state as PlayerPlaying).copyWith(queue: List.from(_queue)));
+    } else if (state is PlayerPaused) {
+      emit((state as PlayerPaused).copyWith(queue: List.from(_queue)));
+    }
   }
 
   Future<void> _onPause(PauseEvent event, Emitter<PlayerState> emit) async {
@@ -252,7 +363,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
   }
 
-  /// Directly plays the next song — no intermediate event dispatch, so no race condition gap.
   Future<void> _onNextSong(NextSongEvent event, Emitter<PlayerState> emit) async {
     if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
 
@@ -277,7 +387,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
   }
 
-  /// Directly plays the previous song — no intermediate event dispatch.
   Future<void> _onPreviousSong(PreviousSongEvent event, Emitter<PlayerState> emit) async {
     if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
 
@@ -297,18 +406,12 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   void _onToggleShuffle(ToggleShuffleEvent event, Emitter<PlayerState> emit) {
     _isShuffle = !_isShuffle;
     if (_isShuffle && _queue.isNotEmpty) {
-      // Save original order before shuffling
       _originalQueue = List.from(_queue);
       _queue.shuffle();
     } else if (!_isShuffle && _originalQueue.isNotEmpty) {
-      // Restore original order when shuffle is turned off
       _queue = List.from(_originalQueue);
     }
-    if (state is PlayerPlaying) {
-      emit((state as PlayerPlaying).copyWith(isShuffle: _isShuffle, queue: _queue));
-    } else if (state is PlayerPaused) {
-      emit((state as PlayerPaused).copyWith(isShuffle: _isShuffle, queue: _queue));
-    }
+    _emitUpdatedQueueState(emit);
   }
 
   void _onToggleRepeat(ToggleRepeatEvent event, Emitter<PlayerState> emit) {

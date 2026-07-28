@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:logger/logger.dart';
 
@@ -10,6 +11,10 @@ class DownloadNotificationService {
 
   final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
+
+  static const Color _primaryPurple = Color(0xFF6C5CE7);
+  static const Color _successGreen = Color(0xFF00B894);
+  static const Color _errorRed = Color(0xFFFF7675);
 
   Future<void> init() async {
     if (_isInitialized) return;
@@ -28,7 +33,7 @@ class DownloadNotificationService {
     }
   }
 
-  /// Show progress for single song download
+  /// Show progress for single song download with rich layout & styling
   Future<void> showDownloadProgress({
     required int id,
     required String title,
@@ -38,24 +43,34 @@ class DownloadNotificationService {
   }) async {
     if (!_isInitialized) await init();
     try {
+      final safeProgress = progress.clamp(0, maxProgress);
+
       final androidDetails = AndroidNotificationDetails(
         'download_channel',
-        'Download Progress',
-        channelDescription: 'Notifications for active music downloads',
+        'Active Downloads',
+        channelDescription: 'Live progress notifications for active music downloads',
         importance: Importance.low,
         priority: Priority.low,
         onlyAlertOnce: true,
         showProgress: true,
         maxProgress: maxProgress,
-        progress: progress.clamp(0, maxProgress),
+        progress: safeProgress,
         ongoing: true,
         autoCancel: false,
+        color: _primaryPurple,
+        subText: 'Pixel Player Downloads',
+        category: AndroidNotificationCategory.progress,
+        styleInformation: BigTextStyleInformation(
+          'Track: $title\nProgress: $statusText ($safeProgress%)',
+          contentTitle: 'Downloading: $title',
+          summaryText: '$safeProgress% Completed',
+        ),
       );
 
       await _notifications.show(
         id: id,
-        title: '⬇️ Downloading: $title',
-        body: '$statusText • $progress%',
+        title: 'Downloading: $title',
+        body: '$statusText • $safeProgress%',
         notificationDetails: NotificationDetails(android: androidDetails),
       );
     } catch (e) {
@@ -63,7 +78,7 @@ class DownloadNotificationService {
     }
   }
 
-  /// Show progress for playlist download
+  /// Show progress for playlist download with rich details
   Future<void> showPlaylistProgress({
     required int id,
     required String playlistTitle,
@@ -74,24 +89,34 @@ class DownloadNotificationService {
   }) async {
     if (!_isInitialized) await init();
     try {
+      final safeProgress = overallProgress.clamp(0, 100);
+
       final androidDetails = AndroidNotificationDetails(
         'download_channel',
-        'Download Progress',
-        channelDescription: 'Notifications for active music downloads',
+        'Active Downloads',
+        channelDescription: 'Live progress notifications for active music downloads',
         importance: Importance.low,
         priority: Priority.low,
         onlyAlertOnce: true,
         showProgress: true,
         maxProgress: 100,
-        progress: overallProgress.clamp(0, 100),
+        progress: safeProgress,
         ongoing: true,
         autoCancel: false,
+        color: _primaryPurple,
+        subText: 'Playlist Download ($currentTrack/$totalTracks)',
+        category: AndroidNotificationCategory.progress,
+        styleInformation: BigTextStyleInformation(
+          'Playlist: $playlistTitle\nTrack $currentTrack/$totalTracks: $currentSongTitle\nOverall Progress: $safeProgress%',
+          contentTitle: 'Downloading Playlist: $playlistTitle',
+          summaryText: 'Track $currentTrack/$totalTracks',
+        ),
       );
 
       await _notifications.show(
         id: id,
-        title: '⬇️ Playlist: $playlistTitle',
-        body: 'Song $currentTrack/$totalTracks: $currentSongTitle ($overallProgress%)',
+        title: 'Playlist: $playlistTitle',
+        body: '[$currentTrack/$totalTracks] $currentSongTitle ($safeProgress%)',
         notificationDetails: NotificationDetails(android: androidDetails),
       );
     } catch (e) {
@@ -107,18 +132,26 @@ class DownloadNotificationService {
   }) async {
     if (!_isInitialized) await init();
     try {
-      final androidDetails = const AndroidNotificationDetails(
+      final androidDetails = AndroidNotificationDetails(
         'download_complete_channel',
         'Download Completions',
         channelDescription: 'Notifications for completed downloads',
         importance: Importance.high,
         priority: Priority.high,
         autoCancel: true,
+        color: _successGreen,
+        subText: 'Download Finished',
+        category: AndroidNotificationCategory.status,
+        styleInformation: BigTextStyleInformation(
+          subTitle ?? '$title has been added to your local library.',
+          contentTitle: 'Download Complete',
+          summaryText: 'Saved to Downloads',
+        ),
       );
 
       await _notifications.show(
         id: id,
-        title: '✅ Download Complete',
+        title: 'Download Complete',
         body: subTitle ?? '$title is ready to play!',
         notificationDetails: NotificationDetails(android: androidDetails),
       );
@@ -135,18 +168,26 @@ class DownloadNotificationService {
   }) async {
     if (!_isInitialized) await init();
     try {
-      final androidDetails = const AndroidNotificationDetails(
+      final androidDetails = AndroidNotificationDetails(
         'download_error_channel',
         'Download Errors',
         channelDescription: 'Notifications for failed downloads',
         importance: Importance.high,
         priority: Priority.high,
         autoCancel: true,
+        color: _errorRed,
+        subText: 'Download Error',
+        category: AndroidNotificationCategory.error,
+        styleInformation: BigTextStyleInformation(
+          errorReason ?? 'Unable to complete download for $title. Please check connection and try again.',
+          contentTitle: 'Download Failed',
+          summaryText: 'Tap to retry',
+        ),
       );
 
       await _notifications.show(
         id: id,
-        title: '❌ Download Failed',
+        title: 'Download Failed',
         body: errorReason ?? 'Failed to download $title',
         notificationDetails: NotificationDetails(android: androidDetails),
       );

@@ -18,6 +18,62 @@ class PlaySongEvent extends PlayerEvent {
   List<Object?> get props => [song, queue];
 }
 
+class PlayQueueEvent extends PlayerEvent {
+  final List<Song> queue;
+  final int initialIndex;
+
+  const PlayQueueEvent(this.queue, {this.initialIndex = 0});
+
+  @override
+  List<Object?> get props => [queue, initialIndex];
+}
+
+class PlaySongAtIndexEvent extends PlayerEvent {
+  final int index;
+  const PlaySongAtIndexEvent(this.index);
+
+  @override
+  List<Object?> get props => [index];
+}
+
+class InsertNextEvent extends PlayerEvent {
+  final Song song;
+  const InsertNextEvent(this.song);
+
+  @override
+  List<Object?> get props => [song];
+}
+
+class AddToQueueEvent extends PlayerEvent {
+  final Song song;
+  const AddToQueueEvent(this.song);
+
+  @override
+  List<Object?> get props => [song];
+}
+
+class RemoveFromQueueEvent extends PlayerEvent {
+  final int index;
+  const RemoveFromQueueEvent(this.index);
+
+  @override
+  List<Object?> get props => [index];
+}
+
+class ReorderQueueEvent extends PlayerEvent {
+  final int oldIndex;
+  final int newIndex;
+
+  const ReorderQueueEvent(this.oldIndex, this.newIndex);
+
+  @override
+  List<Object?> get props => [oldIndex, newIndex];
+}
+
+class ClearQueueEvent extends PlayerEvent {
+  const ClearQueueEvent();
+}
+
 class PauseEvent extends PlayerEvent {
   const PauseEvent();
 }

@@ -7,6 +7,7 @@ import 'package:pixel_player/core/utils/duration_formatter.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
+import 'package:pixel_player/presentation/widgets/queue_bottom_sheet.dart';
 
 class PlayerScreen extends StatefulWidget {
   final Song song;
@@ -124,6 +125,13 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             ),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.queue_music_rounded),
+                tooltip: 'Playback Queue',
+                onPressed: () {
+                  QueueBottomSheet.show(context);
+                },
+              ),
               IconButton(
                 icon: const Icon(Icons.more_vert),
                 onPressed: () {

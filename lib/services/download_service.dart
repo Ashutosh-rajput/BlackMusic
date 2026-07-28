@@ -522,7 +522,7 @@ class DownloadService {
       await _notificationService.showDownloadCompleted(
         id: playlistNotifId,
         title: playlist.title,
-        subTitle: '✅ Downloaded ${downloadedSongs.length}/$totalSongs tracks',
+        subTitle: 'Downloaded ${downloadedSongs.length}/$totalSongs tracks',
       );
       return downloadedSongs;
     } catch (e) {

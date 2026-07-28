@@ -931,10 +931,61 @@ class _SongListTile extends StatelessWidget {
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.playlist_add_rounded),
-              tooltip: 'Add to Playlist',
-              onPressed: () => _showAddToPlaylistDialog(context, song),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert_rounded),
+              onSelected: (value) {
+                if (value == 'play_next') {
+                  context.read<PlayerBloc>().add(InsertNextEvent(song));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Playing "${song.title}" next', style: GoogleFonts.outfit()),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                } else if (value == 'add_to_queue') {
+                  context.read<PlayerBloc>().add(AddToQueueEvent(song));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Added "${song.title}" to queue', style: GoogleFonts.outfit()),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                } else if (value == 'add_to_playlist') {
+                  _showAddToPlaylistDialog(context, song);
+                }
+              },
+              itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'play_next',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.playlist_play_rounded, size: 20),
+                      const SizedBox(width: 12),
+                      Text('Play Next', style: GoogleFonts.outfit()),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'add_to_queue',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.queue_music_rounded, size: 20),
+                      const SizedBox(width: 12),
+                      Text('Add to Queue', style: GoogleFonts.outfit()),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'add_to_playlist',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.playlist_add_rounded, size: 20),
+                      const SizedBox(width: 12),
+                      Text('Add to Playlist', style: GoogleFonts.outfit()),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
