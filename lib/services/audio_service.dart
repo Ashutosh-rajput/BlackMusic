@@ -95,6 +95,63 @@ class AudioPlayerService {
     }
   }
 
+  Future<void> playQueue(List<Song> queue, {required int initialIndex}) async {
+    if (queue.isEmpty) return;
+    try {
+      final audioSources = <AudioSource>[];
+      for (final song in queue) {
+        MediaItem? mediaItem;
+        try {
+          mediaItem = MediaItem(
+            id: song.id.toString(),
+            album: song.album,
+            title: song.title,
+            artist: song.artist,
+            artUri: song.albumArt != null ? Uri.tryParse(song.albumArt!) : null,
+          );
+        } catch (e) {
+          _logger.w('Error building MediaItem tag: $e');
+        }
+
+        final path = song.filePath;
+        AudioSource source;
+        if (path.startsWith('http://') || path.startsWith('https://')) {
+          source = AudioSource.uri(
+            Uri.parse(path),
+            tag: mediaItem,
+            headers: const {
+              'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+          );
+        } else if (path.startsWith('asset://') || path.startsWith('assets/')) {
+          final assetPath = path.replaceFirst('asset://', '');
+          source = AudioSource.uri(
+            Uri.parse('asset:///$assetPath'),
+            tag: mediaItem,
+          );
+        } else {
+          final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+          source = AudioSource.uri(
+            Uri.file(cleanPath),
+            tag: mediaItem,
+          );
+        }
+        audioSources.add(source);
+      }
+
+      final safeIndex = initialIndex.clamp(0, queue.length - 1);
+      await player.setAudioSources(audioSources, initialIndex: safeIndex);
+      await player.play();
+    } on PlayerInterruptedException {
+      _logger.i('Queue playback interrupted by new request.');
+    } catch (e) {
+      if (e.toString().contains('Loading interrupted')) return;
+      _logger.e('Error playing audio queue: $e');
+      rethrow;
+    }
+  }
+
   Future<void> pause() => player.pause();
 
   Future<void> resume() => player.play();

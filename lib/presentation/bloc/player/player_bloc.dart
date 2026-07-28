@@ -13,6 +13,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   StreamSubscription? _positionSubscription;
   StreamSubscription? _durationSubscription;
   StreamSubscription? _playerStateSubscription;
+  StreamSubscription? _currentIndexSubscription;
 
   Song? _currentSong;
   List<Song> _queue = [];
@@ -62,6 +63,15 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       }
     });
 
+    _currentIndexSubscription = _audioService.player.currentIndexStream.listen((index) {
+      if (index != null && index >= 0 && index < _queue.length) {
+        final newSong = _queue[index];
+        if (_currentSong?.id != newSong.id) {
+          _currentSong = newSong;
+        }
+      }
+    });
+
     _playerStateSubscription = _audioService.playerStateStream.listen((playerState) {
       if (playerState.processingState == ProcessingState.ready && playerState.playing) {
         _isChangingSong = false;
@@ -88,20 +98,20 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   void _onPositionChanged(PositionChangedEvent event, Emitter<PlayerState> emit) {
     if (state is PlayerPlaying) {
       final current = state as PlayerPlaying;
-      emit(current.copyWith(position: event.position));
+      emit(current.copyWith(song: _currentSong, position: event.position));
     } else if (state is PlayerPaused) {
       final current = state as PlayerPaused;
-      emit(current.copyWith(position: event.position));
+      emit(current.copyWith(song: _currentSong, position: event.position));
     }
   }
 
   void _onDurationChanged(DurationChangedEvent event, Emitter<PlayerState> emit) {
     if (state is PlayerPlaying) {
       final current = state as PlayerPlaying;
-      emit(current.copyWith(duration: event.duration));
+      emit(current.copyWith(song: _currentSong, duration: event.duration));
     } else if (state is PlayerPaused) {
       final current = state as PlayerPaused;
-      emit(current.copyWith(duration: event.duration));
+      emit(current.copyWith(song: _currentSong, duration: event.duration));
     }
   }
 
@@ -154,6 +164,22 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     if (event.queue != null && event.queue!.isNotEmpty) {
       _queue = List.from(event.queue!);
       _originalQueue = List.from(event.queue!);
+      final initialIndex = _queue.indexWhere((s) => s.id == event.song.id);
+      if (initialIndex != -1 && _queue.length > 1) {
+        _currentSong = event.song;
+        emit(PlayerLoading(song: event.song, isShuffle: _isShuffle, isRepeat: _isRepeat));
+        await _audioService.playQueue(_queue, initialIndex: initialIndex);
+        final dur = _audioService.player.duration ?? event.song.duration;
+        emit(PlayerPlaying(
+          song: event.song,
+          position: Duration.zero,
+          duration: dur,
+          isShuffle: _isShuffle,
+          isRepeat: _isRepeat,
+          queue: _queue,
+        ));
+        return;
+      }
     } else if (!_queue.any((s) => s.id == event.song.id)) {
       _queue.add(event.song);
       _originalQueue.add(event.song);
@@ -171,7 +197,23 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
 
     final safeIndex = event.initialIndex.clamp(0, _queue.length - 1);
-    await _playSongInternal(_queue[safeIndex], emit);
+    _currentSong = _queue[safeIndex];
+    emit(PlayerLoading(song: _currentSong, isShuffle: _isShuffle, isRepeat: _isRepeat));
+
+    if (_queue.length > 1) {
+      await _audioService.playQueue(_queue, initialIndex: safeIndex);
+      final dur = _audioService.player.duration ?? _currentSong!.duration;
+      emit(PlayerPlaying(
+        song: _currentSong!,
+        position: Duration.zero,
+        duration: dur,
+        isShuffle: _isShuffle,
+        isRepeat: _isRepeat,
+        queue: _queue,
+      ));
+    } else {
+      await _playSongInternal(_currentSong!, emit);
+    }
   }
 
   Future<void> _onPlaySongAtIndex(PlaySongAtIndexEvent event, Emitter<PlayerState> emit) async {
@@ -428,6 +470,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
     _playerStateSubscription?.cancel();
+    _currentIndexSubscription?.cancel();
     _audioService.dispose();
     return super.close();
   }
