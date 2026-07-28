@@ -12,6 +12,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/services/download_service.dart';
 
+import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
+
 final getIt = GetIt.instance;
 
 Future<void> getItSetup() async {
@@ -50,7 +52,11 @@ Future<void> getItSetup() async {
     ),
   );
 
-  // BLoCs
+  // BLoCs & Cubits
+  getIt.registerLazySingleton<ThemeCubit>(
+    () => ThemeCubit(getIt<SettingsService>()),
+  );
+
   getIt.registerLazySingleton<PlayerBloc>(
     () => PlayerBloc(
       audioService: getIt<AudioPlayerService>(),

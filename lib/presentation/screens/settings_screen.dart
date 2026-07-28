@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pixel_player/core/di/injection_container.dart';
+import 'package:pixel_player/core/theme/app_theme.dart';
 import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/library/library_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
+import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -65,14 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _thumbnailsSizeMb = 0.0;
   bool _isLoadingStorageStats = true;
 
-  final List<Color> _accentColors = const [
-    Color(0xFF6C5CE7), // Purple
-    Color(0xFF00CEC9), // Teal/Cyan
-    Color(0xFFFD79A8), // Pink
-    Color(0xFFFF7675), // Coral
-    Color(0xFF0984E3), // Pixel Blue
-    Color(0xFF00B894), // Emerald
-  ];
+  final List<Color> _accentColors = AppTheme.accentColors;
 
   @override
   void initState() {
@@ -391,7 +386,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onChanged: (val) {
                     if (val != null) {
                       setState(() => _themeMode = val);
-                      _settingsService.setThemeMode(val);
+                      context.read<ThemeCubit>().setThemeMode(val);
                     }
                   },
                 ),
@@ -415,7 +410,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               _accentColorIndex = idx;
                               _accentColor = color;
                             });
-                            _settingsService.setAccentColorIndex(idx);
+                            context.read<ThemeCubit>().setAccentColorIndex(idx);
                           },
                           child: CircleAvatar(
                             backgroundColor: color,
@@ -438,7 +433,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 activeThumbColor: _accentColor,
                 onChanged: (val) {
                   setState(() => _amoledBlackMode = val);
-                  _settingsService.setAmoledBlackMode(val);
+                  context.read<ThemeCubit>().setAmoledBlackMode(val);
                 },
               ),
               _divider(),
@@ -457,7 +452,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onChanged: (val) {
                     if (val != null) {
                       setState(() => _fontSize = val);
-                      _settingsService.setFontSize(val);
+                      context.read<ThemeCubit>().setFontSize(val);
                     }
                   },
                 ),
@@ -478,7 +473,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onChanged: (val) {
                     if (val != null) {
                       setState(() => _albumArtSize = val);
-                      _settingsService.setAlbumArtSize(val);
+                      context.read<ThemeCubit>().setAlbumArtSize(val);
                     }
                   },
                 ),

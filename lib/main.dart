@@ -7,6 +7,7 @@ import 'package:pixel_player/core/di/injection_container.dart';
 import 'package:pixel_player/core/theme/app_theme.dart';
 import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
+import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 import 'package:pixel_player/presentation/screens/splash_screen.dart';
 import 'package:pixel_player/presentation/widgets/download_dialog.dart';
 
@@ -93,17 +94,40 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> {
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: [
+        BlocProvider<ThemeCubit>(create: (_) => getIt<ThemeCubit>()),
         BlocProvider<PlayerBloc>(create: (_) => getIt<PlayerBloc>()),
         BlocProvider<LibraryBloc>(create: (_) => getIt<LibraryBloc>()),
       ],
-      child: MaterialApp(
-        navigatorKey: _navigatorKey,
-        title: 'PixelPlayer',
-        debugShowCheckedModeBanner: false,
-        theme: lightTheme,
-        darkTheme: darkTheme,
-        themeMode: ThemeMode.dark,
-        home: const SplashScreen(),
+      child: BlocBuilder<ThemeCubit, ThemeSettingsState>(
+        builder: (context, themeState) {
+          ThemeMode mode = ThemeMode.system;
+          if (themeState.themeMode == 'Light') mode = ThemeMode.light;
+          if (themeState.themeMode == 'Dark') mode = ThemeMode.dark;
+
+          final light = AppTheme.buildTheme(
+            brightness: Brightness.light,
+            accentIndex: themeState.accentColorIndex,
+            isAmoled: false,
+            fontSize: themeState.fontSize,
+          );
+
+          final dark = AppTheme.buildTheme(
+            brightness: Brightness.dark,
+            accentIndex: themeState.accentColorIndex,
+            isAmoled: themeState.amoledBlackMode,
+            fontSize: themeState.fontSize,
+          );
+
+          return MaterialApp(
+            navigatorKey: _navigatorKey,
+            title: 'PixelPlayer',
+            debugShowCheckedModeBanner: false,
+            theme: light,
+            darkTheme: dark,
+            themeMode: mode,
+            home: const SplashScreen(),
+          );
+        },
       ),
     );
   }
