@@ -8,6 +8,7 @@ import 'package:pixel_player/presentation/bloc/library/library_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
+import 'package:pixel_player/presentation/widgets/folder_picker_dialog.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -500,16 +501,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               _divider(),
               ListTile(
-                title: _tileTitle('Scan Music Directory'),
-                subtitle: _tileSubtitle('Rescan local storage & add new music files'),
-                trailing: const Icon(Icons.refresh_rounded),
+                title: _tileTitle('Add Music Folder'),
+                subtitle: _tileSubtitle('Select a specific folder to add its music to library'),
+                trailing: const Icon(Icons.create_new_folder_rounded),
                 onTap: () async {
                   final bloc = context.read<LibraryBloc>();
-                  _showSnackBar('Scanning local storage...');
-                  final added = await _settingsService.rescanMusicLibrary();
-                  bloc.add(const LoadLibraryEvent());
-                  _showSnackBar('Library updated! Found $added audio tracks.');
-                  _loadStorageStats();
+                  final selected = await showDialog<String>(
+                    context: context,
+                    builder: (_) => const FolderPickerDialog(),
+                  );
+                  if (selected != null && selected.isNotEmpty) {
+                    bloc.add(ScanStorageEvent(customPaths: [selected]));
+                    if (mounted) {
+                      _showSnackBar('Scanning folder: $selected');
+                    }
+                  }
                 },
               ),
               _divider(),

@@ -27,29 +27,52 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
 
   MusicLocalDatasourceImpl(this._db);
 
+  bool _isSeedSong(Song song) {
+    return song.id == 101 ||
+        song.id == 102 ||
+        song.id == 103 ||
+        song.id == 104 ||
+        song.title == 'Kalimba Acoustic' ||
+        song.title == 'Sample Track' ||
+        song.title == 'Bower Stereo Demo' ||
+        song.title == 'FLAC Master Track' ||
+        song.filePath.contains('learningcontainer.com') ||
+        song.filePath.contains('raw.githubusercontent.com');
+  }
+
   @override
   Future<List<Song>> getAllSongs() async {
     try {
       final List<db.Song> rows = await _db.getAllSongs();
       if (rows.isNotEmpty) {
-        final List<Song> mapped = rows.map((db.Song row) => Song(
-          id: row.id,
-          title: row.title,
-          artist: row.artist,
-          album: row.album,
-          filePath: row.filePath,
-          duration: Duration(milliseconds: row.duration),
-          fileSize: row.fileSize,
-          dateModified: row.dateModified,
-          genre: row.genre,
-          albumArtist: row.albumArtist,
-          albumArt: row.albumArt,
-        )).toList();
+        final List<Song> mapped = [];
+        for (var row in rows) {
+          final song = Song(
+            id: row.id,
+            title: row.title,
+            artist: row.artist,
+            album: row.album,
+            filePath: row.filePath,
+            duration: Duration(milliseconds: row.duration),
+            fileSize: row.fileSize,
+            dateModified: row.dateModified,
+            genre: row.genre,
+            albumArtist: row.albumArtist,
+            albumArt: row.albumArt,
+          );
+          if (_isSeedSong(song)) {
+            _db.deleteSongById(song.id);
+          } else {
+            mapped.add(song);
+          }
+        }
+        _memoryCache.removeWhere(_isSeedSong);
         return mapped;
       }
     } catch (e) {
       logger.w('Database query error, returning memory cache: $e');
     }
+    _memoryCache.removeWhere(_isSeedSong);
     return List.unmodifiable(_memoryCache);
   }
 
@@ -57,11 +80,13 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
 
   @override
   Future<void> insertSong(Song song) async {
+    if (_isSeedSong(song)) return;
     _memoryCache.removeWhere((s) => s.id == song.id || s.filePath == song.filePath);
     _memoryCache.add(song);
     try {
       await _db.insertSong(
         db.SongsCompanion.insert(
+          id: Value(song.id),
           title: song.title,
           artist: song.artist,
           album: song.album,
@@ -77,7 +102,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
     } catch (e) {
       if (!_dbErrorLogged) {
         _dbErrorLogged = true;
-        logger.w('Database write unavailable, using memory storage fallback.');
+        logger.w('Database write unavailable, using memory storage fallback: $e');
       }
     }
   }
@@ -87,7 +112,21 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
     _memoryCache.removeWhere((s) => s.id == song.id || s.filePath == song.filePath);
     _memoryCache.add(song);
     try {
-      await _db.updateSongDuration(song.filePath, song.duration.inMilliseconds);
+      await _db.updateSongFull(
+        db.SongsCompanion(
+          id: Value(song.id),
+          title: Value(song.title),
+          artist: Value(song.artist),
+          album: Value(song.album),
+          filePath: Value(song.filePath),
+          duration: Value(song.duration.inMilliseconds),
+          fileSize: Value(song.fileSize),
+          dateModified: Value(song.dateModified),
+          genre: Value(song.genre),
+          albumArtist: Value(song.albumArtist),
+          albumArt: Value(song.albumArt),
+        ),
+      );
     } catch (e) {
       logger.w('Database update error: $e');
     }

@@ -37,10 +37,6 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     emit(const LibraryLoading());
     try {
       var songs = await _repository.getAllSongs();
-      if (songs.isEmpty) {
-        songs = FileService.getSeedSongs();
-        await _repository.saveSongsBatch(songs);
-      }
       var playlists = await _repository.getPlaylists();
       if (!playlists.any((p) => p.name.toLowerCase() == 'favorites')) {
         await _repository.createPlaylist('Favorites', 'Default favorites playlist');
@@ -48,8 +44,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
       }
       emit(LibraryLoaded(allSongs: songs, displayedSongs: songs, playlists: playlists));
     } catch (e) {
-      final seeds = FileService.getSeedSongs();
-      emit(LibraryLoaded(allSongs: seeds, displayedSongs: seeds, playlists: const []));
+      emit(const LibraryLoaded(allSongs: [], displayedSongs: [], playlists: []));
     }
   }
 

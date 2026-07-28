@@ -71,16 +71,6 @@ class LibraryScreen extends StatelessWidget {
                         tooltip: 'Download from URL (YouTube/MP3)',
                         onPressed: () => DownloadDialog.show(context),
                       ),
-                      const SizedBox(width: 8),
-                      IconButton.filledTonal(
-                        icon: const Icon(Icons.find_in_page_rounded),
-                        tooltip: 'Scan Device Storage',
-                        onPressed: () {
-                          context
-                              .read<LibraryBloc>()
-                              .add(const ScanStorageEvent());
-                        },
-                      ),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -167,7 +157,7 @@ class LibraryScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Tap the scan icon to scan your local storage',
+                              'Tap the folder icon above to add your music folder',
                               style: GoogleFonts.outfit(
                                 fontSize: 14,
                                 color: theme.colorScheme.onSurface.withValues(alpha: 0.6),

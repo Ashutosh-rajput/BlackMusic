@@ -48,10 +48,6 @@ class FileService {
       await _scanDirectory(dir, songs, visitedPaths, recursive: recursive);
     }
 
-    if (songs.isEmpty) {
-      songs = getSeedSongs();
-    }
-
     return songs;
   }
 
@@ -104,13 +100,7 @@ class FileService {
         title = parts.sublist(1).join(' - ').trim();
       }
 
-      // Use a more collision-resistant hash by combining path and length.
-      // The database unique constraint on filePath is the real safety net.
       final pathHash = file.path.hashCode ^ (file.path.length * 37);
-
-      // Avoid instantiating temporary AudioPlayer() instances to prevent
-      // just_audio_background single-instance platform exception.
-      Duration duration = const Duration(minutes: 3);
 
       return Song(
         id: pathHash.abs(),
@@ -118,7 +108,7 @@ class FileService {
         artist: artist,
         album: 'Local Music',
         filePath: file.path,
-        duration: duration,
+        duration: const Duration(minutes: 3),
         fileSize: await file.length(),
         dateModified: await file.lastModified(),
         genre: 'Audio Track',
@@ -130,54 +120,5 @@ class FileService {
     }
   }
 
-  /// Default demo seed songs for instant out-of-the-box listening & testing
-  static List<Song> getSeedSongs() {
-    final now = DateTime.now();
-    return [
-      Song(
-        id: 101,
-        title: 'Kalimba Acoustic',
-        artist: 'Learning Container',
-        album: 'Acoustic Dreams',
-        filePath: 'https://www.learningcontainer.com/wp-content/uploads/2020/02/Kalimba.mp3',
-        duration: const Duration(minutes: 2, seconds: 40),
-        dateModified: now,
-        genre: 'Acoustic',
-        albumArt: 'https://picsum.photos/seed/soundhelix1/400/400',
-      ),
-      Song(
-        id: 102,
-        title: 'Sample Track',
-        artist: 'Audio Studio',
-        album: 'Retro Wave',
-        filePath: 'https://raw.githubusercontent.com/rafaelreis-hotmart/Audio-Sample-files/master/sample.mp3',
-        duration: const Duration(minutes: 1, seconds: 15),
-        dateModified: now,
-        genre: 'Pop',
-        albumArt: 'https://picsum.photos/seed/soundhelix2/400/400',
-      ),
-      Song(
-        id: 103,
-        title: 'Bower Stereo Demo',
-        artist: 'Media Samples',
-        album: 'Stereo Test',
-        filePath: 'https://raw.githubusercontent.com/bower-media-samples/mp3-demo/master/sample.mp3',
-        duration: const Duration(seconds: 45),
-        dateModified: now,
-        genre: 'Ambient',
-        albumArt: 'https://picsum.photos/seed/soundhelix3/400/400',
-      ),
-      Song(
-        id: 104,
-        title: 'FLAC Master Track',
-        artist: 'High-Res Audio',
-        album: 'Live Experience',
-        filePath: 'https://www.learningcontainer.com/wp-content/uploads/2020/02/Sample-FLAC-File.flac',
-        duration: const Duration(minutes: 1, seconds: 30),
-        dateModified: now,
-        genre: 'Classical',
-        albumArt: 'https://picsum.photos/seed/pixelnight/400/400',
-      ),
-    ];
-  }
+  static List<Song> getSeedSongs() => const [];
 }

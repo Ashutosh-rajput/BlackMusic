@@ -29,59 +29,59 @@ class AudioPlayerService {
     });
   }
 
+  AudioSource _buildAudioSource(Song song) {
+    MediaItem? mediaItem;
+    try {
+      mediaItem = MediaItem(
+        id: song.id.toString(),
+        album: song.album,
+        title: song.title,
+        artist: song.artist,
+        artUri: song.albumArt != null ? Uri.tryParse(song.albumArt!) : null,
+      );
+    } catch (e) {
+      _logger.w('Error building MediaItem tag: $e');
+    }
+
+    final path = song.filePath;
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return AudioSource.uri(
+        Uri.parse(path),
+        tag: mediaItem,
+        headers: const {
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      );
+    } else if (path.startsWith('asset://') || path.startsWith('assets/')) {
+      final assetPath = path.replaceFirst('asset://', '');
+      return AudioSource.uri(
+        Uri.parse('asset:///$assetPath'),
+        tag: mediaItem,
+      );
+    } else {
+      final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+      return AudioSource.uri(
+        Uri.file(cleanPath),
+        tag: mediaItem,
+      );
+    }
+  }
+
   Future<void> play(String path, {Song? songInfo}) async {
     try {
-      MediaItem? mediaItem;
-      if (songInfo != null) {
-        try {
-          mediaItem = MediaItem(
-            id: songInfo.id.toString(),
-            album: songInfo.album,
-            title: songInfo.title,
-            artist: songInfo.artist,
-            artUri: songInfo.albumArt != null ? Uri.tryParse(songInfo.albumArt!) : null,
-          );
-        } catch (e) {
-          _logger.w('Error building MediaItem tag: $e');
-        }
-      }
-
       AudioSource source;
-      try {
-        if (path.startsWith('http://') || path.startsWith('https://')) {
-          source = AudioSource.uri(
-            Uri.parse(path),
-            tag: mediaItem,
-            headers: const {
-              'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-          );
-        } else if (path.startsWith('asset://') || path.startsWith('assets/')) {
-          final assetPath = path.replaceFirst('asset://', '');
-          source = AudioSource.uri(
-            Uri.parse('asset:///$assetPath'),
-            tag: mediaItem,
-          );
-        } else {
-          final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
-          source = AudioSource.uri(
-            Uri.file(cleanPath),
-            tag: mediaItem,
-          );
-        }
-        await player.setAudioSource(source);
-      } catch (err) {
-        _logger.w('AudioSource set with MediaItem failed ($err), falling back to plain AudioSource...');
+      if (songInfo != null) {
+        source = _buildAudioSource(songInfo);
+      } else {
         if (path.startsWith('http://') || path.startsWith('https://')) {
           source = AudioSource.uri(Uri.parse(path));
         } else {
           final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
           source = AudioSource.uri(Uri.file(cleanPath));
         }
-        await player.setAudioSource(source);
       }
-
+      await player.setAudioSource(source);
       await player.play();
     } on PlayerInterruptedException {
       _logger.i('Audio loading interrupted by user/new playback request.');
@@ -98,48 +98,7 @@ class AudioPlayerService {
   Future<void> playQueue(List<Song> queue, {required int initialIndex}) async {
     if (queue.isEmpty) return;
     try {
-      final audioSources = <AudioSource>[];
-      for (final song in queue) {
-        MediaItem? mediaItem;
-        try {
-          mediaItem = MediaItem(
-            id: song.id.toString(),
-            album: song.album,
-            title: song.title,
-            artist: song.artist,
-            artUri: song.albumArt != null ? Uri.tryParse(song.albumArt!) : null,
-          );
-        } catch (e) {
-          _logger.w('Error building MediaItem tag: $e');
-        }
-
-        final path = song.filePath;
-        AudioSource source;
-        if (path.startsWith('http://') || path.startsWith('https://')) {
-          source = AudioSource.uri(
-            Uri.parse(path),
-            tag: mediaItem,
-            headers: const {
-              'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-          );
-        } else if (path.startsWith('asset://') || path.startsWith('assets/')) {
-          final assetPath = path.replaceFirst('asset://', '');
-          source = AudioSource.uri(
-            Uri.parse('asset:///$assetPath'),
-            tag: mediaItem,
-          );
-        } else {
-          final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
-          source = AudioSource.uri(
-            Uri.file(cleanPath),
-            tag: mediaItem,
-          );
-        }
-        audioSources.add(source);
-      }
-
+      final audioSources = queue.map(_buildAudioSource).toList();
       final safeIndex = initialIndex.clamp(0, queue.length - 1);
       await player.setAudioSources(audioSources, initialIndex: safeIndex);
       await player.play();
@@ -172,5 +131,8 @@ class AudioPlayerService {
 
   Stream<Duration?> get durationStream => player.durationStream;
 
-  void dispose() => _audioPlayer?.dispose();
+  void dispose() {
+    _audioPlayer?.dispose();
+    _audioPlayer = null;
+  }
 }

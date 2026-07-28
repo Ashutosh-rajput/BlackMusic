@@ -6,7 +6,7 @@ import 'package:sqlite3_flutter_libs/sqlite3_flutter_libs.dart';
 part 'app_database.g.dart';
 
 class Songs extends Table {
-  IntColumn get id => integer().autoIncrement()();
+  IntColumn get id => integer()();
   TextColumn get title => text()();
   TextColumn get artist => text()();
   TextColumn get album => text()();
@@ -17,6 +17,9 @@ class Songs extends Table {
   TextColumn get genre => text().nullable()();
   TextColumn get albumArtist => text().nullable()();
   TextColumn get albumArt => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
 }
 
 class Playlists extends Table {
@@ -65,6 +68,11 @@ class AppDatabase extends _$AppDatabase {
   Future<int> updateSongDuration(String filePath, int durationMs) {
     return (update(songs)..where((t) => t.filePath.equals(filePath)))
         .write(SongsCompanion(duration: Value(durationMs)));
+  }
+
+  Future<int> updateSongFull(SongsCompanion song) {
+    return (update(songs)..where((t) => t.filePath.equals(song.filePath.value)))
+        .write(song);
   }
 
   Future<int> insertPlaylist(PlaylistsCompanion playlist) =>
