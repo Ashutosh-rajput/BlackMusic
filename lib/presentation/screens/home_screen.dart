@@ -8,6 +8,7 @@ import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/presentation/screens/library_screen.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
+import 'package:pixel_player/presentation/screens/playlists_screen.dart';
 import 'package:pixel_player/presentation/screens/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -22,7 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<Widget> _pages = [
     const LibraryScreen(),
-    const _PlaceholderView(title: 'Playlists', icon: Icons.queue_music_rounded),
+    const PlaylistsScreen(),
     const SettingsScreen(),
   ];
 
@@ -32,46 +33,39 @@ class _HomeScreenState extends State<HomeScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: _pages,
-            ),
-          ),
-          // Persistent Mini Player Floating Dock
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 75,
-            child: const _MiniPlayerDock(),
-          ),
-        ],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _pages,
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        backgroundColor: isDark ? const Color(0xFF181820) : Colors.white,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.library_music_outlined),
-            selectedIcon: Icon(Icons.library_music_rounded),
-            label: 'Library',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.playlist_play_outlined),
-            selectedIcon: Icon(Icons.playlist_play_rounded),
-            label: 'Playlists',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings_rounded),
-            label: 'Settings',
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const _MiniPlayerDock(),
+          NavigationBar(
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (index) {
+              setState(() {
+                _selectedIndex = index;
+              });
+            },
+            backgroundColor: isDark ? const Color(0xFF181820) : Colors.white,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.library_music_outlined),
+                selectedIcon: Icon(Icons.library_music_rounded),
+                label: 'Library',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.playlist_play_outlined),
+                selectedIcon: Icon(Icons.playlist_play_rounded),
+                label: 'Playlists',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings_rounded),
+                label: 'Settings',
+              ),
+            ],
           ),
         ],
       ),
@@ -119,20 +113,22 @@ class _MiniPlayerDock extends StatelessWidget {
             );
           },
           child: Container(
-            height: 64,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            height: 60,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
               color: isDark
-                  ? const Color(0xFF2B2B38).withValues(alpha: 0.95)
-                  : Colors.white.withValues(alpha: 0.95),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
+                  ? const Color(0xFF232330)
+                  : const Color(0xFFF2F2F7),
+              border: Border(
+                top: BorderSide(
+                  color: isDark ? const Color(0xFF323242) : Colors.black12,
+                  width: 0.8,
                 ),
-              ],
+                bottom: BorderSide(
+                  color: isDark ? const Color(0xFF323242) : Colors.black12,
+                  width: 0.8,
+                ),
+              ),
             ),
             child: Row(
               children: [
@@ -218,45 +214,6 @@ class _MiniPlayerDock extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _PlaceholderView extends StatelessWidget {
-  final String title;
-  final IconData icon;
-
-  const _PlaceholderView({required this.title, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 72, color: theme.colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(
-              '$title Feature',
-              style: GoogleFonts.outfit(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Privacy-first audio player module',
-              style: GoogleFonts.outfit(
-                fontSize: 14,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
