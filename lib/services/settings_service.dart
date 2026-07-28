@@ -59,6 +59,8 @@ class SettingsService {
   static const _keyShowPlaybackNotification = 'setting_show_notification';
   static const _keyLockScreenControls = 'setting_lock_controls';
   static const _keyDownloadNotifications = 'setting_download_notifications';
+  static const _keyLastPlayedSongId = 'setting_last_played_song_id';
+  static const _keyLastPlayedPositionMs = 'setting_last_played_position_ms';
 
   // Getters
   bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
@@ -87,6 +89,8 @@ class SettingsService {
   bool get showPlaybackNotification => _prefs.getBool(_keyShowPlaybackNotification) ?? true;
   bool get lockScreenControls => _prefs.getBool(_keyLockScreenControls) ?? true;
   bool get downloadNotifications => _prefs.getBool(_keyDownloadNotifications) ?? true;
+  int? get lastPlayedSongId => _prefs.getInt(_keyLastPlayedSongId);
+  int get lastPlayedPositionMs => _prefs.getInt(_keyLastPlayedPositionMs) ?? 0;
 
   // Setters
   Future<void> setAutoPlayNext(bool value) => _prefs.setBool(_keyAutoPlayNext, value);
@@ -115,6 +119,14 @@ class SettingsService {
   Future<void> setShowPlaybackNotification(bool value) => _prefs.setBool(_keyShowPlaybackNotification, value);
   Future<void> setLockScreenControls(bool value) => _prefs.setBool(_keyLockScreenControls, value);
   Future<void> setDownloadNotifications(bool value) => _prefs.setBool(_keyDownloadNotifications, value);
+  Future<void> setLastPlayedSongId(int? id) async {
+    if (id != null) {
+      await _prefs.setInt(_keyLastPlayedSongId, id);
+    } else {
+      await _prefs.remove(_keyLastPlayedSongId);
+    }
+  }
+  Future<void> setLastPlayedPositionMs(int ms) => _prefs.setInt(_keyLastPlayedPositionMs, ms);
 
   // Real Storage & File Operations
   Future<StorageStats> calculateStorageSizes() async {

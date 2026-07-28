@@ -41,14 +41,17 @@ Future<void> getItSetup() async {
   );
   getIt.registerLazySingleton<FileService>(() => FileService());
   getIt.registerLazySingleton<PermissionService>(() => PermissionService());
-  getIt.registerLazySingleton<DownloadService>(
-    () => DownloadService(getIt<MusicRepository>()),
-  );
   getIt.registerLazySingleton<SettingsService>(
     () => SettingsService(
       prefs: getIt<SharedPreferences>(),
       repository: getIt<MusicRepository>(),
       fileService: getIt<FileService>(),
+    ),
+  );
+  getIt.registerLazySingleton<DownloadService>(
+    () => DownloadService(
+      repository: getIt<MusicRepository>(),
+      settingsService: getIt<SettingsService>(),
     ),
   );
 

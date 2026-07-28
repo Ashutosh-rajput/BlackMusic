@@ -16,6 +16,8 @@ class FileService {
   Future<List<Song>> scanMusicLibrary({
     List<String>? specificPaths,
     bool recursive = true,
+    bool ignoreShortAudio = true,
+    bool showHiddenFiles = false,
   }) async {
     // 1. Android MediaStore Query (Fast, Scoped-Storage compliant, Zero ANR)
     if (Platform.isAndroid && (specificPaths == null || specificPaths.isEmpty)) {
@@ -31,8 +33,10 @@ class FileService {
           final songs = <Song>[];
           for (final item in audioModels) {
             if (item.data.isEmpty) continue;
-            final pathHash = item.data.hashCode ^ (item.data.length * 37);
             final durMs = item.duration ?? 0;
+            if (ignoreShortAudio && durMs > 0 && durMs < 30000) continue; // Filter short audio (<30s)
+
+            final pathHash = item.data.hashCode ^ (item.data.length * 37);
             final dateSec = item.dateAdded ?? 0;
             final dateModified = dateSec > 0
                 ? DateTime.fromMillisecondsSinceEpoch(dateSec * 1000)
@@ -77,7 +81,15 @@ class FileService {
     }
 
     try {
-      final rawSongs = await compute(_backgroundFolderScan, _ScanParams(targetPaths, supportedFormats));
+      final rawSongs = await compute(
+        _backgroundFolderScan,
+        _ScanParams(
+          paths: targetPaths,
+          extensions: supportedFormats,
+          ignoreShortAudio: ignoreShortAudio,
+          showHiddenFiles: showHiddenFiles,
+        ),
+      );
       return rawSongs;
     } catch (e) {
       _logger.e('Background folder scan error: $e');
@@ -91,27 +103,49 @@ class FileService {
 class _ScanParams {
   final List<String> paths;
   final List<String> extensions;
-  _ScanParams(this.paths, this.extensions);
+  final bool ignoreShortAudio;
+  final bool showHiddenFiles;
+
+  _ScanParams({
+    required this.paths,
+    required this.extensions,
+    this.ignoreShortAudio = true,
+    this.showHiddenFiles = false,
+  });
 }
 
 List<Song> _backgroundFolderScan(_ScanParams params) {
   final songs = <Song>[];
-  final visited = <String>{};
+  final visitedFiles = <String>{};
+  final visitedDirs = <String>{};
 
   for (final pathStr in params.paths) {
     final dir = Directory(pathStr);
     if (!dir.existsSync()) continue;
-    _syncScanDir(dir, songs, visited, params.extensions);
+    _syncScanDir(dir, songs, visitedFiles, visitedDirs, params, depth: 0);
   }
 
   return songs;
 }
 
-void _syncScanDir(Directory dir, List<Song> songs, Set<String> visited, List<String> extensions) {
+void _syncScanDir(
+  Directory dir,
+  List<Song> songs,
+  Set<String> visitedFiles,
+  Set<String> visitedDirs,
+  _ScanParams params, {
+  required int depth,
+}) {
+  if (depth > 8) return; // Prevent stack overflow on deep folder structures
+
   try {
+    final canonicalDir = dir.resolveSymbolicLinksSync();
+    if (visitedDirs.contains(canonicalDir)) return;
+    visitedDirs.add(canonicalDir);
+
     final dirName = dir.path.split(RegExp(r'[/\\]')).last;
-    if (dirName.startsWith('.') ||
-        dir.path.contains('/Android/data') ||
+    if (!params.showHiddenFiles && dirName.startsWith('.')) return;
+    if (dir.path.contains('/Android/data') ||
         dir.path.contains('/Android/obb') ||
         dir.path.contains('/.cache')) {
       return;
@@ -120,15 +154,19 @@ void _syncScanDir(Directory dir, List<Song> songs, Set<String> visited, List<Str
     final entities = dir.listSync(followLinks: false);
     for (final entity in entities) {
       if (entity is File) {
-        if (visited.contains(entity.path)) continue;
-        visited.add(entity.path);
+        if (visitedFiles.contains(entity.path)) continue;
+        visitedFiles.add(entity.path);
 
         final ext = entity.path.split('.').last.toLowerCase();
-        if (!extensions.contains(ext)) continue;
+        if (!params.extensions.contains(ext)) continue;
 
         final fileName = entity.path.split(RegExp(r'[/\\]')).last;
-        final titleWithoutExt = fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+        if (!params.showHiddenFiles && fileName.startsWith('.')) continue;
 
+        final stat = entity.statSync();
+        if (params.ignoreShortAudio && stat.size < 100 * 1024) continue; // Skip files < 100 KB
+
+        final titleWithoutExt = fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
         String title = titleWithoutExt;
         String artist = 'Unknown Artist';
         if (titleWithoutExt.contains(' - ')) {
@@ -138,7 +176,6 @@ void _syncScanDir(Directory dir, List<Song> songs, Set<String> visited, List<Str
         }
 
         final pathHash = entity.path.hashCode ^ (entity.path.length * 37);
-        final stat = entity.statSync();
 
         songs.add(Song(
           id: pathHash.abs(),
@@ -153,7 +190,7 @@ void _syncScanDir(Directory dir, List<Song> songs, Set<String> visited, List<Str
           albumArtist: artist,
         ));
       } else if (entity is Directory) {
-        _syncScanDir(entity, songs, visited, extensions);
+        _syncScanDir(entity, songs, visitedFiles, visitedDirs, params, depth: depth + 1);
       }
     }
   } catch (_) {}

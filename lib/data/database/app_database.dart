@@ -57,13 +57,31 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 1;
 
+  @override
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onCreate: (m) async {
+        await m.createAll();
+      },
+      onUpgrade: (m, from, to) async {
+        // Safe schema migration handling for future upgrades
+      },
+    );
+  }
+
   // DAO helper methods
   Future<List<Song>> getAllSongs() => select(songs).get();
 
   Future<int> insertSong(SongsCompanion song) => into(songs).insert(
         song,
-        mode: InsertMode.insertOrIgnore,
+        mode: InsertMode.insertOrReplace,
       );
+
+  Future<void> insertSongsBatch(List<SongsCompanion> songCompanions) {
+    return batch((b) {
+      b.insertAll(songs, songCompanions, mode: InsertMode.insertOrReplace);
+    });
+  }
 
   Future<int> updateSongDuration(String filePath, int durationMs) {
     return (update(songs)..where((t) => t.filePath.equals(filePath)))

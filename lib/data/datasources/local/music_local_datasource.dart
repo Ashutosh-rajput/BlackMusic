@@ -144,8 +144,28 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
 
   @override
   Future<void> saveSongsBatch(List<Song> songs) async {
-    for (final song in songs) {
-      await insertSong(song);
+    if (songs.isEmpty) return;
+    _memoryCache.removeWhere((existing) => songs.any((s) => s.id == existing.id || s.filePath == existing.filePath));
+    _memoryCache.addAll(songs);
+
+    try {
+      final companions = songs.map((song) => db.SongsCompanion.insert(
+        id: Value(song.id),
+        title: song.title,
+        artist: song.artist,
+        album: song.album,
+        filePath: song.filePath,
+        duration: song.duration.inMilliseconds,
+        fileSize: Value(song.fileSize),
+        dateModified: song.dateModified,
+        genre: Value(song.genre),
+        albumArtist: Value(song.albumArtist),
+        albumArt: Value(song.albumArt),
+      )).toList();
+
+      await _db.insertSongsBatch(companions);
+    } catch (e) {
+      logger.e('Error batch saving songs to database: $e');
     }
   }
 

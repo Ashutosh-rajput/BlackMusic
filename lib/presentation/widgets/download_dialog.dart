@@ -87,19 +87,19 @@ class _DownloadDialogState extends State<DownloadDialog> {
           _isDownloading = false;
         });
 
-        if (song != null) {
-          context.read<LibraryBloc>().add(const LoadLibraryEvent());
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Successfully downloaded "${song.title}"!',
-                style: GoogleFonts.outfit(),
-              ),
-              backgroundColor: Colors.green,
+        context.read<LibraryBloc>().add(const LoadLibraryEvent());
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              song != null
+                  ? 'Successfully downloaded "${song.title}"!'
+                  : 'Download complete! Library updated.',
+              style: GoogleFonts.outfit(),
             ),
-          );
-          Navigator.pop(context);
-        }
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {

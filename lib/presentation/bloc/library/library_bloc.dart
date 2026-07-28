@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pixel_player/data/models/playlist_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
@@ -10,6 +11,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   final MusicRepository _repository;
   final FileService _fileService;
   final PermissionService _permissionService;
+  StreamSubscription<void>? _librarySubscription;
 
   LibraryBloc({
     required MusicRepository repository,
@@ -28,6 +30,16 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     on<AddSongToPlaylistEvent>(_onAddSongToPlaylist);
     on<RemoveSongFromPlaylistEvent>(_onRemoveSongFromPlaylist);
     on<ToggleFavoriteEvent>(_onToggleFavorite);
+
+    _librarySubscription = _repository.onLibraryChanged.listen((_) {
+      add(const LoadLibraryEvent());
+    });
+  }
+
+  @override
+  Future<void> close() {
+    _librarySubscription?.cancel();
+    return super.close();
   }
 
   Future<void> _onLoadLibrary(

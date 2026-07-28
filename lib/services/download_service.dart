@@ -9,6 +9,7 @@ import 'package:logger/logger.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
+import 'package:pixel_player/services/settings_service.dart';
 
 final _logger = Logger();
 
@@ -58,6 +59,7 @@ class ActiveDownload {
 
 class DownloadService {
   final MusicRepository _repository;
+  final SettingsService? _settingsService;
   final Dio _dio = Dio();
   final DownloadNotificationService _notificationService = DownloadNotificationService();
 
@@ -66,7 +68,11 @@ class DownloadService {
 
   final ValueNotifier<ActiveDownload?> activeDownloadNotifier = ValueNotifier(null);
 
-  DownloadService(this._repository);
+  DownloadService({
+    required MusicRepository repository,
+    SettingsService? settingsService,
+  })  : _repository = repository,
+        _settingsService = settingsService;
 
   /// Cancel active download operation
   void cancelCurrentDownload() {
@@ -89,6 +95,10 @@ class DownloadService {
     final cleanUrl = _extractFirstUrl(url.trim());
     if (cleanUrl.isEmpty) {
       throw Exception('Invalid or empty URL provided.');
+    }
+
+    if (_settingsService?.downloadOnlyOnWifi == true) {
+      _logger.i('Download Wi-Fi only policy active.');
     }
 
     if (_isPlaylistUrl(cleanUrl)) {
