@@ -10,6 +10,7 @@ import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 import 'package:pixel_player/presentation/screens/splash_screen.dart';
 import 'package:pixel_player/presentation/widgets/download_dialog.dart';
+import 'package:pixel_player/services/download_notification_service.dart';
 
 import 'package:just_audio_background/just_audio_background.dart';
 
@@ -36,6 +37,11 @@ void main() async {
   }
 
   await getItSetup();
+  try {
+    await DownloadNotificationService().init();
+  } catch (e) {
+    debugPrint('DownloadNotificationService init error: $e');
+  }
 
   runApp(const PixelPlayerApp());
 }

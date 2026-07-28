@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:pixel_player/core/di/injection_container.dart';
+import 'package:pixel_player/services/settings_service.dart';
+import 'package:pixel_player/services/download_service.dart';
 import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/data/models/playlist_model.dart';
+import 'package:pixel_player/data/models/youtube_video_item.dart';
 import 'package:pixel_player/core/utils/duration_formatter.dart';
 import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/library/library_event.dart';
@@ -12,11 +15,63 @@ import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
 import 'package:pixel_player/presentation/widgets/folder_picker_dialog.dart';
-import 'package:pixel_player/presentation/widgets/download_dialog.dart';
+import 'package:pixel_player/presentation/widgets/download_queue_sheet.dart';
+import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 
-class LibraryScreen extends StatelessWidget {
+class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
+
+  @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends State<LibraryScreen>
+    with WidgetsBindingObserver {
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  bool _showHistory = false;
+  bool _wasSearchKeyboardVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _searchFocusNode.addListener(() {
+      setState(() {
+        _showHistory = _searchFocusNode.hasFocus;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final keyboardIsVisible = view.viewInsets.bottom > 0;
+
+    if (keyboardIsVisible) {
+      _wasSearchKeyboardVisible = true;
+      return;
+    }
+
+    // Android's back button hides the keyboard without always removing focus.
+    // Only react to a real visible-to-hidden transition; the first layout
+    // change after tapping the search field can still report no keyboard.
+    if (_wasSearchKeyboardVisible && _searchFocusNode.hasFocus) {
+      _wasSearchKeyboardVisible = false;
+      _searchFocusNode.unfocus();
+      if (mounted) setState(() => _showHistory = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,14 +91,29 @@ class LibraryScreen extends StatelessWidget {
                     children: [
                       Expanded(
                         child: TextField(
+                          controller: _searchController,
+                          focusNode: _searchFocusNode,
                           onChanged: (query) {
                             context
                                 .read<LibraryBloc>()
                                 .add(SearchSongsEvent(query));
                           },
                           decoration: InputDecoration(
-                            hintText: 'Search songs, artists, albums...',
+                            hintText:
+                                'Search songs, artists, albums, YouTube...',
                             prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: _searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear_rounded),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      context
+                                          .read<LibraryBloc>()
+                                          .add(const SearchSongsEvent(''));
+                                      setState(() {});
+                                    },
+                                  )
+                                : null,
                             filled: true,
                             fillColor: isDark
                                 ? const Color(0xFF262632)
@@ -68,11 +138,12 @@ class LibraryScreen extends StatelessWidget {
                       const SizedBox(width: 8),
                       IconButton.filledTonal(
                         icon: const Icon(Icons.cloud_download_rounded),
-                        tooltip: 'Download from URL (YouTube/MP3)',
-                        onPressed: () => DownloadDialog.show(context),
+                        tooltip: 'Open download queue',
+                        onPressed: () => DownloadQueueSheet.show(context),
                       ),
                     ],
                   ),
+                  if (_showHistory) _buildSearchHistoryOverlay(context),
                   const SizedBox(height: 14),
                   // Category Chips
                   BlocBuilder<LibraryBloc, LibraryState>(
@@ -82,13 +153,19 @@ class LibraryScreen extends StatelessWidget {
                         selectedCategory = state.selectedCategory;
                       }
 
-                      final categories = ['All', 'Folders', 'Albums', 'Artists'];
+                      final categories = [
+                        'All',
+                        'Folders',
+                        'Albums',
+                        'Artists'
+                      ];
                       return Row(
                         children: categories.map((cat) {
                           final isSelected = selectedCategory == cat;
                           return Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 3),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 3),
                               child: ChoiceChip(
                                 label: Center(
                                   child: Text(
@@ -109,10 +186,10 @@ class LibraryScreen extends StatelessWidget {
                                       ? FontWeight.bold
                                       : FontWeight.normal,
                                 ),
-                                onSelected: (sel) {
-                                  context
-                                      .read<LibraryBloc>()
-                                      .add(SelectCategoryEvent(cat));
+                                onSelected: (_) {
+                                  context.read<LibraryBloc>().add(
+                                        SelectCategoryEvent(cat),
+                                      );
                                 },
                               ),
                             ),
@@ -136,6 +213,10 @@ class LibraryScreen extends StatelessWidget {
                   }
 
                   if (state is LibraryLoaded) {
+                    if (state.searchQuery.trim().isNotEmpty) {
+                      return _buildSearchResultsView(context, state, theme);
+                    }
+
                     final songs = state.displayedSongs;
                     if (songs.isEmpty) {
                       return Center(
@@ -145,7 +226,8 @@ class LibraryScreen extends StatelessWidget {
                             Icon(
                               Icons.music_off_rounded,
                               size: 64,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.4),
                             ),
                             const SizedBox(height: 16),
                             Text(
@@ -160,7 +242,8 @@ class LibraryScreen extends StatelessWidget {
                               'Tap the folder icon above to add your music folder',
                               style: GoogleFonts.outfit(
                                 fontSize: 14,
-                                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                color: theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.6),
                               ),
                             ),
                           ],
@@ -218,206 +301,300 @@ class LibraryScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFolderList(BuildContext context, List<Song> songs) {
+  Widget _buildSearchHistoryOverlay(BuildContext context) {
+    final settings = getIt<SettingsService>();
+    final history = settings.getSearchHistory();
+    if (history.isEmpty || !settings.saveSearchHistory) return const SizedBox();
+
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    // Group songs by folderName
-    final Map<String, List<Song>> folderGroup = {};
-    for (var song in songs) {
-      final name = song.folderName;
-      folderGroup.putIfAbsent(name, () => []).add(song);
-    }
-
-    final folderNames = folderGroup.keys.toList()..sort();
-
-    return ListView.builder(
-      itemCount: folderNames.length,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemBuilder: (context, index) {
-        final folderName = folderNames[index];
-        final folderSongs = folderGroup[folderName]!;
-        final samplePath = folderSongs.first.folderPath;
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          elevation: 0,
-          color: isDark ? const Color(0xFF1E1E26) : Colors.white,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          child: Theme(
-            data: theme.copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-              leading: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.folder_special_rounded,
-                  color: theme.colorScheme.onPrimaryContainer,
-                  size: 26,
-                ),
-              ),
-              title: Text(
-                folderName,
-                style: GoogleFonts.outfit(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-              subtitle: Text(
-                '$samplePath • ${folderSongs.length} track${folderSongs.length > 1 ? 's' : ''}',
-                style: GoogleFonts.outfit(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF262632) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.play_circle_fill_rounded, size: 32),
-                    color: theme.colorScheme.primary,
-                    tooltip: 'Play All Folder Songs',
-                    onPressed: () {
-                      context.read<PlayerBloc>().add(
-                            PlaySongEvent(folderSongs.first, queue: folderSongs),
-                          );
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => PlayerScreen(song: folderSongs.first),
-                        ),
-                      );
-                    },
+                  const Icon(Icons.history_rounded,
+                      size: 18, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Recent Searches',
+                    style: GoogleFonts.outfit(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade600),
                   ),
                 ],
               ),
-              children: folderSongs.map((song) {
-                return _SongListTile(
-                  song: song,
-                  onTap: () {
-                    context.read<PlayerBloc>().add(
-                          PlaySongEvent(song, queue: folderSongs),
-                        );
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => PlayerScreen(song: song),
-                      ),
-                    );
-                  },
-                );
-              }).toList(),
+              InkWell(
+                onTap: () async {
+                  await settings.clearSearchHistory();
+                  setState(() {});
+                },
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  child: Text('Clear All',
+                      style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: history.take(8).map((query) {
+              return ActionChip(
+                avatar: const Icon(Icons.history_rounded, size: 14),
+                label: Text(query, style: GoogleFonts.outfit(fontSize: 12)),
+                backgroundColor:
+                    isDark ? const Color(0xFF1E1E28) : Colors.grey.shade100,
+                onPressed: () {
+                  _searchController.text = query;
+                  _searchFocusNode.unfocus();
+                  context.read<LibraryBloc>().add(SearchSongsEvent(query));
+                },
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResultsView(
+      BuildContext context, LibraryLoaded state, ThemeData theme) {
+    final localSongs = state.displayedSongs;
+    final onlineItems = state.onlineResults;
+    final isSearchingOnline = state.isSearchingOnline;
+
+    if (localSongs.isEmpty && onlineItems.isEmpty && !isSearchingOnline) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.search_off_rounded,
+              size: 64,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No results found for "${state.searchQuery}"',
+              style:
+                  GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: [
+        if (localSongs.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              '🎵 Local Songs (${localSongs.length})',
+              style: GoogleFonts.outfit(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.primary,
+              ),
             ),
           ),
+          ...localSongs.map((song) => _SongListTile(
+                song: song,
+                onTap: () {
+                  context
+                      .read<PlayerBloc>()
+                      .add(PlaySongEvent(song, queue: localSongs));
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => PlayerScreen(song: song)),
+                  );
+                },
+              )),
+          const SizedBox(height: 16),
+        ],
+        if (isSearchingOnline || onlineItems.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Text(
+                  '🌐 YouTube Online Results',
+                  style: GoogleFonts.outfit(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.secondary,
+                  ),
+                ),
+                if (isSearchingOnline) ...[
+                  const SizedBox(width: 10),
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          ...onlineItems.map((item) => _OnlineResultTile(item: item)),
+        ],
+      ],
+    );
+  }
+
+  void _showAddFolderDialog(BuildContext context) async {
+    final bloc = context.read<LibraryBloc>();
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (_) => const FolderPickerDialog(),
+    );
+    if (selected != null && selected.isNotEmpty) {
+      bloc.add(ScanStorageEvent(customPaths: [selected]));
+    }
+  }
+
+  Widget _buildFolderList(BuildContext context, List<Song> songs) {
+    Map<String, List<Song>> folderMap = {};
+    for (var song in songs) {
+      final parts = song.filePath.split(RegExp(r'[/\\]'));
+      final folderName = parts.length > 1 ? parts[parts.length - 2] : 'Root';
+      folderMap.putIfAbsent(folderName, () => []).add(song);
+    }
+
+    final folders = folderMap.entries.toList();
+    if (folders.isEmpty) {
+      return const Center(child: Text('No folders found'));
+    }
+
+    return ListView.builder(
+      itemCount: folders.length,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemBuilder: (context, index) {
+        final entry = folders[index];
+        return ListTile(
+          leading: const CircleAvatar(
+            child: Icon(Icons.folder_rounded),
+          ),
+          title: Text(
+            entry.key,
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            '${entry.value.length} songs',
+            style: GoogleFonts.outfit(fontSize: 12),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () {
+            context.read<PlayerBloc>().add(
+                  PlayQueueEvent(entry.value),
+                );
+            if (entry.value.isNotEmpty) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PlayerScreen(song: entry.value.first),
+                ),
+              );
+            }
+          },
         );
       },
     );
   }
 
   Widget _buildAlbumList(BuildContext context, List<Song> songs) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    final Map<String, List<Song>> albumGroup = {};
+    Map<String, List<Song>> albumMap = {};
     for (var song in songs) {
-      albumGroup.putIfAbsent(song.album, () => []).add(song);
+      albumMap.putIfAbsent(song.album, () => []).add(song);
     }
 
-    final albumNames = albumGroup.keys.toList()..sort();
-
-    return ListView.builder(
-      itemCount: albumNames.length,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+    final albums = albumMap.entries.toList();
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.85,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+      ),
+      itemCount: albums.length,
       itemBuilder: (context, index) {
-        final albumName = albumNames[index];
-        final albumSongs = albumGroup[albumName]!;
-        final firstSong = albumSongs.first;
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          elevation: 0,
-          color: isDark ? const Color(0xFF1E1E26) : Colors.white,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          child: Theme(
-            data: theme.copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: firstSong.albumArt != null
-                      ? CachedNetworkImage(
-                          imageUrl: firstSong.albumArt!,
-                          fit: BoxFit.cover,
-                          errorWidget: (ctx, url, err) => Container(
-                            color: theme.colorScheme.primaryContainer,
-                            child: Icon(Icons.album_rounded, color: theme.colorScheme.onPrimaryContainer),
-                          ),
-                        )
-                      : Container(
-                          color: theme.colorScheme.primaryContainer,
-                          child: Icon(Icons.album_rounded, color: theme.colorScheme.onPrimaryContainer),
-                        ),
+        final entry = albums[index];
+        final firstSong = entry.value.first;
+        return InkWell(
+          onTap: () {
+            context.read<PlayerBloc>().add(
+                  PlayQueueEvent(entry.value),
+                );
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PlayerScreen(song: firstSong),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.album_rounded,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                  ),
                 ),
               ),
-              title: Text(
-                albumName,
-                style: GoogleFonts.outfit(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-              subtitle: Text(
-                '${firstSong.artist} • ${albumSongs.length} track${albumSongs.length > 1 ? 's' : ''}',
-                style: GoogleFonts.outfit(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
+              const SizedBox(height: 8),
+              Text(
+                entry.key,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
               ),
-              trailing: IconButton(
-                icon: const Icon(Icons.play_circle_fill_rounded, size: 32),
-                color: theme.colorScheme.primary,
-                tooltip: 'Play Album',
-                onPressed: () {
-                  context.read<PlayerBloc>().add(
-                        PlaySongEvent(albumSongs.first, queue: albumSongs),
-                      );
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => PlayerScreen(song: albumSongs.first),
-                    ),
-                  );
-                },
+              Text(
+                '${entry.value.length} songs',
+                style: GoogleFonts.outfit(
+                  fontSize: 12,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.6),
+                ),
               ),
-              children: albumSongs.map((song) {
-                return _SongListTile(
-                  song: song,
-                  onTap: () {
-                    context.read<PlayerBloc>().add(
-                          PlaySongEvent(song, queue: albumSongs),
-                        );
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => PlayerScreen(song: song),
-                      ),
-                    );
-                  },
-                );
-              }).toList(),
-            ),
+            ],
           ),
         );
       },
@@ -425,176 +602,42 @@ class LibraryScreen extends StatelessWidget {
   }
 
   Widget _buildArtistList(BuildContext context, List<Song> songs) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    final Map<String, List<Song>> artistGroup = {};
+    Map<String, List<Song>> artistMap = {};
     for (var song in songs) {
-      artistGroup.putIfAbsent(song.artist, () => []).add(song);
+      artistMap.putIfAbsent(song.artist, () => []).add(song);
     }
 
-    final artistNames = artistGroup.keys.toList()..sort();
-
+    final artists = artistMap.entries.toList();
     return ListView.builder(
-      itemCount: artistNames.length,
+      itemCount: artists.length,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemBuilder: (context, index) {
-        final artistName = artistNames[index];
-        final artistSongs = artistGroup[artistName]!;
-        final albumsCount = artistSongs.map((s) => s.album).toSet().length;
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          elevation: 0,
-          color: isDark ? const Color(0xFF1E1E26) : Colors.white,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          child: Theme(
-            data: theme.copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-              leading: Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: theme.colorScheme.secondaryContainer,
-                ),
-                child: Icon(
-                  Icons.person_rounded,
-                  color: theme.colorScheme.onSecondaryContainer,
-                  size: 28,
-                ),
-              ),
-              title: Text(
-                artistName,
-                style: GoogleFonts.outfit(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-              subtitle: Text(
-                '$albumsCount album${albumsCount > 1 ? 's' : ''} • ${artistSongs.length} track${artistSongs.length > 1 ? 's' : ''}',
-                style: GoogleFonts.outfit(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.play_circle_fill_rounded, size: 32),
-                color: theme.colorScheme.primary,
-                tooltip: 'Play Artist Songs',
-                onPressed: () {
-                  context.read<PlayerBloc>().add(
-                        PlaySongEvent(artistSongs.first, queue: artistSongs),
-                      );
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => PlayerScreen(song: artistSongs.first),
-                    ),
-                  );
-                },
-              ),
-              children: artistSongs.map((song) {
-                return _SongListTile(
-                  song: song,
-                  onTap: () {
-                    context.read<PlayerBloc>().add(
-                          PlaySongEvent(song, queue: artistSongs),
-                        );
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => PlayerScreen(song: song),
-                      ),
-                    );
-                  },
-                );
-              }).toList(),
+        final entry = artists[index];
+        final firstSong = entry.value.first;
+        return ListTile(
+          leading: CircleAvatar(
+            child: Text(
+              entry.key.isNotEmpty ? entry.key[0].toUpperCase() : '?',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
             ),
           ),
-        );
-      },
-    );
-  }
-
-  void _showAddFolderDialog(BuildContext context) {
-    final controller = TextEditingController(text: '/storage/emulated/0/Download');
-    final libraryBloc = context.read<LibraryBloc>();
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: Text(
-                'Add & Scan Custom Folder',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+          title: Text(
+            entry.key,
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            '${entry.value.length} songs',
+            style: GoogleFonts.outfit(fontSize: 12),
+          ),
+          trailing: const Icon(Icons.play_arrow_rounded),
+          onTap: () {
+            context.read<PlayerBloc>().add(
+                  PlayQueueEvent(entry.value),
+                );
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PlayerScreen(song: firstSong),
               ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Select or enter the directory path on your device to scan for music files:',
-                    style: GoogleFonts.outfit(fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: controller,
-                          decoration: InputDecoration(
-                            hintText: '/storage/emulated/0/Download',
-                            labelText: 'Folder Path',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.filledTonal(
-                        icon: const Icon(Icons.folder_open_rounded),
-                        tooltip: 'Browse Folders',
-                        onPressed: () async {
-                          final selected = await showDialog<String>(
-                            context: dialogContext,
-                            builder: (_) => FolderPickerDialog(
-                              initialPath: controller.text.trim(),
-                            ),
-                          );
-                          if (selected != null && selected.isNotEmpty) {
-                            setDialogState(() {
-                              controller.text = selected;
-                            });
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    final path = controller.text.trim();
-                    if (path.isNotEmpty) {
-                      libraryBloc
-                          .add(ScanStorageEvent(customPaths: [path]));
-                    }
-                    Navigator.pop(ctx);
-                  },
-                  child: const Text('Scan Folder'),
-                ),
-              ],
             );
           },
         );
@@ -607,320 +650,166 @@ class _SongListTile extends StatelessWidget {
   final Song song;
   final VoidCallback onTap;
 
-  const _SongListTile({required this.song, required this.onTap});
+  const _SongListTile({
+    required this.song,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final artDimension = context.watch<ThemeCubit>().state.albumArtDimension;
+    final themeState = context.watch<ThemeCubit>().state;
+    final artDimension = themeState.albumArtDimension;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+      leading: Container(
+        width: artDimension,
+        height: artDimension,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: Icon(
+            Icons.music_note_rounded,
+            color: theme.colorScheme.onPrimaryContainer,
+            size: (artDimension * 0.5).clamp(16.0, 36.0),
+          ),
+        ),
+      ),
+      title: Text(
+        song.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.outfit(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(
+        '${song.artist} • ${song.album}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.outfit(
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+        ),
+      ),
+      trailing: Text(
+        formatDuration(song.duration),
+        style: GoogleFonts.outfit(
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+        ),
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+class _OnlineResultTile extends StatelessWidget {
+  final YouTubeVideoItem item;
+
+  const _OnlineResultTile({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final downloadService = getIt<DownloadService>();
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      elevation: 0,
-      color: isDark ? const Color(0xFF1E1E26) : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: ListTile(
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: SizedBox(
-            width: artDimension,
-            height: artDimension,
-            child: song.albumArt != null
-                ? CachedNetworkImage(
-                    imageUrl: song.albumArt!,
-                    fit: BoxFit.cover,
-                    errorWidget: (ctx, url, err) => Container(
-                      color: theme.colorScheme.primaryContainer,
-                      child: Icon(
-                        Icons.music_note_rounded,
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  )
-                : Container(
-                    color: theme.colorScheme.primaryContainer,
-                    child: Icon(
-                      Icons.music_note_rounded,
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-          ),
-        ),
-        title: Text(
-          song.title,
-          style: GoogleFonts.outfit(
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          '${song.artist} • ${song.album}',
-          style: GoogleFonts.outfit(
-            fontSize: 13,
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              formatDuration(song.duration),
-              style: GoogleFonts.outfit(
-                fontSize: 12,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-              ),
-            ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded),
-              onSelected: (value) {
-                if (value == 'play_next') {
-                  context.read<PlayerBloc>().add(InsertNextEvent(song));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Playing "${song.title}" next', style: GoogleFonts.outfit()),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                } else if (value == 'add_to_queue') {
-                  context.read<PlayerBloc>().add(AddToQueueEvent(song));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Added "${song.title}" to queue', style: GoogleFonts.outfit()),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                } else if (value == 'add_to_playlist') {
-                  _showAddToPlaylistDialog(context, song);
-                }
-              },
-              itemBuilder: (ctx) => [
-                PopupMenuItem(
-                  value: 'play_next',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.playlist_play_rounded, size: 20),
-                      const SizedBox(width: 12),
-                      Text('Play Next', style: GoogleFonts.outfit()),
-                    ],
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ValueListenableBuilder<List<ActiveDownload>>(
+        valueListenable: downloadService.downloadQueueNotifier,
+        builder: (context, queue, _) {
+          final active = downloadService.getDownloadByUrl(item.url);
+
+          Widget trailingWidget;
+          if (active == null) {
+            trailingWidget = IconButton.filledTonal(
+              icon: const Icon(Icons.download_rounded, size: 20),
+              tooltip: 'Download Track',
+              onPressed: () => _triggerDownload(context, downloadService),
+            );
+          } else if (active.isCompleted) {
+            trailingWidget = const IconButton(
+              icon: Icon(Icons.check_circle_rounded,
+                  color: Colors.green, size: 24),
+              tooltip: 'Downloaded',
+              onPressed: null,
+            );
+          } else if (active.isDownloading) {
+            trailingWidget = Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: CircularProgressIndicator(
+                    value: active.progress > 0 ? active.progress : null,
+                    strokeWidth: 3,
                   ),
                 ),
-                PopupMenuItem(
-                  value: 'add_to_queue',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.queue_music_rounded, size: 20),
-                      const SizedBox(width: 12),
-                      Text('Add to Queue', style: GoogleFonts.outfit()),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'add_to_playlist',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.playlist_add_rounded, size: 20),
-                      const SizedBox(width: 12),
-                      Text('Add to Playlist', style: GoogleFonts.outfit()),
-                    ],
-                  ),
+                Text(
+                  '${(active.progress * 100).toInt()}%',
+                  style: GoogleFonts.outfit(
+                      fontSize: 10, fontWeight: FontWeight.bold),
                 ),
               ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static void _showAddToPlaylistDialog(BuildContext context, Song song) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return BlocBuilder<LibraryBloc, LibraryState>(
-          builder: (context, state) {
-            final playlists =
-                state is LibraryLoaded ? state.playlists : <PlaylistModel>[];
-
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Add to Playlist',
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      TextButton.icon(
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: const Text('New Playlist'),
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _showCreatePlaylistDialogStatic(context);
-                        },
-                      ),
-                    ],
-                  ),
-                  Text(
-                    song.title,
-                    style: GoogleFonts.outfit(
-                      fontSize: 13,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.6),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const Divider(height: 24),
-                  if (playlists.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                      child: Center(
-                        child: Text(
-                          'No playlists yet. Tap "New Playlist" above to create one!',
-                          style: GoogleFonts.outfit(
-                            fontSize: 13,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.6),
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    Flexible(
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: playlists.length,
-                        itemBuilder: (context, index) {
-                          final playlist = playlists[index];
-                          final containsSong =
-                              playlist.songs.any((s) => s.id == song.id);
-
-                          return ListTile(
-                            leading: Icon(
-                              Icons.playlist_play_rounded,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            title: Text(
-                              playlist.name,
-                              style: GoogleFonts.outfit(
-                                  fontWeight: FontWeight.w600),
-                            ),
-                            subtitle: Text('${playlist.songs.length} songs'),
-                            trailing: containsSong
-                                ? const Icon(Icons.check_circle_rounded,
-                                    color: Colors.green)
-                                : const Icon(Icons.add_circle_outline_rounded),
-                            onTap: () {
-                              context.read<LibraryBloc>().add(
-                                    AddSongToPlaylistEvent(playlist.id, song),
-                                  );
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Added "${song.title}" to ${playlist.name}',
-                                    style: GoogleFonts.outfit(),
-                                  ),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
             );
-          },
-        );
-      },
+          } else if (active.isQueued) {
+            trailingWidget = const Chip(
+              avatar:
+                  Icon(Icons.schedule_rounded, size: 14, color: Colors.orange),
+              label: Text('Queued',
+                  style: TextStyle(fontSize: 11, color: Colors.orange)),
+              padding: EdgeInsets.zero,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            );
+          } else {
+            trailingWidget = IconButton(
+              icon: const Icon(Icons.refresh_rounded,
+                  color: Colors.red, size: 20),
+              tooltip: 'Retry Download',
+              onPressed: () => _triggerDownload(context, downloadService),
+            );
+          }
+
+          return ListTile(
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedNetworkImage(
+                imageUrl: item.thumbnailUrl,
+                width: 50,
+                height: 50,
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) =>
+                    const Icon(Icons.music_note_rounded),
+              ),
+            ),
+            title: Text(
+              item.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style:
+                  GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            subtitle: Text(
+              '${item.author} • ${formatDuration(item.duration)}',
+              style: GoogleFonts.outfit(fontSize: 12),
+            ),
+            trailing: trailingWidget,
+            onTap: () => _triggerDownload(context, downloadService),
+          );
+        },
+      ),
     );
   }
 
-  static void _showCreatePlaylistDialogStatic(BuildContext context) {
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-    final libraryBloc = context.read<LibraryBloc>();
-
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(
-            'Create New Playlist',
-            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: 'Playlist Name',
-                  hintText: 'e.g., Favorites, Chill Hits',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: descController,
-                decoration: InputDecoration(
-                  labelText: 'Description (Optional)',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final name = nameController.text.trim();
-                if (name.isNotEmpty) {
-                  libraryBloc.add(CreatePlaylistEvent(
-                        name,
-                        description: descController.text.trim(),
-                      ));
-                }
-                Navigator.pop(ctx);
-              },
-              child: const Text('Create'),
-            ),
-          ],
-        );
-      },
+  void _triggerDownload(BuildContext context, DownloadService service) {
+    service.enqueueDownload(url: item.url, title: item.title);
+    showDownloadQueuedSnackBar(
+      context,
+      title: item.title,
+      onViewQueue: () => DownloadQueueSheet.show(context),
     );
   }
 }

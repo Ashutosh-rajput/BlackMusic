@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/data/models/playlist_model.dart';
+import 'package:pixel_player/data/models/youtube_video_item.dart';
 
 abstract class LibraryState extends Equatable {
   const LibraryState();
@@ -23,6 +24,8 @@ class LibraryLoaded extends LibraryState {
   final List<PlaylistModel> playlists;
   final String searchQuery;
   final String selectedCategory;
+  final List<YouTubeVideoItem> onlineResults;
+  final bool isSearchingOnline;
 
   const LibraryLoaded({
     required this.allSongs,
@@ -30,6 +33,8 @@ class LibraryLoaded extends LibraryState {
     this.playlists = const [],
     this.searchQuery = '',
     this.selectedCategory = 'All',
+    this.onlineResults = const [],
+    this.isSearchingOnline = false,
   });
 
   LibraryLoaded copyWith({
@@ -38,6 +43,8 @@ class LibraryLoaded extends LibraryState {
     List<PlaylistModel>? playlists,
     String? searchQuery,
     String? selectedCategory,
+    List<YouTubeVideoItem>? onlineResults,
+    bool? isSearchingOnline,
   }) {
     return LibraryLoaded(
       allSongs: allSongs ?? this.allSongs,
@@ -45,11 +52,21 @@ class LibraryLoaded extends LibraryState {
       playlists: playlists ?? this.playlists,
       searchQuery: searchQuery ?? this.searchQuery,
       selectedCategory: selectedCategory ?? this.selectedCategory,
+      onlineResults: onlineResults ?? this.onlineResults,
+      isSearchingOnline: isSearchingOnline ?? this.isSearchingOnline,
     );
   }
 
   @override
-  List<Object?> get props => [allSongs, displayedSongs, playlists, searchQuery, selectedCategory];
+  List<Object?> get props => [
+        allSongs,
+        displayedSongs,
+        playlists,
+        searchQuery,
+        selectedCategory,
+        onlineResults,
+        isSearchingOnline,
+      ];
 }
 
 class LibraryError extends LibraryState {

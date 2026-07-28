@@ -27,6 +27,14 @@ class DownloadNotificationService {
           _logger.i('Notification tapped: ${response.payload}');
         },
       );
+
+      final androidPlugin = _notifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        await androidPlugin.requestNotificationsPermission();
+      }
+
       _isInitialized = true;
     } catch (e) {
       _logger.e('Failed to initialize DownloadNotificationService: $e');
@@ -48,9 +56,10 @@ class DownloadNotificationService {
       final androidDetails = AndroidNotificationDetails(
         'download_channel',
         'Active Downloads',
-        channelDescription: 'Live progress notifications for active music downloads',
-        importance: Importance.low,
-        priority: Priority.low,
+        channelDescription:
+            'Live progress notifications for active music downloads',
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
         onlyAlertOnce: true,
         showProgress: true,
         maxProgress: maxProgress,
@@ -58,18 +67,18 @@ class DownloadNotificationService {
         ongoing: true,
         autoCancel: false,
         color: _primaryPurple,
-        subText: 'Pixel Player Downloads',
+        subText: 'Pixel Player',
         category: AndroidNotificationCategory.progress,
         styleInformation: BigTextStyleInformation(
-          'Track: $title\nProgress: $statusText ($safeProgress%)',
-          contentTitle: 'Downloading: $title',
-          summaryText: '$safeProgress% Completed',
+          '$statusText • $safeProgress%',
+          contentTitle: title,
+          summaryText: '$safeProgress%',
         ),
       );
 
       await _notifications.show(
         id: id,
-        title: 'Downloading: $title',
+        title: title,
         body: '$statusText • $safeProgress%',
         notificationDetails: NotificationDetails(android: androidDetails),
       );
@@ -94,9 +103,10 @@ class DownloadNotificationService {
       final androidDetails = AndroidNotificationDetails(
         'download_channel',
         'Active Downloads',
-        channelDescription: 'Live progress notifications for active music downloads',
-        importance: Importance.low,
-        priority: Priority.low,
+        channelDescription:
+            'Live progress notifications for active music downloads',
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
         onlyAlertOnce: true,
         showProgress: true,
         maxProgress: 100,
@@ -104,19 +114,19 @@ class DownloadNotificationService {
         ongoing: true,
         autoCancel: false,
         color: _primaryPurple,
-        subText: 'Playlist Download ($currentTrack/$totalTracks)',
+        subText: 'Track $currentTrack of $totalTracks',
         category: AndroidNotificationCategory.progress,
         styleInformation: BigTextStyleInformation(
-          'Playlist: $playlistTitle\nTrack $currentTrack/$totalTracks: $currentSongTitle\nOverall Progress: $safeProgress%',
-          contentTitle: 'Downloading Playlist: $playlistTitle',
-          summaryText: 'Track $currentTrack/$totalTracks',
+          '$currentSongTitle • $safeProgress%',
+          contentTitle: playlistTitle,
+          summaryText: '$safeProgress%',
         ),
       );
 
       await _notifications.show(
         id: id,
-        title: 'Playlist: $playlistTitle',
-        body: '[$currentTrack/$totalTracks] $currentSongTitle ($safeProgress%)',
+        title: playlistTitle,
+        body: '[$currentTrack/$totalTracks] $currentSongTitle • $safeProgress%',
         notificationDetails: NotificationDetails(android: androidDetails),
       );
     } catch (e) {
