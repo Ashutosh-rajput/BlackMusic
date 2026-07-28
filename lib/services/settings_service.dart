@@ -123,7 +123,14 @@ class SettingsService {
     double thumbSize = 0.0;
 
     try {
-      final musicDir = Directory('/storage/emulated/0/Download/blackmusic');
+      Directory? musicDir;
+      if (Platform.isAndroid) {
+        final downloadsDir = await getDownloadsDirectory();
+        if (downloadsDir != null) {
+          musicDir = Directory('${downloadsDir.path}/blackmusic');
+        }
+      }
+      musicDir ??= Directory('${(await getApplicationDocumentsDirectory()).path}/blackmusic');
       if (await musicDir.exists()) {
         musicSize = await _getDirSizeMb(musicDir);
       }

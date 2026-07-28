@@ -132,30 +132,34 @@ class DownloadService {
   Future<String> _getMusicDirectoryPath() async {
     if (Platform.isAndroid) {
       try {
-        final publicDownloadDir = Directory('/storage/emulated/0/Download/blackmusic');
-        if (!await publicDownloadDir.exists()) {
-          await publicDownloadDir.create(recursive: true);
-        }
-        return publicDownloadDir.path;
-      } catch (e) {
-        _logger.w('Could not write to public Download/blackmusic directory ($e), falling back to app music directory...');
-        try {
-          final extDirs = await getExternalStorageDirectories(type: StorageDirectory.music);
-          if (extDirs != null && extDirs.isNotEmpty) {
-            final dir = extDirs.first;
-            if (!await dir.exists()) {
-              await dir.create(recursive: true);
-            }
-            return dir.path;
+        final downloadsDir = await getDownloadsDirectory();
+        if (downloadsDir != null) {
+          final target = Directory('${downloadsDir.path}/blackmusic');
+          if (!await target.exists()) {
+            await target.create(recursive: true);
           }
-        } catch (_) {}
+          return target.path;
+        }
+      } catch (e) {
+        _logger.w('getDownloadsDirectory fallback: $e');
       }
+      try {
+        final extDirs = await getExternalStorageDirectories(type: StorageDirectory.music);
+        if (extDirs != null && extDirs.isNotEmpty) {
+          final dir = extDirs.first;
+          if (!await dir.exists()) {
+            await dir.create(recursive: true);
+          }
+          return dir.path;
+        }
+      } catch (_) {}
     }
     final appDir = await getApplicationDocumentsDirectory();
-    if (!await appDir.exists()) {
-      await appDir.create(recursive: true);
+    final target = Directory('${appDir.path}/blackmusic');
+    if (!await target.exists()) {
+      await target.create(recursive: true);
     }
-    return appDir.path;
+    return target.path;
   }
 
   String _sanitizeFileName(String name) {

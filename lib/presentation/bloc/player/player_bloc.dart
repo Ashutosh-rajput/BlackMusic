@@ -492,6 +492,12 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   Future<void> _onNextSong(NextSongEvent event, Emitter<PlayerState> emit) async {
     if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
 
+    final sequence = _audioService.player.sequence;
+    if (sequence.length > 1 && _audioService.player.hasNext) {
+      await _audioService.seekToNext();
+      return;
+    }
+
     Song? nextSong;
     if (_isShuffle && _queue.length > 1) {
       final available = _queue.where((s) => s.id != _currentSong!.id).toList();
@@ -515,6 +521,12 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   Future<void> _onPreviousSong(PreviousSongEvent event, Emitter<PlayerState> emit) async {
     if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
+
+    final sequence = _audioService.player.sequence;
+    if (sequence.length > 1 && _audioService.player.hasPrevious) {
+      await _audioService.seekToPrevious();
+      return;
+    }
 
     Song? prevSong;
     final currentIndex = _queue.indexWhere((s) => s.id == _currentSong!.id);

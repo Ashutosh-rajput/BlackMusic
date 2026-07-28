@@ -125,6 +125,26 @@ class AudioPlayerService {
 
   Future<void> setPlaybackRate(double rate) => setSpeed(rate);
 
+  Future<void> seekToNext() async {
+    if (player.hasNext) {
+      await player.seekToNext();
+    }
+  }
+
+  Future<void> seekToPrevious() async {
+    if (player.hasPrevious) {
+      await player.seekToPrevious();
+    }
+  }
+
+  Future<void> seekToIndex(int index) async {
+    if (index >= 0 && index < player.sequence.length) {
+      await player.seek(Duration.zero, index: index);
+    }
+  }
+
+  Stream<int?> get currentIndexStream => player.currentIndexStream;
+
   Stream<Duration> get positionStream => player.positionStream;
 
   Stream<PlayerState> get playerStateStream => player.playerStateStream;

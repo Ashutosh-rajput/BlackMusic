@@ -51,7 +51,14 @@ class PlaylistsScreen extends StatelessWidget {
 
           final recentlyAdded = List<Song>.from(allSongs)
             ..sort((a, b) => b.dateModified.compareTo(a.dateModified));
-          final downloaded = allSongs.where((s) => !s.filePath.startsWith('http')).toList();
+          final downloaded = allSongs.where((s) {
+            final album = s.album.toLowerCase();
+            final genre = (s.genre ?? '').toLowerCase();
+            final path = s.filePath.toLowerCase();
+            return album.contains('download') ||
+                genre.contains('download') ||
+                path.contains('blackmusic');
+          }).toList();
           final dummyDate = DateTime(2000);
           final favoritesPlaylist = playlists.firstWhere(
             (p) => p.name.toLowerCase() == 'favorites',
