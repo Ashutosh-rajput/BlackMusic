@@ -10,8 +10,22 @@ import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/screens/splash_screen.dart';
 import 'package:pixel_player/presentation/widgets/download_dialog.dart';
 
+import 'package:just_audio_background/just_audio_background.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.pixelplayer.audio',
+      androidNotificationChannelName: 'Audio Playback',
+      androidNotificationOngoing: true,
+      androidNotificationIcon: 'mipmap/ic_launcher',
+    );
+    debugPrint("Background initialized");
+  } catch (e) {
+    debugPrint('JustAudioBackground init error: $e');
+  }
 
   try {
     final session = await AudioSession.instance;

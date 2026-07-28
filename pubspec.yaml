@@ -52,6 +52,8 @@ dependencies:
   # Utilities
   intl: ^0.20.3
   logger: ^2.2.0
+  just_audio_background: ^0.0.1-beta.17
+  flutter_local_notifications: ^22.2.0
 
 dev_dependencies:
   flutter_test:

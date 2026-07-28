@@ -1,52 +1,88 @@
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
+import 'package:pixel_player/data/models/song_model.dart';
 import 'package:logger/logger.dart';
 
 final _logger = Logger();
 
 class AudioPlayerService {
   static final AudioPlayerService _instance = AudioPlayerService._internal();
-  late final AudioPlayer _audioPlayer;
+  AudioPlayer? _audioPlayer;
 
   factory AudioPlayerService() => _instance;
 
-  AudioPlayerService._internal() {
-    _audioPlayer = AudioPlayer();
-    _setupAudioPlayer();
+  AudioPlayerService._internal();
+
+  AudioPlayer get player {
+    if (_audioPlayer == null) {
+      _audioPlayer = AudioPlayer();
+      _setupAudioPlayer();
+    }
+    return _audioPlayer!;
   }
 
-  AudioPlayer get player => _audioPlayer;
-
-  Future<void> _setupAudioPlayer() async {
-    // AudioSession is already configured in main.dart — no duplicate config here
-    // to avoid race conditions on startup.
-
-    _audioPlayer.playbackEventStream.listen((event) {
+  void _setupAudioPlayer() {
+    _audioPlayer?.playbackEventStream.listen((event) {
       _logger.d('Playback event: ${event.processingState}');
     }, onError: (Object e, StackTrace st) {
       _logger.e('Audio player playback error: $e');
     });
   }
 
-  Future<void> play(String path) async {
+  Future<void> play(String path, {Song? songInfo}) async {
     try {
-      AudioSource source;
-      if (path.startsWith('http://') || path.startsWith('https://')) {
-        source = AudioSource.uri(
-          Uri.parse(path),
-          headers: const {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          },
-        );
-      } else if (path.startsWith('asset://') || path.startsWith('assets/')) {
-        final assetPath = path.replaceFirst('asset://', '');
-        source = AudioSource.uri(Uri.parse('asset:///$assetPath'));
-      } else {
-        final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
-        source = AudioSource.uri(Uri.file(cleanPath));
+      MediaItem? mediaItem;
+      if (songInfo != null) {
+        try {
+          mediaItem = MediaItem(
+            id: songInfo.id.toString(),
+            album: songInfo.album,
+            title: songInfo.title,
+            artist: songInfo.artist,
+            artUri: songInfo.albumArt != null ? Uri.tryParse(songInfo.albumArt!) : null,
+          );
+        } catch (e) {
+          _logger.w('Error building MediaItem tag: $e');
+        }
       }
 
-      await _audioPlayer.setAudioSource(source);
-      await _audioPlayer.play();
+      AudioSource source;
+      try {
+        if (path.startsWith('http://') || path.startsWith('https://')) {
+          source = AudioSource.uri(
+            Uri.parse(path),
+            tag: mediaItem,
+            headers: const {
+              'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+          );
+        } else if (path.startsWith('asset://') || path.startsWith('assets/')) {
+          final assetPath = path.replaceFirst('asset://', '');
+          source = AudioSource.uri(
+            Uri.parse('asset:///$assetPath'),
+            tag: mediaItem,
+          );
+        } else {
+          final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+          source = AudioSource.uri(
+            Uri.file(cleanPath),
+            tag: mediaItem,
+          );
+        }
+        await player.setAudioSource(source);
+      } catch (err) {
+        _logger.w('AudioSource set with MediaItem failed ($err), falling back to plain AudioSource...');
+        if (path.startsWith('http://') || path.startsWith('https://')) {
+          source = AudioSource.uri(Uri.parse(path));
+        } else {
+          final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+          source = AudioSource.uri(Uri.file(cleanPath));
+        }
+        await player.setAudioSource(source);
+      }
+
+      await player.play();
     } on PlayerInterruptedException {
       _logger.i('Audio loading interrupted by user/new playback request.');
     } catch (e) {
@@ -59,25 +95,25 @@ class AudioPlayerService {
     }
   }
 
-  Future<void> pause() => _audioPlayer.pause();
+  Future<void> pause() => player.pause();
 
-  Future<void> resume() => _audioPlayer.play();
+  Future<void> resume() => player.play();
 
-  Future<void> stop() => _audioPlayer.stop();
+  Future<void> stop() => player.stop();
 
-  Future<void> seek(Duration position) => _audioPlayer.seek(position);
+  Future<void> seek(Duration position) => player.seek(position);
 
-  Future<void> setVolume(double volume) => _audioPlayer.setVolume(volume.clamp(0.0, 1.0));
+  Future<void> setVolume(double volume) => player.setVolume(volume.clamp(0.0, 1.0));
 
-  Future<void> setSpeed(double speed) => _audioPlayer.setSpeed(speed.clamp(0.5, 2.0));
+  Future<void> setSpeed(double speed) => player.setSpeed(speed.clamp(0.5, 2.0));
 
   Future<void> setPlaybackRate(double rate) => setSpeed(rate);
 
-  Stream<Duration> get positionStream => _audioPlayer.positionStream;
+  Stream<Duration> get positionStream => player.positionStream;
 
-  Stream<PlayerState> get playerStateStream => _audioPlayer.playerStateStream;
+  Stream<PlayerState> get playerStateStream => player.playerStateStream;
 
-  Stream<Duration?> get durationStream => _audioPlayer.durationStream;
+  Stream<Duration?> get durationStream => player.durationStream;
 
-  void dispose() => _audioPlayer.dispose();
+  void dispose() => _audioPlayer?.dispose();
 }

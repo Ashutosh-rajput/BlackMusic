@@ -8,12 +8,18 @@ import 'package:pixel_player/services/permission_service.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pixel_player/services/settings_service.dart';
+
 final getIt = GetIt.instance;
 
 Future<void> getItSetup() async {
-  // Database
+  // Database & Preferences
   final db = AppDatabase();
   getIt.registerSingleton<AppDatabase>(db);
+
+  final prefs = await SharedPreferences.getInstance();
+  getIt.registerSingleton<SharedPreferences>(prefs);
 
   // Data sources
   getIt.registerLazySingleton<MusicLocalDatasource>(
@@ -32,6 +38,13 @@ Future<void> getItSetup() async {
   );
   getIt.registerLazySingleton<FileService>(() => FileService());
   getIt.registerLazySingleton<PermissionService>(() => PermissionService());
+  getIt.registerLazySingleton<SettingsService>(
+    () => SettingsService(
+      prefs: getIt<SharedPreferences>(),
+      repository: getIt<MusicRepository>(),
+      fileService: getIt<FileService>(),
+    ),
+  );
 
   // BLoCs
   getIt.registerLazySingleton<PlayerBloc>(

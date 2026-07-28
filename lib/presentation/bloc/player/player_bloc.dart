@@ -119,7 +119,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         isShuffle: _isShuffle,
         isRepeat: _isRepeat,
       ));
-      await _audioService.play(song.filePath);
+      await _audioService.play(song.filePath, songInfo: song);
 
       final dur = _audioService.player.duration ?? song.duration;
       Song activeSong = song;

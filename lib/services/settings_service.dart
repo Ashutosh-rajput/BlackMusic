@@ -1,0 +1,226 @@
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pixel_player/data/repositories/music_repository.dart';
+import 'package:pixel_player/services/file_service.dart';
+import 'package:logger/logger.dart';
+
+final _logger = Logger();
+
+class StorageStats {
+  final double musicSizeMb;
+  final double cacheSizeMb;
+  final double thumbnailsSizeMb;
+
+  const StorageStats({
+    required this.musicSizeMb,
+    required this.cacheSizeMb,
+    required this.thumbnailsSizeMb,
+  });
+}
+
+class SettingsService {
+  final SharedPreferences _prefs;
+  final MusicRepository _repository;
+  final FileService _fileService;
+
+  SettingsService({
+    required SharedPreferences prefs,
+    required MusicRepository repository,
+    required FileService fileService,
+  })  : _prefs = prefs,
+        _repository = repository,
+        _fileService = fileService;
+
+  // Keys
+  static const _keyAutoPlayNext = 'setting_auto_play_next';
+  static const _keyRepeatMode = 'setting_repeat_mode';
+  static const _keyShuffleByDefault = 'setting_shuffle_default';
+  static const _keyResumeLastSong = 'setting_resume_last';
+  static const _keyDefaultVolume = 'setting_default_volume';
+  static const _keyDownloadQuality = 'setting_download_quality';
+  static const _keyDownloadFormat = 'setting_download_format';
+  static const _keyAutoDownloadPlaylistMetadata = 'setting_download_metadata';
+  static const _keySkipAlreadyDownloaded = 'setting_skip_downloaded';
+  static const _keyDownloadOnlyOnWifi = 'setting_download_wifi_only';
+  static const _keyMaxSimultaneousDownloads = 'setting_max_simultaneous';
+  static const _keyThemeMode = 'setting_theme_mode';
+  static const _keyAccentColorIndex = 'setting_accent_color';
+  static const _keyAmoledBlackMode = 'setting_amoled_black';
+  static const _keyFontSize = 'setting_font_size';
+  static const _keyAlbumArtSize = 'setting_art_size';
+  static const _keyAutoScanMusicFolder = 'setting_auto_scan';
+  static const _keyIgnoreShortAudio = 'setting_ignore_short';
+  static const _keyShowHiddenFiles = 'setting_show_hidden';
+  static const _keyIncludeOnlineResults = 'setting_online_results';
+  static const _keySaveSearchHistory = 'setting_save_history';
+  static const _keyRetryFailedDownloads = 'setting_retry_failed';
+  static const _keyDownloadTimeoutSeconds = 'setting_download_timeout';
+  static const _keyShowPlaybackNotification = 'setting_show_notification';
+  static const _keyLockScreenControls = 'setting_lock_controls';
+  static const _keyDownloadNotifications = 'setting_download_notifications';
+
+  // Getters
+  bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
+  String get repeatMode => _prefs.getString(_keyRepeatMode) ?? 'Off';
+  bool get shuffleByDefault => _prefs.getBool(_keyShuffleByDefault) ?? false;
+  bool get resumeLastSong => _prefs.getBool(_keyResumeLastSong) ?? true;
+  double get defaultVolume => _prefs.getDouble(_keyDefaultVolume) ?? 0.8;
+  String get downloadQuality => _prefs.getString(_keyDownloadQuality) ?? 'Best';
+  String get downloadFormat => _prefs.getString(_keyDownloadFormat) ?? 'M4A';
+  bool get autoDownloadPlaylistMetadata => _prefs.getBool(_keyAutoDownloadPlaylistMetadata) ?? true;
+  bool get skipAlreadyDownloaded => _prefs.getBool(_keySkipAlreadyDownloaded) ?? true;
+  bool get downloadOnlyOnWifi => _prefs.getBool(_keyDownloadOnlyOnWifi) ?? false;
+  int get maxSimultaneousDownloads => _prefs.getInt(_keyMaxSimultaneousDownloads) ?? 2;
+  String get themeMode => _prefs.getString(_keyThemeMode) ?? 'Dark';
+  int get accentColorIndex => _prefs.getInt(_keyAccentColorIndex) ?? 0;
+  bool get amoledBlackMode => _prefs.getBool(_keyAmoledBlackMode) ?? true;
+  String get fontSize => _prefs.getString(_keyFontSize) ?? 'Medium';
+  String get albumArtSize => _prefs.getString(_keyAlbumArtSize) ?? 'Medium';
+  bool get autoScanMusicFolder => _prefs.getBool(_keyAutoScanMusicFolder) ?? true;
+  bool get ignoreShortAudio => _prefs.getBool(_keyIgnoreShortAudio) ?? true;
+  bool get showHiddenFiles => _prefs.getBool(_keyShowHiddenFiles) ?? false;
+  bool get includeOnlineResults => _prefs.getBool(_keyIncludeOnlineResults) ?? true;
+  bool get saveSearchHistory => _prefs.getBool(_keySaveSearchHistory) ?? true;
+  bool get retryFailedDownloads => _prefs.getBool(_keyRetryFailedDownloads) ?? true;
+  int get downloadTimeoutSeconds => _prefs.getInt(_keyDownloadTimeoutSeconds) ?? 60;
+  bool get showPlaybackNotification => _prefs.getBool(_keyShowPlaybackNotification) ?? true;
+  bool get lockScreenControls => _prefs.getBool(_keyLockScreenControls) ?? true;
+  bool get downloadNotifications => _prefs.getBool(_keyDownloadNotifications) ?? true;
+
+  // Setters
+  Future<void> setAutoPlayNext(bool value) => _prefs.setBool(_keyAutoPlayNext, value);
+  Future<void> setRepeatMode(String value) => _prefs.setString(_keyRepeatMode, value);
+  Future<void> setShuffleByDefault(bool value) => _prefs.setBool(_keyShuffleByDefault, value);
+  Future<void> setResumeLastSong(bool value) => _prefs.setBool(_keyResumeLastSong, value);
+  Future<void> setDefaultVolume(double value) => _prefs.setDouble(_keyDefaultVolume, value);
+  Future<void> setDownloadQuality(String value) => _prefs.setString(_keyDownloadQuality, value);
+  Future<void> setDownloadFormat(String value) => _prefs.setString(_keyDownloadFormat, value);
+  Future<void> setAutoDownloadPlaylistMetadata(bool value) => _prefs.setBool(_keyAutoDownloadPlaylistMetadata, value);
+  Future<void> setSkipAlreadyDownloaded(bool value) => _prefs.setBool(_keySkipAlreadyDownloaded, value);
+  Future<void> setDownloadOnlyOnWifi(bool value) => _prefs.setBool(_keyDownloadOnlyOnWifi, value);
+  Future<void> setMaxSimultaneousDownloads(int value) => _prefs.setInt(_keyMaxSimultaneousDownloads, value);
+  Future<void> setThemeMode(String value) => _prefs.setString(_keyThemeMode, value);
+  Future<void> setAccentColorIndex(int value) => _prefs.setInt(_keyAccentColorIndex, value);
+  Future<void> setAmoledBlackMode(bool value) => _prefs.setBool(_keyAmoledBlackMode, value);
+  Future<void> setFontSize(String value) => _prefs.setString(_keyFontSize, value);
+  Future<void> setAlbumArtSize(String value) => _prefs.setString(_keyAlbumArtSize, value);
+  Future<void> setAutoScanMusicFolder(bool value) => _prefs.setBool(_keyAutoScanMusicFolder, value);
+  Future<void> setIgnoreShortAudio(bool value) => _prefs.setBool(_keyIgnoreShortAudio, value);
+  Future<void> setShowHiddenFiles(bool value) => _prefs.setBool(_keyShowHiddenFiles, value);
+  Future<void> setIncludeOnlineResults(bool value) => _prefs.setBool(_keyIncludeOnlineResults, value);
+  Future<void> setSaveSearchHistory(bool value) => _prefs.setBool(_keySaveSearchHistory, value);
+  Future<void> setRetryFailedDownloads(bool value) => _prefs.setBool(_keyRetryFailedDownloads, value);
+  Future<void> setDownloadTimeoutSeconds(int value) => _prefs.setInt(_keyDownloadTimeoutSeconds, value);
+  Future<void> setShowPlaybackNotification(bool value) => _prefs.setBool(_keyShowPlaybackNotification, value);
+  Future<void> setLockScreenControls(bool value) => _prefs.setBool(_keyLockScreenControls, value);
+  Future<void> setDownloadNotifications(bool value) => _prefs.setBool(_keyDownloadNotifications, value);
+
+  // Real Storage & File Operations
+  Future<StorageStats> calculateStorageSizes() async {
+    double musicSize = 0.0;
+    double cacheSize = 0.0;
+    double thumbSize = 0.0;
+
+    try {
+      final musicDir = Directory('/storage/emulated/0/Download/blackmusic');
+      if (await musicDir.exists()) {
+        musicSize = await _getDirSizeMb(musicDir);
+      }
+    } catch (_) {}
+
+    try {
+      final cacheDir = await getApplicationCacheDirectory();
+      if (await cacheDir.exists()) {
+        cacheSize = await _getDirSizeMb(cacheDir);
+      }
+    } catch (_) {}
+
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (await tempDir.exists()) {
+        thumbSize = await _getDirSizeMb(tempDir);
+      }
+    } catch (_) {}
+
+    return StorageStats(
+      musicSizeMb: musicSize,
+      cacheSizeMb: cacheSize,
+      thumbnailsSizeMb: thumbSize,
+    );
+  }
+
+  Future<double> _getDirSizeMb(Directory dir) async {
+    int totalBytes = 0;
+    try {
+      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        if (entity is File) {
+          totalBytes += await entity.length();
+        }
+      }
+    } catch (e) {
+      _logger.w('Error calculating directory size for ${dir.path}: $e');
+    }
+    return totalBytes / (1024 * 1024);
+  }
+
+  Future<void> clearCache() async {
+    try {
+      final cacheDir = await getApplicationCacheDirectory();
+      if (await cacheDir.exists()) {
+        await for (final entity in cacheDir.list(followLinks: false)) {
+          try {
+            await entity.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      _logger.e('Failed to clear cache: $e');
+    }
+  }
+
+  Future<void> clearThumbnails() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (await tempDir.exists()) {
+        await for (final entity in tempDir.list(followLinks: false)) {
+          try {
+            await entity.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      _logger.e('Failed to clear thumbnails: $e');
+    }
+  }
+
+  Future<int> rescanMusicLibrary() async {
+    try {
+      final scannedSongs = await _fileService.scanMusicLibrary();
+      for (final song in scannedSongs) {
+        await _repository.addSong(song);
+      }
+      return scannedSongs.length;
+    } catch (e) {
+      _logger.e('Error rescanning music library: $e');
+      return 0;
+    }
+  }
+
+  Future<int> clearMissingSongs() async {
+    int removedCount = 0;
+    try {
+      final allSongs = await _repository.getAllSongs();
+      for (final song in allSongs) {
+        final file = File(song.filePath);
+        if (!await file.exists()) {
+          await _repository.deleteSong(song.id);
+          removedCount++;
+        }
+      }
+    } catch (e) {
+      _logger.e('Error clearing missing songs: $e');
+    }
+    return removedCount;
+  }
+}

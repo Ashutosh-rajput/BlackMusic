@@ -8,6 +8,7 @@ import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/presentation/screens/library_screen.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
+import 'package:pixel_player/presentation/screens/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,7 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Widget> _pages = [
     const LibraryScreen(),
     const _PlaceholderView(title: 'Playlists', icon: Icons.queue_music_rounded),
-    const _PlaceholderView(title: 'Settings', icon: Icons.settings_rounded),
+    const SettingsScreen(),
   ];
 
   @override
