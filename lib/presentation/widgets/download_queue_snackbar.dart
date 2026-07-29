@@ -16,7 +16,7 @@ void showDownloadQueuedSnackBar(
   messenger.showSnackBar(
     SnackBar(
       behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 4),
+      duration: const Duration(seconds: 3),
       dismissDirection: DismissDirection.horizontal,
       elevation: 4,
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -78,8 +78,9 @@ void showDownloadQueuedSnackBar(
               label: 'QUEUE',
               textColor: colors.primary,
               onPressed: () {
-                messenger.hideCurrentSnackBar();
-                onViewQueue();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  onViewQueue();
+                });
               },
             ),
     ),
