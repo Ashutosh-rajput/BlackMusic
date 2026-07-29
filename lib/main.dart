@@ -19,8 +19,13 @@ void main() async {
 
   try {
     await JustAudioBackground.init(
-      androidNotificationChannelId: 'com.pixelplayer.audio',
+      // Keep this channel specific to the installed Android app. Older
+      // releases used a different package/channel ID, which can leave the
+      // playback channel disabled even when download notifications work.
+      androidNotificationChannelId: 'com.muskmelon.blackmusic.playback',
       androidNotificationChannelName: 'Audio Playback',
+      androidNotificationChannelDescription:
+          'Controls and track details for music currently playing',
       androidNotificationOngoing: true,
       androidNotificationIcon: 'mipmap/ic_launcher',
     );
