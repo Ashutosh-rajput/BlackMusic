@@ -33,6 +33,34 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    sourceSets {
+        getByName("release").jniLibs.srcDir(
+            layout.buildDirectory.dir("generated/flutterJniLibs/release").get().asFile,
+        )
+    }
+}
+
+// AGP 9 does not currently pick up Flutter's AOT output automatically.  The
+// Flutter build writes `app.so` for each ABI, while Android packages native
+// libraries only when they are named `lib*.so`.  Stage those files alongside
+// Flutter's native assets before the release APK is assembled.
+val stageFlutterReleaseJniLibs by tasks.registering(Copy::class) {
+    dependsOn(tasks.named("compileFlutterBuildRelease"))
+    from(layout.buildDirectory.dir("intermediates/flutter/release")) {
+        include("*/app.so")
+        eachFile {
+            name = "libapp.so"
+        }
+        includeEmptyDirs = false
+    }
+    into(layout.buildDirectory.dir("generated/flutterJniLibs/release"))
+}
+
+tasks.matching {
+    it.name == "mergeReleaseJniLibFolders" || it.name == "mergeReleaseNativeLibs"
+}.configureEach {
+    dependsOn(stageFlutterReleaseJniLibs)
 }
 
 kotlin {
