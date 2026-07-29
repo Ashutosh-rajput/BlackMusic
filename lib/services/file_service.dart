@@ -58,6 +58,7 @@ class FileService {
               dateModified: dateModified,
               genre: item.genre,
               albumArtist: item.artist,
+              albumArt: 'mediastore://${item.id}',
             ));
           }
           if (songs.isNotEmpty) return songs;
