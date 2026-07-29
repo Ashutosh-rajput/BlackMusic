@@ -73,7 +73,8 @@ class SettingsService {
   double get defaultVolume => _prefs.getDouble(_keyDefaultVolume) ?? 0.8;
   String get downloadQuality =>
       _prefs.getString(_keyDownloadQuality) ?? 'Best';
-  String get downloadFormat => _prefs.getString(_keyDownloadFormat) ?? 'M4A';
+  String get downloadFormat =>
+      (_prefs.getString(_keyDownloadFormat) == 'WebM') ? 'WebM' : 'M4A';
   bool get autoDownloadPlaylistMetadata =>
       _prefs.getBool(_keyAutoDownloadPlaylistMetadata) ?? true;
   bool get skipAlreadyDownloaded =>

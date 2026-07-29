@@ -307,7 +307,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: _downloadFormat,
                   underline: const SizedBox(),
                   dropdownColor: isDark ? const Color(0xFF232330) : Colors.white,
-                  items: ['M4A', 'MP3'].map((f) {
+                  items: ['M4A', 'WebM'].map((f) {
                     return DropdownMenuItem(
                       value: f,
                       child: Text(f, style: GoogleFonts.outfit()),

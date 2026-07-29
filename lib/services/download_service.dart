@@ -498,7 +498,28 @@ class DownloadService {
       }
 
       onProgress(0.20, 'Getting stream manifest...');
-      final manifest = await yt.videos.streamsClient.getManifest(videoId);
+      final manifest = await yt.videos.streamsClient.getManifest(
+        videoId,
+        ytClients: [
+          YoutubeApiClient.androidVr,
+        ],
+      );
+
+      for (final s in manifest.audioOnly) {
+        _logger.i(
+            "AUDIO -> itag=${s.tag} "
+            "container=${s.container.name} "
+            "mime=${s.codec.mimeType} "
+            "bitrate=${s.bitrate}");
+      }
+
+      for (final s in manifest.muxed) {
+        _logger.i(
+            "MUXED -> itag=${s.tag} "
+            "container=${s.container.name} "
+            "mime=${s.codec.mimeType} "
+            "bitrate=${s.bitrate}");
+      }
 
       if (_isCancelled(downloadId) || (cancelToken?.isCancelled ?? false)) {
         yt.close();
@@ -506,34 +527,66 @@ class DownloadService {
         return null;
       }
 
-      // Select stream in order of reliability & quality:
-      // 1. M4A audio-only streams
-      // 2. Pre-muxed MP4 streams (100% reliable direct download)
-      // 3. General audio streams (WebM fallback)
+      // Respect User Setting for Download Format: 'M4A' vs 'WebM'
+      final userFormat = _settingsService?.downloadFormat ?? 'M4A';
+
+      final m4aStreams = manifest.audioOnly.where((s) {
+        final c = s.container.name.toLowerCase();
+        final m = s.codec.mimeType.toLowerCase();
+        return c == 'mp4' || c == 'm4a' || m.contains('audio/mp4');
+      }).toList();
+
+      final webmStreams = manifest.audioOnly.where((s) {
+        final c = s.container.name.toLowerCase();
+        final m = s.codec.mimeType.toLowerCase();
+        return c == 'webm' || m.contains('audio/webm');
+      }).toList();
+
       StreamInfo? selectedStream;
-      final m4aStreams = manifest.audioOnly
-          .where((s) => s.container.name.toLowerCase() == 'm4a')
-          .toList();
-      if (m4aStreams.isNotEmpty) {
-        selectedStream = m4aStreams.withHighestBitrate();
-      } else if (manifest.muxed.isNotEmpty) {
-        selectedStream = manifest.muxed.withHighestBitrate();
-      } else if (manifest.audioOnly.isNotEmpty) {
-        selectedStream = manifest.audioOnly.withHighestBitrate();
+
+      if (userFormat == 'WebM') {
+        if (webmStreams.isNotEmpty) {
+          selectedStream = webmStreams.withHighestBitrate();
+        } else if (m4aStreams.isNotEmpty) {
+          selectedStream = m4aStreams.withHighestBitrate();
+        }
+      } else {
+        // Default: M4A preferred
+        if (m4aStreams.isNotEmpty) {
+          selectedStream = m4aStreams.withHighestBitrate();
+        } else if (webmStreams.isNotEmpty) {
+          selectedStream = webmStreams.withHighestBitrate();
+        }
       }
 
       if (selectedStream == null) {
-        throw Exception('No valid audio stream found for this video.');
+        if (manifest.audioOnly.isNotEmpty) {
+          selectedStream = manifest.audioOnly.withHighestBitrate();
+        } else if (manifest.muxed.isNotEmpty) {
+          selectedStream = manifest.muxed.withHighestBitrate();
+        }
       }
+
+      if (selectedStream == null) {
+        throw Exception('No valid audio or video stream found for this video.');
+      }
+
+      _logger.i("Selected Type     : ${selectedStream.runtimeType}");
+      _logger.i("Selected Tag      : ${selectedStream.tag}");
+      _logger.i("Selected Mime     : ${selectedStream.codec.mimeType}");
+      _logger.i("Selected Container: ${selectedStream.container.name}");
 
       final musicDirPath = await _getMusicDirectoryPath();
       final containerName = selectedStream.container.name.toLowerCase();
-      final ext = containerName == 'mp4' ? 'm4a' : containerName;
+      final ext = (containerName == 'mp4' || containerName == 'm4a')
+          ? 'm4a'
+          : containerName;
       final savePath = '$musicDirPath/$title.$ext';
       activeFile = File(savePath);
 
       final totalBytes = selectedStream.size.totalBytes;
       final streamUrl = selectedStream.url.toString();
+      _logger.i(streamUrl);
 
       _logger.i('[YT_DOWNLOAD 1/3] Video: "$title" ($videoId)');
       _logger.i(
@@ -568,96 +621,114 @@ class DownloadService {
         progress: 30,
       ));
 
+      // Primary Downloader Engine: YoutubeExplode streamsClient.get()
+      StreamInfo downloadedStream = selectedStream;
+      bool downloadSuccess = false;
       try {
-        await _dio.download(
-          streamUrl,
-          savePath,
+        _logger.i(
+            '[YT_DOWNLOAD] Starting primary download via streamsClient.get()...');
+        downloadSuccess = await _downloadChunkStream(
+          yt: yt,
+          streamInfo: selectedStream,
+          saveFile: activeFile,
+          downloadId: downloadId,
           cancelToken: cancelToken,
-          options: Options(
-            headers: const {
-              'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            },
-            receiveTimeout: const Duration(seconds: 120),
-            connectTimeout: const Duration(seconds: 15),
-          ),
-          onReceiveProgress: (received, total) {
-            if (_isCancelled(downloadId) ||
-                (cancelToken?.isCancelled ?? false)) {
-              cancelToken?.cancel('User cancelled download');
-              return;
-            }
-            final effectiveTotal = total > 0 ? total : totalBytes;
-            if (effectiveTotal > 0) {
-              final p = 0.30 + (received / effectiveTotal) * 0.65;
-              final progressInt = (p * 100).toInt();
-              final recMb = (received / 1024 / 1024).toStringAsFixed(1);
-              final totMb = (effectiveTotal / 1024 / 1024).toStringAsFixed(1);
-              final statusMsg = 'Downloading... ($progressInt%)';
-              onProgress(p.clamp(0.0, 0.95), statusMsg);
-
-              unawaited(_notificationService
-                  .showDownloadProgress(
-                    id: notifId,
-                    title: video.title,
-                    statusText: '$recMb MB / $totMb MB',
-                    progress: progressInt,
-                  )
-                  .catchError((_) {}));
-            } else {
-              onProgress(
-                0.50,
-                'Downloading... ${(received / 1024 / 1024).toStringAsFixed(1)} MB',
-              );
-            }
-          },
+          notifId: notifId,
+          videoTitle: video.title,
+          onProgress: onProgress,
         );
-      } on DioException catch (dioErr) {
-        if (CancelToken.isCancel(dioErr) ||
-            _isCancelled(downloadId) ||
-            (cancelToken?.isCancelled ?? false)) {
-          _logger.i('[YT_DOWNLOAD] Download cancelled by user.');
-          unawaited(_notificationService.cancelNotification(notifId));
-          if (await activeFile.exists()) {
-            await activeFile.delete();
-          }
-          return null;
+      } catch (e, st) {
+        _logger.w('[YT_DOWNLOAD] Primary streamsClient download failed: $e',
+            error: e, stackTrace: st);
+        downloadSuccess = false;
+      }
+
+      // Secondary Fallback: Try muxed stream via streamsClient if primary failed
+      if (!downloadSuccess &&
+          !_isCancelled(downloadId) &&
+          !(cancelToken?.isCancelled ?? false) &&
+          manifest.muxed.isNotEmpty &&
+          selectedStream is! MuxedStreamInfo) {
+        if (await activeFile.exists()) {
+          await activeFile.delete();
         }
-
-        _logger.w(
-            '[YT_DOWNLOAD] Dio direct download failed ($dioErr), trying YoutubeExplode streamsClient...');
-        final stream = yt.videos.streamsClient.get(selectedStream);
-        final sink = activeFile.openWrite();
-        int downloaded = 0;
-
+        final muxedStream = manifest.muxed.withHighestBitrate();
+        downloadedStream = muxedStream;
+        _logger.i(
+            '[YT_DOWNLOAD] Fallback: Trying muxed stream via streamsClient.get()...');
         try {
-          await for (final chunk in stream) {
-            if (_isCancelled(downloadId) ||
-                (cancelToken?.isCancelled ?? false)) {
-              break;
-            }
-            downloaded += chunk.length;
-            sink.add(chunk);
+          downloadSuccess = await _downloadChunkStream(
+            yt: yt,
+            streamInfo: muxedStream,
+            saveFile: activeFile,
+            downloadId: downloadId,
+            cancelToken: cancelToken,
+            notifId: notifId,
+            videoTitle: video.title,
+            onProgress: onProgress,
+          );
+        } catch (e, st) {
+          _logger.w('[YT_DOWNLOAD] Muxed streamsClient download failed: $e',
+              error: e, stackTrace: st);
+          downloadSuccess = false;
+        }
+      }
 
-            if (totalBytes > 0) {
-              final p = 0.30 + (downloaded / totalBytes) * 0.65;
-              final progressInt = (p * 100).toInt();
-              final statusMsg = 'Downloading... ($progressInt%)';
-              onProgress(p.clamp(0.0, 0.95), statusMsg);
+      // Last Resort Fallback: Dio.download()
+      if (!downloadSuccess &&
+          !_isCancelled(downloadId) &&
+          !(cancelToken?.isCancelled ?? false)) {
+        if (await activeFile.exists()) {
+          await activeFile.delete();
+        }
+        _logger.w('[YT_DOWNLOAD] Last resort fallback: Trying Dio download...');
+        try {
+          final fallbackUrl = downloadedStream.url.toString();
+          final fallbackBytes = downloadedStream.size.totalBytes;
+          await _dio.download(
+            fallbackUrl,
+            savePath,
+            cancelToken: cancelToken,
+            options: Options(
+              headers: const {
+                'User-Agent':
+                    'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+                'Referer': 'https://www.youtube.com/',
+                'Origin': 'https://www.youtube.com',
+                'Accept': '*/*',
+              },
+              receiveTimeout: const Duration(seconds: 120),
+              connectTimeout: const Duration(seconds: 15),
+            ),
+            onReceiveProgress: (received, total) {
+              if (_isCancelled(downloadId) ||
+                  (cancelToken?.isCancelled ?? false)) {
+                cancelToken?.cancel('User cancelled download');
+                return;
+              }
+              final effectiveTotal = total > 0 ? total : fallbackBytes;
+              if (effectiveTotal > 0) {
+                final p = 0.30 + (received / effectiveTotal) * 0.65;
+                final progressInt = (p * 100).toInt();
+                final recMb = (received / 1024 / 1024).toStringAsFixed(1);
+                final totMb = (effectiveTotal / 1024 / 1024).toStringAsFixed(1);
+                onProgress(p.clamp(0.0, 0.95), 'Downloading... ($progressInt%)');
 
-              unawaited(_notificationService
-                  .showDownloadProgress(
-                    id: notifId,
-                    title: video.title,
-                    statusText: '$progressInt%',
-                    progress: progressInt,
-                  )
-                  .catchError((_) {}));
-            }
-          }
-        } finally {
-          await sink.flush();
-          await sink.close();
+                unawaited(_notificationService
+                    .showDownloadProgress(
+                      id: notifId,
+                      title: video.title,
+                      statusText: '$recMb MB / $totMb MB ($progressInt%)',
+                      progress: progressInt,
+                    )
+                    .catchError((_) {}));
+              }
+            },
+          );
+          downloadSuccess = true;
+        } catch (dioErr) {
+          _logger.e('[YT_DOWNLOAD] Last resort Dio download failed: $dioErr');
+          downloadSuccess = false;
         }
       }
 
@@ -673,14 +744,16 @@ class DownloadService {
       _logger.i('[YT_DOWNLOAD 3/3] Download finished naturally.');
 
       final savedLength = await activeFile.length();
-      if (savedLength == 0 || (totalBytes > 0 && savedLength != totalBytes)) {
+      final expectedBytes = downloadedStream.size.totalBytes;
+      if (savedLength == 0 ||
+          (expectedBytes > 0 && savedLength != expectedBytes)) {
         _logger.w(
-            '[YT_DOWNLOAD incomplete] Expected $totalBytes bytes, received $savedLength. Cleaning up partial file...');
+            '[YT_DOWNLOAD incomplete] Expected $expectedBytes bytes, received $savedLength. Cleaning up partial file...');
         if (await activeFile.exists()) {
           await activeFile.delete();
         }
         throw Exception(
-            'Incomplete download: expected $totalBytes bytes, received $savedLength');
+            'Incomplete download: expected $expectedBytes bytes, received $savedLength');
       }
 
       onProgress(0.98, 'Saving to Music Library...');
@@ -912,6 +985,68 @@ class DownloadService {
     } catch (e) {
       _logger.e('Direct download error: $e');
       rethrow;
+    }
+  }
+
+  Future<bool> _downloadChunkStream({
+    required YoutubeExplode yt,
+    required StreamInfo streamInfo,
+    required File saveFile,
+    required String downloadId,
+    required CancelToken? cancelToken,
+    required int notifId,
+    required String videoTitle,
+    required Function(double progress, String status) onProgress,
+  }) async {
+    final totalBytes = streamInfo.size.totalBytes;
+    final stream = yt.videos.streamsClient.get(streamInfo);
+    final sink = saveFile.openWrite();
+    int downloaded = 0;
+
+    try {
+      await for (final chunk in stream) {
+        if (_isCancelled(downloadId) || (cancelToken?.isCancelled ?? false)) {
+          await sink.flush();
+          await sink.close();
+          if (await saveFile.exists()) {
+            await saveFile.delete();
+          }
+          return false;
+        }
+        downloaded += chunk.length;
+        sink.add(chunk);
+
+        if (totalBytes > 0) {
+          final p = 0.30 + (downloaded / totalBytes) * 0.65;
+          final progressInt = (p * 100).toInt();
+          final recMb = (downloaded / 1024 / 1024).toStringAsFixed(1);
+          final totMb = (totalBytes / 1024 / 1024).toStringAsFixed(1);
+          onProgress(p.clamp(0.0, 0.95), 'Downloading... ($progressInt%)');
+
+          unawaited(_notificationService
+              .showDownloadProgress(
+                id: notifId,
+                title: videoTitle,
+                statusText: '$recMb MB / $totMb MB ($progressInt%)',
+                progress: progressInt,
+              )
+              .catchError((_) {}));
+        }
+      }
+      await sink.flush();
+      await sink.close();
+      return await saveFile.exists() && await saveFile.length() > 0;
+    } catch (e, st) {
+      _logger.e(
+        '[YT_STREAM_DOWNLOAD] Error chunk streaming: $e',
+        error: e,
+        stackTrace: st,
+      );
+      try {
+        await sink.flush();
+        await sink.close();
+      } catch (_) {}
+      return false;
     }
   }
 }
