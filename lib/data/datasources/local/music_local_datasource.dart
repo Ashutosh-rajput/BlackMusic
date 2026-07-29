@@ -144,19 +144,48 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
     if (validSongs.isEmpty) return;
 
     try {
-      final companions = validSongs.map((song) => db.SongsCompanion.insert(
-        id: Value(song.id),
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        filePath: song.filePath,
-        duration: song.duration.inMilliseconds,
-        fileSize: Value(song.fileSize),
-        dateModified: song.dateModified,
-        genre: Value(song.genre),
-        albumArtist: Value(song.albumArtist),
-        albumArt: Value(song.albumArt),
-      )).toList();
+      // Fetch existing songs from DB to preserve rich metadata (albumArt, etc.)
+      final existingRows = await _db.getAllSongs();
+      final existingById = <int, db.Song>{};
+      final existingByPath = <String, db.Song>{};
+      for (final row in existingRows) {
+        existingById[row.id] = row;
+        existingByPath[row.filePath] = row;
+      }
+
+      final companions = validSongs.map((song) {
+        // Check if this song already exists in the DB (by id or filePath)
+        final existing = existingById[song.id] ?? existingByPath[song.filePath];
+
+        // Preserve existing rich metadata if the scanner didn't provide it
+        final mergedAlbumArt = song.albumArt ?? existing?.albumArt;
+        final mergedArtist = (song.artist == 'Unknown Artist' && existing != null && existing.artist != 'Unknown Artist')
+            ? existing.artist
+            : song.artist;
+        final mergedAlbum = (song.album == 'Local Music' && existing != null && existing.album != 'Local Music')
+            ? existing.album
+            : song.album;
+        final mergedGenre = song.genre == 'Audio Track'
+            ? (existing?.genre ?? song.genre)
+            : song.genre;
+        final mergedDuration = (song.duration == const Duration(minutes: 3) && existing != null && existing.duration > 0)
+            ? existing.duration
+            : song.duration.inMilliseconds;
+
+        return db.SongsCompanion.insert(
+          id: Value(song.id),
+          title: song.title,
+          artist: mergedArtist,
+          album: mergedAlbum,
+          filePath: song.filePath,
+          duration: mergedDuration,
+          fileSize: Value(song.fileSize),
+          dateModified: song.dateModified,
+          genre: Value(mergedGenre),
+          albumArtist: Value(song.albumArtist),
+          albumArt: Value(mergedAlbumArt),
+        );
+      }).toList();
 
       await _db.insertSongsBatch(companions);
     } catch (e) {

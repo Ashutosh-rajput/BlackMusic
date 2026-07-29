@@ -400,6 +400,24 @@ class DownloadService {
     downloadQueueNotifier.value = list;
   }
 
+  /// Cancel all queued and active downloads at once
+  void cancelAllDownloads() {
+    final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
+    for (var i = 0; i < list.length; i++) {
+      final d = list[i];
+      if (d.status == DownloadStatus.queued || d.status == DownloadStatus.downloading) {
+        if (d.status == DownloadStatus.downloading) {
+          _cancelTokens[d.id]?.cancel('User cancelled all downloads');
+        }
+        list[i] = d.copyWith(
+          status: DownloadStatus.cancelled,
+          statusMessage: 'Cancelled',
+        );
+      }
+    }
+    downloadQueueNotifier.value = list;
+  }
+
   /// Main entry point: Detects link platform and downloads high-quality audio file.
   Future<Song?> downloadFromUrl({
     required String url,

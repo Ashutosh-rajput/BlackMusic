@@ -88,15 +88,31 @@ class _DownloadQueueSheetState extends State<DownloadQueueSheet> {
                 ValueListenableBuilder<List<ActiveDownload>>(
                   valueListenable: _downloadService.downloadQueueNotifier,
                   builder: (context, queue, _) {
+                    final hasActive = queue.any(
+                        (d) => d.status == DownloadStatus.queued || d.status == DownloadStatus.downloading);
                     final hasFinished = queue.any(
                         (d) => d.isCompleted || d.isCancelled || d.isFailed);
-                    if (!hasFinished) return const SizedBox();
-                    return TextButton(
-                      onPressed: () {
-                        _downloadService.clearCompletedDownloads();
-                      },
-                      child: Text('Clear Finished',
-                          style: GoogleFonts.outfit(fontSize: 12)),
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (hasActive)
+                          TextButton(
+                            onPressed: () {
+                              _downloadService.cancelAllDownloads();
+                            },
+                            child: Text('Cancel All',
+                                style: GoogleFonts.outfit(
+                                    fontSize: 12, color: Colors.redAccent)),
+                          ),
+                        if (hasFinished)
+                          TextButton(
+                            onPressed: () {
+                              _downloadService.clearCompletedDownloads();
+                            },
+                            child: Text('Clear Finished',
+                                style: GoogleFonts.outfit(fontSize: 12)),
+                          ),
+                      ],
                     );
                   },
                 ),

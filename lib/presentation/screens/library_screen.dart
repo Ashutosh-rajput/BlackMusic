@@ -15,6 +15,7 @@ import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
+import 'package:pixel_player/presentation/screens/category_detail_screen.dart';
 import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/folder_picker_dialog.dart';
 import 'package:pixel_player/presentation/widgets/download_queue_sheet.dart';
@@ -514,16 +515,16 @@ class _LibraryScreenState extends State<LibraryScreen>
           ),
           trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () {
-            context.read<PlayerBloc>().add(
-                  PlayQueueEvent(entry.value),
-                );
-            if (entry.value.isNotEmpty) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => PlayerScreen(song: entry.value.first),
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => CategoryDetailScreen(
+                  title: entry.key,
+                  subtitle: 'Folder',
+                  icon: Icons.folder_rounded,
+                  songs: entry.value,
                 ),
-              );
-            }
+              ),
+            );
           },
         );
       },
@@ -548,15 +549,16 @@ class _LibraryScreenState extends State<LibraryScreen>
       itemCount: albums.length,
       itemBuilder: (context, index) {
         final entry = albums[index];
-        final firstSong = entry.value.first;
         return InkWell(
           onTap: () {
-            context.read<PlayerBloc>().add(
-                  PlayQueueEvent(entry.value),
-                );
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => PlayerScreen(song: firstSong),
+                builder: (_) => CategoryDetailScreen(
+                  title: entry.key,
+                  subtitle: 'Album',
+                  icon: Icons.album_rounded,
+                  songs: entry.value,
+                ),
               ),
             );
           },
@@ -615,7 +617,6 @@ class _LibraryScreenState extends State<LibraryScreen>
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemBuilder: (context, index) {
         final entry = artists[index];
-        final firstSong = entry.value.first;
         return ListTile(
           leading: CircleAvatar(
             child: Text(
@@ -631,14 +632,16 @@ class _LibraryScreenState extends State<LibraryScreen>
             '${entry.value.length} songs',
             style: GoogleFonts.outfit(fontSize: 12),
           ),
-          trailing: const Icon(Icons.play_arrow_rounded),
+          trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () {
-            context.read<PlayerBloc>().add(
-                  PlayQueueEvent(entry.value),
-                );
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => PlayerScreen(song: firstSong),
+                builder: (_) => CategoryDetailScreen(
+                  title: entry.key,
+                  subtitle: 'Artist',
+                  icon: Icons.person_rounded,
+                  songs: entry.value,
+                ),
               ),
             );
           },

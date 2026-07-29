@@ -64,8 +64,8 @@ class DownloadNotificationService {
         showProgress: true,
         maxProgress: maxProgress,
         progress: safeProgress,
-        ongoing: true,
-        autoCancel: false,
+        ongoing: false,
+        autoCancel: true,
         color: _primaryPurple,
         subText: 'BlackMusic',
         category: AndroidNotificationCategory.progress,
@@ -111,8 +111,8 @@ class DownloadNotificationService {
         showProgress: true,
         maxProgress: 100,
         progress: safeProgress,
-        ongoing: true,
-        autoCancel: false,
+        ongoing: false,
+        autoCancel: true,
         color: _primaryPurple,
         subText: 'Track $currentTrack of $totalTracks',
         category: AndroidNotificationCategory.progress,
@@ -212,6 +212,15 @@ class DownloadNotificationService {
       await _notifications.cancel(id: id);
     } catch (e) {
       _logger.w('Error canceling notification: $e');
+    }
+  }
+
+  /// Clear all download notifications
+  Future<void> cancelAllNotifications() async {
+    try {
+      await _notifications.cancelAll();
+    } catch (e) {
+      _logger.w('Error canceling all notifications: $e');
     }
   }
 }
