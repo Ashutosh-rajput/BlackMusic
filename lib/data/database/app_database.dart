@@ -83,11 +83,6 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  Future<int> updateSongDuration(String filePath, int durationMs) {
-    return (update(songs)..where((t) => t.filePath.equals(filePath)))
-        .write(SongsCompanion(duration: Value(durationMs)));
-  }
-
   Future<int> updateSongFull(SongsCompanion song) {
     return (update(songs)..where((t) => t.filePath.equals(song.filePath.value)))
         .write(song);

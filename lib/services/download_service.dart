@@ -8,6 +8,7 @@ import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:logger/logger.dart';
 
 import 'package:flutter/foundation.dart';
+import 'package:pixel_player/core/utils/hash_utils.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
 import 'package:pixel_player/services/settings_service.dart';
 
@@ -304,24 +305,53 @@ class DownloadService {
               downloadQueueNotifier.value = endList;
             }
           } catch (e) {
-            final errList =
-                List<ActiveDownload>.from(downloadQueueNotifier.value);
-            final errIdx = errList.indexWhere((d) => d.id == target.id);
-            if (errIdx != -1) {
-              if (errList[errIdx].isCancelled) {
-                errList[errIdx] = errList[errIdx].copyWith(
-                  status: DownloadStatus.cancelled,
-                  statusMessage: 'Cancelled',
+            final shouldRetry = (_settingsService?.retryFailedDownloads ?? false) &&
+                !_isCancelled(target.id);
+            bool retriedSuccess = false;
+            if (shouldRetry) {
+              _logger.i('Retrying failed download for ${target.title}...');
+              try {
+                final resultRetry = await downloadFromUrl(
+                  url: target.url,
+                  downloadId: target.id,
+                  onProgress: (progress, statusMsg) {},
                 );
-              } else {
-                errList[errIdx] = errList[errIdx].copyWith(
-                  status: DownloadStatus.failed,
-                  statusMessage:
-                      'Failed: ${e.toString().replaceAll("Exception: ", "")}',
-                  errorMessage: e.toString(),
-                );
+                if (resultRetry != null) {
+                  retriedSuccess = true;
+                  final endList = List<ActiveDownload>.from(downloadQueueNotifier.value);
+                  final endIdx = endList.indexWhere((d) => d.id == target.id);
+                  if (endIdx != -1) {
+                    endList[endIdx] = endList[endIdx].copyWith(
+                      progress: 1.0,
+                      statusMessage: 'Download complete!',
+                      status: DownloadStatus.completed,
+                    );
+                    downloadQueueNotifier.value = endList;
+                  }
+                }
+              } catch (_) {}
+            }
+
+            if (!retriedSuccess) {
+              final errList =
+                  List<ActiveDownload>.from(downloadQueueNotifier.value);
+              final errIdx = errList.indexWhere((d) => d.id == target.id);
+              if (errIdx != -1) {
+                if (errList[errIdx].isCancelled) {
+                  errList[errIdx] = errList[errIdx].copyWith(
+                    status: DownloadStatus.cancelled,
+                    statusMessage: 'Cancelled',
+                  );
+                } else {
+                  errList[errIdx] = errList[errIdx].copyWith(
+                    status: DownloadStatus.failed,
+                    statusMessage:
+                        'Failed: ${e.toString().replaceAll("Exception: ", "")}',
+                    errorMessage: e.toString(),
+                  );
+                }
+                downloadQueueNotifier.value = errList;
               }
-              downloadQueueNotifier.value = errList;
             }
           } finally {
             _cancelTokens.remove(target.id);
@@ -468,7 +498,7 @@ class DownloadService {
   ) async {
     final cleanUrl = _extractFirstUrl(url.trim());
     final yt = YoutubeExplode();
-    final notifId = cleanUrl.hashCode.abs();
+    final notifId = generateStableId(cleanUrl);
     final cancelToken = _cancelTokens[downloadId];
     File? activeFile;
 
@@ -482,10 +512,9 @@ class DownloadService {
         return null;
       }
 
-      onProgress(0.10, 'Fetching video info...');
       final video = await yt.videos.get(videoId);
       final title = _sanitizeFileName(video.title);
-      final artist = video.author;
+      final artist = video.author.isNotEmpty ? video.author : 'YouTube';
       final duration = video.duration ?? Duration.zero;
       final albumArt = video.thumbnails.highResUrl;
 
@@ -598,7 +627,7 @@ class DownloadService {
             '[YT_DOWNLOAD exists] Local file already exists at $savePath, creating Song model directly.');
         onProgress(1.0, 'Track already exists locally!');
         return Song(
-          id: savePath.hashCode.abs(),
+          id: generateStableId(savePath),
           title: video.title,
           artist: artist,
           album: 'YouTube Downloads',
@@ -758,7 +787,7 @@ class DownloadService {
 
       onProgress(0.98, 'Saving to Music Library...');
       final song = Song(
-        id: savePath.hashCode.abs(),
+        id: generateStableId(savePath),
         title: video.title,
         artist: artist,
         album: 'YouTube Downloads',
@@ -967,7 +996,7 @@ class DownloadService {
           sanitizedFileName.replaceAll(RegExp(r'\.[^.]+$'), '');
 
       final song = Song(
-        id: savePath.hashCode.abs(),
+        id: generateStableId(savePath),
         title: titleWithoutExt,
         artist: 'Unknown Artist',
         album: 'Direct Downloads',

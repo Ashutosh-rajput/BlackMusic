@@ -82,6 +82,16 @@ class _MiniPlayerDock extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
 
     return BlocBuilder<PlayerBloc, PlayerState>(
+      buildWhen: (previous, current) {
+        if (previous.runtimeType != current.runtimeType) return true;
+        if (previous is PlayerPlaying && current is PlayerPlaying) {
+          return previous.song.id != current.song.id;
+        }
+        if (previous is PlayerPaused && current is PlayerPaused) {
+          return previous.song.id != current.song.id;
+        }
+        return true;
+      },
       builder: (context, state) {
         if (state is PlayerInitial || state is PlayerStopped) {
           return const SizedBox();

@@ -17,6 +17,8 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   final SettingsService? _settingsService;
   StreamSubscription<void>? _librarySubscription;
 
+  Timer? _searchDebounceTimer;
+
   LibraryBloc({
     required MusicRepository repository,
     required FileService fileService,
@@ -44,6 +46,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
 
   @override
   Future<void> close() {
+    _searchDebounceTimer?.cancel();
     _librarySubscription?.cancel();
     return super.close();
   }
@@ -52,20 +55,32 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     LoadLibraryEvent event,
     Emitter<LibraryState> emit,
   ) async {
-    emit(const LibraryLoading());
+    if (state is! LibraryLoaded) {
+      emit(const LibraryLoading());
+    }
     try {
       var songs = await _repository.getAllSongs();
       var playlists = await _repository.getPlaylists();
       if (!playlists.any((p) => p.name.toLowerCase() == 'favorites')) {
         await _repository.createPlaylist(
-            'Favorites', 'Default favorites playlist');
+            'Favorites', 'Default favorites playlist', notify: false);
         playlists = await _repository.getPlaylists();
       }
-      emit(LibraryLoaded(
-          allSongs: songs, displayedSongs: songs, playlists: playlists));
+      if (state is LibraryLoaded) {
+        final current = state as LibraryLoaded;
+        emit(current.copyWith(
+          allSongs: songs,
+          displayedSongs: songs,
+          playlists: playlists,
+        ));
+      } else {
+        emit(LibraryLoaded(
+            allSongs: songs, displayedSongs: songs, playlists: playlists));
+      }
     } catch (e) {
-      emit(
-          const LibraryLoaded(allSongs: [], displayedSongs: [], playlists: []));
+      if (state is! LibraryLoaded) {
+        emit(const LibraryLoaded(allSongs: [], displayedSongs: [], playlists: []));
+      }
     }
   }
 
@@ -103,7 +118,6 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     if (state is LibraryLoaded) {
       final current = state as LibraryLoaded;
       final q = event.query.trim();
-      final qLower = q.toLowerCase();
 
       if (q.isEmpty) {
         emit(current.copyWith(
@@ -117,11 +131,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
 
       _settingsService?.addSearchQuery(q);
 
-      final filteredLocal = current.allSongs.where((s) {
-        return s.title.toLowerCase().contains(qLower) ||
-            s.artist.toLowerCase().contains(qLower) ||
-            s.album.toLowerCase().contains(qLower);
-      }).toList();
+      final filteredLocal = await _repository.searchSongs(q);
 
       final includeOnline = _settingsService?.includeOnlineResults ?? true;
 
@@ -133,6 +143,17 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
       ));
 
       if (includeOnline) {
+        _searchDebounceTimer?.cancel();
+        final completer = Completer<void>();
+        _searchDebounceTimer = Timer(const Duration(milliseconds: 400), () {
+          if (!completer.isCompleted) completer.complete();
+        });
+        await completer.future;
+
+        if (emit.isDone || state is! LibraryLoaded || (state as LibraryLoaded).searchQuery != q) {
+          return;
+        }
+
         try {
           final youtube = yt.YoutubeExplode();
           final searchList = await youtube.search.search(q);
@@ -148,7 +169,8 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
           }).toList();
           youtube.close();
 
-          if (state is LibraryLoaded &&
+          if (!emit.isDone &&
+              state is LibraryLoaded &&
               (state as LibraryLoaded).searchQuery == q) {
             emit((state as LibraryLoaded).copyWith(
               onlineResults: items,
@@ -156,7 +178,8 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
             ));
           }
         } catch (_) {
-          if (state is LibraryLoaded &&
+          if (!emit.isDone &&
+              state is LibraryLoaded &&
               (state as LibraryLoaded).searchQuery == q) {
             emit((state as LibraryLoaded).copyWith(isSearchingOnline: false));
           }
@@ -181,7 +204,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   ) async {
     if (state is LibraryLoaded) {
       final current = state as LibraryLoaded;
-      await _repository.createPlaylist(event.name, event.description);
+      await _repository.createPlaylist(event.name, event.description, notify: false);
       final updatedPlaylists = await _repository.getPlaylists();
       emit(current.copyWith(playlists: updatedPlaylists));
     }
@@ -193,7 +216,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   ) async {
     if (state is LibraryLoaded) {
       final current = state as LibraryLoaded;
-      await _repository.deletePlaylist(event.playlistId);
+      await _repository.deletePlaylist(event.playlistId, notify: false);
       final updatedPlaylists = await _repository.getPlaylists();
       emit(current.copyWith(playlists: updatedPlaylists));
     }
@@ -205,7 +228,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   ) async {
     if (state is LibraryLoaded) {
       final current = state as LibraryLoaded;
-      await _repository.addSongToPlaylist(event.playlistId, event.song);
+      await _repository.addSongToPlaylist(event.playlistId, event.song, notify: false);
       final updatedPlaylists = await _repository.getPlaylists();
       emit(current.copyWith(playlists: updatedPlaylists));
     }
@@ -217,7 +240,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   ) async {
     if (state is LibraryLoaded) {
       final current = state as LibraryLoaded;
-      await _repository.removeSongFromPlaylist(event.playlistId, event.songId);
+      await _repository.removeSongFromPlaylist(event.playlistId, event.songId, notify: false);
       final updatedPlaylists = await _repository.getPlaylists();
       emit(current.copyWith(playlists: updatedPlaylists));
     }
@@ -234,7 +257,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
           playlists.indexWhere((p) => p.name.toLowerCase() == 'favorites');
       if (favIndex == -1) {
         await _repository.createPlaylist(
-            'Favorites', 'Default favorites playlist');
+            'Favorites', 'Default favorites playlist', notify: false);
         playlists = await _repository.getPlaylists();
         favIndex =
             playlists.indexWhere((p) => p.name.toLowerCase() == 'favorites');
@@ -245,9 +268,9 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         final isFav = favPlaylist.songs.any((s) => s.id == event.song.id);
         if (isFav) {
           await _repository.removeSongFromPlaylist(
-              favPlaylist.id, event.song.id);
+              favPlaylist.id, event.song.id, notify: false);
         } else {
-          await _repository.addSongToPlaylist(favPlaylist.id, event.song);
+          await _repository.addSongToPlaylist(favPlaylist.id, event.song, notify: false);
         }
         final updatedPlaylists = await _repository.getPlaylists();
         emit(current.copyWith(playlists: updatedPlaylists));

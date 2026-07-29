@@ -22,8 +22,6 @@ abstract class MusicLocalDatasource {
 
 class MusicLocalDatasourceImpl implements MusicLocalDatasource {
   final db.AppDatabase _db;
-  final List<Song> _memoryCache = [];
-  final List<PlaylistModel> _memoryPlaylists = [];
 
   MusicLocalDatasourceImpl(this._db);
 
@@ -44,45 +42,46 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
   Future<List<Song>> getAllSongs() async {
     try {
       final List<db.Song> rows = await _db.getAllSongs();
-      if (rows.isNotEmpty) {
-        final List<Song> mapped = [];
-        for (var row in rows) {
-          final song = Song(
-            id: row.id,
-            title: row.title,
-            artist: row.artist,
-            album: row.album,
-            filePath: row.filePath,
-            duration: Duration(milliseconds: row.duration),
-            fileSize: row.fileSize,
-            dateModified: row.dateModified,
-            genre: row.genre,
-            albumArtist: row.albumArtist,
-            albumArt: row.albumArt,
-          );
-          if (_isSeedSong(song)) {
-            _db.deleteSongById(song.id);
-          } else {
-            mapped.add(song);
-          }
-        }
-        _memoryCache.removeWhere(_isSeedSong);
-        return mapped;
-      }
-    } catch (e) {
-      logger.w('Database query error, returning memory cache: $e');
-    }
-    _memoryCache.removeWhere(_isSeedSong);
-    return List.unmodifiable(_memoryCache);
-  }
+      final List<Song> mapped = [];
+      final List<int> seedIdsToDelete = [];
 
-  bool _dbErrorLogged = false;
+      for (var row in rows) {
+        final song = Song(
+          id: row.id,
+          title: row.title,
+          artist: row.artist,
+          album: row.album,
+          filePath: row.filePath,
+          duration: Duration(milliseconds: row.duration),
+          fileSize: row.fileSize,
+          dateModified: row.dateModified,
+          genre: row.genre,
+          albumArtist: row.albumArtist,
+          albumArt: row.albumArt,
+        );
+        if (_isSeedSong(song)) {
+          seedIdsToDelete.add(song.id);
+        } else {
+          mapped.add(song);
+        }
+      }
+
+      for (final seedId in seedIdsToDelete) {
+        try {
+          await _db.deleteSongById(seedId);
+        } catch (_) {}
+      }
+
+      return mapped;
+    } catch (e) {
+      logger.e('Error fetching all songs from database: $e');
+      rethrow;
+    }
+  }
 
   @override
   Future<void> insertSong(Song song) async {
     if (_isSeedSong(song)) return;
-    _memoryCache.removeWhere((s) => s.id == song.id || s.filePath == song.filePath);
-    _memoryCache.add(song);
     try {
       await _db.insertSong(
         db.SongsCompanion.insert(
@@ -100,17 +99,13 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
         ),
       );
     } catch (e) {
-      if (!_dbErrorLogged) {
-        _dbErrorLogged = true;
-        logger.w('Database write unavailable, using memory storage fallback: $e');
-      }
+      logger.e('Error inserting song into database: $e');
+      rethrow;
     }
   }
 
   @override
   Future<void> updateSong(Song song) async {
-    _memoryCache.removeWhere((s) => s.id == song.id || s.filePath == song.filePath);
-    _memoryCache.add(song);
     try {
       await _db.updateSongFull(
         db.SongsCompanion(
@@ -128,28 +123,28 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
         ),
       );
     } catch (e) {
-      logger.w('Database update error: $e');
+      logger.e('Error updating song in database: $e');
+      rethrow;
     }
   }
 
   @override
   Future<void> deleteSong(int songId) async {
-    _memoryCache.removeWhere((s) => s.id == songId);
     try {
       await _db.deleteSongById(songId);
     } catch (e) {
       logger.e('Error deleting song from database: $e');
+      rethrow;
     }
   }
 
   @override
   Future<void> saveSongsBatch(List<Song> songs) async {
-    if (songs.isEmpty) return;
-    _memoryCache.removeWhere((existing) => songs.any((s) => s.id == existing.id || s.filePath == existing.filePath));
-    _memoryCache.addAll(songs);
+    final validSongs = songs.where((s) => !_isSeedSong(s)).toList();
+    if (validSongs.isEmpty) return;
 
     try {
-      final companions = songs.map((song) => db.SongsCompanion.insert(
+      final companions = validSongs.map((song) => db.SongsCompanion.insert(
         id: Value(song.id),
         title: song.title,
         artist: song.artist,
@@ -166,6 +161,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
       await _db.insertSongsBatch(companions);
     } catch (e) {
       logger.e('Error batch saving songs to database: $e');
+      rethrow;
     }
   }
 
@@ -189,21 +185,18 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           songs: songs,
         ));
       }
-      _memoryPlaylists.clear();
-      _memoryPlaylists.addAll(result);
       return result;
     } catch (e) {
-      logger.w('Database error loading playlists, returning memory playlists: $e');
-      return List.unmodifiable(_memoryPlaylists);
+      logger.e('Error fetching playlists from database: $e');
+      rethrow;
     }
   }
 
   @override
   Future<PlaylistModel> createPlaylist(String name, String? description) async {
     final now = DateTime.now();
-    int newId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     try {
-      newId = await _db.insertPlaylist(
+      final newId = await _db.insertPlaylist(
         db.PlaylistsCompanion.insert(
           name: name,
           description: Value(description),
@@ -211,63 +204,49 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           dateModified: now,
         ),
       );
+
+      return PlaylistModel(
+        id: newId,
+        name: name,
+        description: description,
+        dateCreated: now,
+        dateModified: now,
+        songs: const [],
+      );
     } catch (e) {
-      logger.w('Database error creating playlist, using memory: $e');
+      logger.e('Error creating playlist in database: $e');
+      rethrow;
     }
-
-    final newPlaylist = PlaylistModel(
-      id: newId,
-      name: name,
-      description: description,
-      dateCreated: now,
-      dateModified: now,
-      songs: const [],
-    );
-
-    _memoryPlaylists.add(newPlaylist);
-    return newPlaylist;
   }
 
   @override
   Future<void> deletePlaylist(int playlistId) async {
-    _memoryPlaylists.removeWhere((p) => p.id == playlistId);
     try {
       await _db.deletePlaylistSongs(playlistId);
       await _db.deletePlaylistById(playlistId);
     } catch (e) {
-      logger.w('Error deleting playlist: $e');
+      logger.e('Error deleting playlist from database: $e');
+      rethrow;
     }
   }
 
   @override
   Future<void> addSongToPlaylist(int playlistId, Song song) async {
-    final idx = _memoryPlaylists.indexWhere((p) => p.id == playlistId);
-    if (idx != -1) {
-      final current = _memoryPlaylists[idx];
-      if (!current.songs.any((s) => s.id == song.id)) {
-        final updatedSongs = List<Song>.from(current.songs)..add(song);
-        _memoryPlaylists[idx] = current.copyWith(songs: updatedSongs);
-      }
-    }
     try {
       await _db.addSongToPlaylist(playlistId, song.id);
     } catch (e) {
-      logger.w('Error adding song to playlist in db: $e');
+      logger.e('Error adding song to playlist in database: $e');
+      rethrow;
     }
   }
 
   @override
   Future<void> removeSongFromPlaylist(int playlistId, int songId) async {
-    final idx = _memoryPlaylists.indexWhere((p) => p.id == playlistId);
-    if (idx != -1) {
-      final current = _memoryPlaylists[idx];
-      final updatedSongs = current.songs.where((s) => s.id != songId).toList();
-      _memoryPlaylists[idx] = current.copyWith(songs: updatedSongs);
-    }
     try {
       await _db.removeSongFromPlaylist(playlistId, songId);
     } catch (e) {
-      logger.w('Error removing song from playlist in db: $e');
+      logger.e('Error removing song from playlist in database: $e');
+      rethrow;
     }
   }
 }

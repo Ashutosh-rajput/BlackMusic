@@ -143,11 +143,15 @@ class SetRepeatModeEvent extends PlayerEvent {
 }
 
 class SetAutoPlayNextEvent extends PlayerEvent {
-  final bool enabled;
-  const SetAutoPlayNextEvent(this.enabled);
+  final bool autoPlayNext;
+  const SetAutoPlayNextEvent(this.autoPlayNext);
 
   @override
-  List<Object?> get props => [enabled];
+  List<Object?> get props => [autoPlayNext];
+}
+
+class RestoreLastPlayedEvent extends PlayerEvent {
+  const RestoreLastPlayedEvent();
 }
 
 class PositionChangedEvent extends PlayerEvent {

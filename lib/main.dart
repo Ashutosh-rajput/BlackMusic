@@ -114,14 +114,12 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> {
             brightness: Brightness.light,
             accentIndex: themeState.accentColorIndex,
             isAmoled: false,
-            fontSize: themeState.fontSize,
           );
 
           final dark = AppTheme.buildTheme(
             brightness: Brightness.dark,
             accentIndex: themeState.accentColorIndex,
             isAmoled: themeState.amoledBlackMode,
-            fontSize: themeState.fontSize,
           );
 
           return MaterialApp(

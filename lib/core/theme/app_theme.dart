@@ -20,7 +20,6 @@ class AppTheme {
     required Brightness brightness,
     int accentIndex = 0,
     bool isAmoled = false,
-    String fontSize = 'Medium',
   }) {
     final isDark = brightness == Brightness.dark;
     final safeIndex = accentIndex.clamp(0, accentColors.length - 1);
@@ -41,49 +40,8 @@ class AppTheme {
       surface: bgColor,
     );
 
-    double fontScale = 1.0;
-    if (fontSize == 'Small') fontScale = 0.9;
-    if (fontSize == 'Large') fontScale = 1.1;
-
     final rawTextTheme = isDark ? ThemeData.dark().textTheme : ThemeData.light().textTheme;
-    final outfitTheme = GoogleFonts.outfitTextTheme(rawTextTheme);
-
-    // Safely scale only styles that already have a fontSize defined
-    TextTheme textTheme = outfitTheme;
-    if (fontScale != 1.0) {
-      textTheme = outfitTheme.copyWith(
-        displayLarge: outfitTheme.displayLarge?.fontSize != null
-            ? outfitTheme.displayLarge!.copyWith(fontSize: outfitTheme.displayLarge!.fontSize! * fontScale) : outfitTheme.displayLarge,
-        displayMedium: outfitTheme.displayMedium?.fontSize != null
-            ? outfitTheme.displayMedium!.copyWith(fontSize: outfitTheme.displayMedium!.fontSize! * fontScale) : outfitTheme.displayMedium,
-        displaySmall: outfitTheme.displaySmall?.fontSize != null
-            ? outfitTheme.displaySmall!.copyWith(fontSize: outfitTheme.displaySmall!.fontSize! * fontScale) : outfitTheme.displaySmall,
-        headlineLarge: outfitTheme.headlineLarge?.fontSize != null
-            ? outfitTheme.headlineLarge!.copyWith(fontSize: outfitTheme.headlineLarge!.fontSize! * fontScale) : outfitTheme.headlineLarge,
-        headlineMedium: outfitTheme.headlineMedium?.fontSize != null
-            ? outfitTheme.headlineMedium!.copyWith(fontSize: outfitTheme.headlineMedium!.fontSize! * fontScale) : outfitTheme.headlineMedium,
-        headlineSmall: outfitTheme.headlineSmall?.fontSize != null
-            ? outfitTheme.headlineSmall!.copyWith(fontSize: outfitTheme.headlineSmall!.fontSize! * fontScale) : outfitTheme.headlineSmall,
-        titleLarge: outfitTheme.titleLarge?.fontSize != null
-            ? outfitTheme.titleLarge!.copyWith(fontSize: outfitTheme.titleLarge!.fontSize! * fontScale) : outfitTheme.titleLarge,
-        titleMedium: outfitTheme.titleMedium?.fontSize != null
-            ? outfitTheme.titleMedium!.copyWith(fontSize: outfitTheme.titleMedium!.fontSize! * fontScale) : outfitTheme.titleMedium,
-        titleSmall: outfitTheme.titleSmall?.fontSize != null
-            ? outfitTheme.titleSmall!.copyWith(fontSize: outfitTheme.titleSmall!.fontSize! * fontScale) : outfitTheme.titleSmall,
-        bodyLarge: outfitTheme.bodyLarge?.fontSize != null
-            ? outfitTheme.bodyLarge!.copyWith(fontSize: outfitTheme.bodyLarge!.fontSize! * fontScale) : outfitTheme.bodyLarge,
-        bodyMedium: outfitTheme.bodyMedium?.fontSize != null
-            ? outfitTheme.bodyMedium!.copyWith(fontSize: outfitTheme.bodyMedium!.fontSize! * fontScale) : outfitTheme.bodyMedium,
-        bodySmall: outfitTheme.bodySmall?.fontSize != null
-            ? outfitTheme.bodySmall!.copyWith(fontSize: outfitTheme.bodySmall!.fontSize! * fontScale) : outfitTheme.bodySmall,
-        labelLarge: outfitTheme.labelLarge?.fontSize != null
-            ? outfitTheme.labelLarge!.copyWith(fontSize: outfitTheme.labelLarge!.fontSize! * fontScale) : outfitTheme.labelLarge,
-        labelMedium: outfitTheme.labelMedium?.fontSize != null
-            ? outfitTheme.labelMedium!.copyWith(fontSize: outfitTheme.labelMedium!.fontSize! * fontScale) : outfitTheme.labelMedium,
-        labelSmall: outfitTheme.labelSmall?.fontSize != null
-            ? outfitTheme.labelSmall!.copyWith(fontSize: outfitTheme.labelSmall!.fontSize! * fontScale) : outfitTheme.labelSmall,
-      );
-    }
+    final textTheme = GoogleFonts.outfitTextTheme(rawTextTheme);
 
     return ThemeData(
       useMaterial3: true,
@@ -103,7 +61,7 @@ class AppTheme {
         centerTitle: true,
         scrolledUnderElevation: 0,
         titleTextStyle: GoogleFonts.outfit(
-          fontSize: 20 * fontScale,
+          fontSize: 20,
           fontWeight: FontWeight.bold,
           color: isDark ? Colors.white : Colors.black87,
         ),

@@ -61,29 +61,16 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<ToggleRepeatEvent>(_onToggleRepeat);
     on<SetRepeatModeEvent>(_onSetRepeatMode);
     on<SetAutoPlayNextEvent>(_onSetAutoPlayNext);
+    on<RestoreLastPlayedEvent>(_onRestoreLastPlayed);
     on<PositionChangedEvent>(_onPositionChanged);
     on<DurationChangedEvent>(_onDurationChanged);
 
     _listenToStreams();
+    add(const RestoreLastPlayedEvent());
   }
 
   void _listenToStreams() {
-    _positionSubscription = _audioService.positionStream.listen((pos) async {
-      final dur = _audioService.player.duration;
-      if (!_autoPlayNext &&
-          !_isChangingSong &&
-          _audioService.player.playing &&
-          dur != null &&
-          dur > Duration.zero &&
-          pos >= dur - const Duration(milliseconds: 300)) {
-        _isChangingSong = true;
-        await _audioService.pause();
-        await _audioService.seek(Duration.zero);
-        add(const PositionChangedEvent(Duration.zero));
-        add(const PauseEvent());
-        _isChangingSong = false;
-        return;
-      }
+    _positionSubscription = _audioService.positionStream.listen((pos) {
       add(PositionChangedEvent(pos));
     });
 
@@ -146,6 +133,10 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _onPositionChanged(PositionChangedEvent event, Emitter<PlayerState> emit) {
+    if (_currentSong != null) {
+      _settingsService?.setLastPlayedSongId(_currentSong!.id);
+      _settingsService?.setLastPlayedPositionMs(event.position.inMilliseconds);
+    }
     if (state is PlayerPlaying) {
       final current = state as PlayerPlaying;
       emit(current.copyWith(song: _currentSong, position: event.position));
@@ -210,7 +201,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       if (dur > Duration.zero && (song.duration == Duration.zero || (song.duration - dur).inSeconds.abs() > 1)) {
         activeSong = song.copyWith(duration: dur);
         _currentSong = activeSong;
-        _repository?.updateSong(activeSong);
+        _repository?.updateSong(activeSong, notify: false);
       }
 
       emit(PlayerPlaying(
@@ -447,6 +438,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   Future<void> _onSeek(SeekEvent event, Emitter<PlayerState> emit) async {
     try {
       await _audioService.seek(event.position);
+      _settingsService?.setLastPlayedPositionMs(event.position.inMilliseconds);
       if (state is PlayerPlaying) {
         final playing = state as PlayerPlaying;
         emit(playing.copyWith(position: event.position));
@@ -457,6 +449,41 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     } catch (e) {
       emit(PlayerError('Failed to seek: $e'));
     }
+  }
+
+  Future<void> _onRestoreLastPlayed(
+      RestoreLastPlayedEvent event, Emitter<PlayerState> emit) async {
+    if (_settingsService?.resumeLastSong != true) return;
+    final lastId = _settingsService?.lastPlayedSongId;
+    if (lastId == null || _repository == null) return;
+
+    try {
+      final allSongs = await _repository.getAllSongs();
+      final songMatches = allSongs.where((s) => s.id == lastId);
+      if (songMatches.isEmpty) return;
+      final song = songMatches.first;
+
+      final posMs = _settingsService?.lastPlayedPositionMs ?? 0;
+      final pos = Duration(milliseconds: posMs);
+
+      _currentSong = song;
+      _queue = [song];
+      _originalQueue = [song];
+
+      await _audioService.prepare(song);
+      if (pos > Duration.zero) {
+        await _audioService.seek(pos);
+      }
+
+      emit(PlayerPaused(
+        song: song,
+        position: pos,
+        duration: song.duration,
+        isShuffle: _isShuffle,
+        isRepeat: _isRepeat,
+        queue: _queue,
+      ));
+    } catch (_) {}
   }
 
   Future<void> _onSetVolume(SetVolumeEvent event, Emitter<PlayerState> emit) async {
@@ -599,7 +626,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _onSetAutoPlayNext(SetAutoPlayNextEvent event, Emitter<PlayerState> emit) {
-    _autoPlayNext = event.enabled;
+    _autoPlayNext = event.autoPlayNext;
   }
 
   @override

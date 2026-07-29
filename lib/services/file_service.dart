@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import 'package:pixel_player/core/utils/hash_utils.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:logger/logger.dart';
 
@@ -36,14 +37,14 @@ class FileService {
             final durMs = item.duration ?? 0;
             if (ignoreShortAudio && durMs > 0 && durMs < 30000) continue; // Filter short audio (<30s)
 
-            final pathHash = item.data.hashCode ^ (item.data.length * 37);
+            final stableId = generateStableId(item.data);
             final dateSec = item.dateAdded ?? 0;
             final dateModified = dateSec > 0
                 ? DateTime.fromMillisecondsSinceEpoch(dateSec * 1000)
                 : DateTime.now();
 
             songs.add(Song(
-              id: pathHash.abs(),
+              id: stableId,
               title: item.title.trim().isNotEmpty ? item.title : 'Unknown Track',
               artist: (item.artist != null && item.artist != '<unknown>')
                   ? item.artist!
@@ -96,8 +97,6 @@ class FileService {
       return [];
     }
   }
-
-  static List<Song> getSeedSongs() => const [];
 }
 
 class _ScanParams {
@@ -175,10 +174,10 @@ void _syncScanDir(
           title = parts.sublist(1).join(' - ').trim();
         }
 
-        final pathHash = entity.path.hashCode ^ (entity.path.length * 37);
+        final stableId = generateStableId(entity.path);
 
         songs.add(Song(
-          id: pathHash.abs(),
+          id: stableId,
           title: title,
           artist: artist,
           album: 'Local Music',

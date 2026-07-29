@@ -9,17 +9,17 @@ final _logger = Logger();
 abstract class MusicRepository {
   Stream<void> get onLibraryChanged;
   Future<List<Song>> getAllSongs();
-  Future<void> addSong(Song song);
-  Future<void> updateSong(Song song);
-  Future<void> deleteSong(int songId);
+  Future<void> addSong(Song song, {bool notify = true});
+  Future<void> updateSong(Song song, {bool notify = true});
+  Future<void> deleteSong(int songId, {bool notify = true});
   Future<List<Song>> searchSongs(String query);
-  Future<void> saveSongsBatch(List<Song> songs);
+  Future<void> saveSongsBatch(List<Song> songs, {bool notify = true});
 
   Future<List<PlaylistModel>> getPlaylists();
-  Future<PlaylistModel> createPlaylist(String name, String? description);
-  Future<void> deletePlaylist(int playlistId);
-  Future<void> addSongToPlaylist(int playlistId, Song song);
-  Future<void> removeSongFromPlaylist(int playlistId, int songId);
+  Future<PlaylistModel> createPlaylist(String name, String? description, {bool notify = true});
+  Future<void> deletePlaylist(int playlistId, {bool notify = true});
+  Future<void> addSongToPlaylist(int playlistId, Song song, {bool notify = true});
+  Future<void> removeSongFromPlaylist(int playlistId, int songId, {bool notify = true});
 }
 
 class MusicRepositoryImpl implements MusicRepository {
@@ -42,10 +42,10 @@ class MusicRepositoryImpl implements MusicRepository {
   }
 
   @override
-  Future<void> addSong(Song song) async {
+  Future<void> addSong(Song song, {bool notify = true}) async {
     try {
       await _localDatasource.insertSong(song);
-      _libraryChangedController.add(null);
+      if (notify) _libraryChangedController.add(null);
     } catch (e) {
       _logger.e('Error adding song: $e');
       rethrow;
@@ -53,10 +53,10 @@ class MusicRepositoryImpl implements MusicRepository {
   }
 
   @override
-  Future<void> updateSong(Song song) async {
+  Future<void> updateSong(Song song, {bool notify = true}) async {
     try {
       await _localDatasource.updateSong(song);
-      _libraryChangedController.add(null);
+      if (notify) _libraryChangedController.add(null);
     } catch (e) {
       _logger.e('Error updating song: $e');
       rethrow;
@@ -64,10 +64,10 @@ class MusicRepositoryImpl implements MusicRepository {
   }
 
   @override
-  Future<void> deleteSong(int songId) async {
+  Future<void> deleteSong(int songId, {bool notify = true}) async {
     try {
       await _localDatasource.deleteSong(songId);
-      _libraryChangedController.add(null);
+      if (notify) _libraryChangedController.add(null);
     } catch (e) {
       _logger.e('Error deleting song: $e');
       rethrow;
@@ -92,10 +92,10 @@ class MusicRepositoryImpl implements MusicRepository {
   }
 
   @override
-  Future<void> saveSongsBatch(List<Song> songs) async {
+  Future<void> saveSongsBatch(List<Song> songs, {bool notify = true}) async {
     try {
       await _localDatasource.saveSongsBatch(songs);
-      _libraryChangedController.add(null);
+      if (notify) _libraryChangedController.add(null);
     } catch (e) {
       _logger.e('Error saving songs batch: $e');
       rethrow;
@@ -113,10 +113,10 @@ class MusicRepositoryImpl implements MusicRepository {
   }
 
   @override
-  Future<PlaylistModel> createPlaylist(String name, String? description) async {
+  Future<PlaylistModel> createPlaylist(String name, String? description, {bool notify = true}) async {
     try {
       final playlist = await _localDatasource.createPlaylist(name, description);
-      _libraryChangedController.add(null);
+      if (notify) _libraryChangedController.add(null);
       return playlist;
     } catch (e) {
       _logger.e('Error creating playlist "$name": $e');
@@ -125,10 +125,10 @@ class MusicRepositoryImpl implements MusicRepository {
   }
 
   @override
-  Future<void> deletePlaylist(int playlistId) async {
+  Future<void> deletePlaylist(int playlistId, {bool notify = true}) async {
     try {
       await _localDatasource.deletePlaylist(playlistId);
-      _libraryChangedController.add(null);
+      if (notify) _libraryChangedController.add(null);
     } catch (e) {
       _logger.e('Error deleting playlist $playlistId: $e');
       rethrow;
@@ -136,10 +136,10 @@ class MusicRepositoryImpl implements MusicRepository {
   }
 
   @override
-  Future<void> addSongToPlaylist(int playlistId, Song song) async {
+  Future<void> addSongToPlaylist(int playlistId, Song song, {bool notify = true}) async {
     try {
       await _localDatasource.addSongToPlaylist(playlistId, song);
-      _libraryChangedController.add(null);
+      if (notify) _libraryChangedController.add(null);
     } catch (e) {
       _logger.e('Error adding song ${song.id} to playlist $playlistId: $e');
       rethrow;
@@ -147,10 +147,10 @@ class MusicRepositoryImpl implements MusicRepository {
   }
 
   @override
-  Future<void> removeSongFromPlaylist(int playlistId, int songId) async {
+  Future<void> removeSongFromPlaylist(int playlistId, int songId, {bool notify = true}) async {
     try {
       await _localDatasource.removeSongFromPlaylist(playlistId, songId);
-      _libraryChangedController.add(null);
+      if (notify) _libraryChangedController.add(null);
     } catch (e) {
       _logger.e('Error removing song $songId from playlist $playlistId: $e');
       rethrow;

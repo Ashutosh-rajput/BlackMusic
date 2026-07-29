@@ -11,6 +11,7 @@ import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/core/di/injection_container.dart';
+import 'package:pixel_player/services/audio_service.dart';
 import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/queue_bottom_sheet.dart';
@@ -82,6 +83,23 @@ class _PlayerScreenState extends State<PlayerScreen>
     final isDark = theme.brightness == Brightness.dark;
 
     return BlocConsumer<PlayerBloc, PlayerState>(
+      buildWhen: (previous, current) {
+        if (previous.runtimeType != current.runtimeType) return true;
+        if (previous is PlayerPlaying && current is PlayerPlaying) {
+          return previous.song.id != current.song.id ||
+              previous.isShuffle != current.isShuffle ||
+              previous.isRepeat != current.isRepeat ||
+              previous.repeatMode != current.repeatMode ||
+              previous.playbackRate != current.playbackRate;
+        }
+        if (previous is PlayerPaused && current is PlayerPaused) {
+          return previous.song.id != current.song.id ||
+              previous.isShuffle != current.isShuffle ||
+              previous.isRepeat != current.isRepeat ||
+              previous.repeatMode != current.repeatMode;
+        }
+        return true;
+      },
       listener: (context, state) => _syncAnimation(state),
       builder: (context, state) {
         Song currentSong = widget.song;
@@ -119,13 +137,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           isShuffle = state.isShuffle;
           repeatMode = state.repeatMode;
         }
-
-        final double sliderMax = duration.inMilliseconds.toDouble() > 0
-            ? duration.inMilliseconds.toDouble()
-            : 1.0;
-        final double sliderValue = _isDragging
-            ? _dragPosition.clamp(0.0, sliderMax)
-            : position.inMilliseconds.toDouble().clamp(0.0, sliderMax);
 
         return Scaffold(
           appBar: AppBar(
@@ -272,80 +283,94 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
               const SizedBox(height: 20),
               // Progress Slider with Live Sine Wave Track & Timers
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  children: [
-                    AnimatedBuilder(
-                      animation: _waveController,
-                      builder: (context, child) {
-                        final showWave = getIt<SettingsService>().showPlayerWaveform;
-                        return SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackShape: SineWaveSliderTrackShape(
-                              waveAnimationValue: _waveController.value,
-                              isPlaying: isPlaying && showWave,
-                            ),
-                            thumbShape: SnakeHeadSliderThumbShape(
-                              thumbRadius: 11.0,
-                              waveAnimationValue: _waveController.value,
-                              isPlaying: isPlaying && showWave,
-                            ),
-                            activeTrackColor: theme.colorScheme.primary,
-                            inactiveTrackColor: theme.colorScheme.onSurface.withValues(alpha: 0.2),
-                            thumbColor: theme.colorScheme.primary,
+              StreamBuilder<Duration>(
+                stream: getIt<AudioPlayerService>().positionStream,
+                builder: (context, snapshot) {
+                  final livePos = snapshot.data ?? position;
+                  final currentPos = _isDragging
+                      ? Duration(milliseconds: _dragPosition.toInt())
+                      : livePos;
+                  final liveSliderMax = duration.inMilliseconds.toDouble() > 0
+                      ? duration.inMilliseconds.toDouble()
+                      : 1.0;
+                  final liveSliderValue = currentPos.inMilliseconds.toDouble().clamp(0.0, liveSliderMax);
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      children: [
+                        AnimatedBuilder(
+                          animation: _waveController,
+                          builder: (context, child) {
+                            final showWave = getIt<SettingsService>().showPlayerWaveform;
+                            return SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                trackShape: SineWaveSliderTrackShape(
+                                  waveAnimationValue: _waveController.value,
+                                  isPlaying: isPlaying && showWave,
+                                ),
+                                thumbShape: SnakeHeadSliderThumbShape(
+                                  thumbRadius: 11.0,
+                                  waveAnimationValue: _waveController.value,
+                                  isPlaying: isPlaying && showWave,
+                                ),
+                                activeTrackColor: theme.colorScheme.primary,
+                                inactiveTrackColor: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                                thumbColor: theme.colorScheme.primary,
+                              ),
+                              child: Slider(
+                                min: 0,
+                                max: liveSliderMax,
+                                value: liveSliderValue,
+                                onChangeStart: (value) {
+                                  setState(() {
+                                    _isDragging = true;
+                                    _dragPosition = value;
+                                  });
+                                },
+                                onChanged: (value) {
+                                  setState(() {
+                                    _dragPosition = value;
+                                  });
+                                },
+                                onChangeEnd: (value) {
+                                  setState(() {
+                                    _isDragging = false;
+                                  });
+                                  context.read<PlayerBloc>().add(
+                                        SeekEvent(Duration(milliseconds: value.toInt())),
+                                      );
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                formatDuration(currentPos),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                ),
+                              ),
+                              Text(
+                                formatDuration(duration),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                ),
+                              ),
+                            ],
                           ),
-                          child: Slider(
-                            min: 0,
-                            max: sliderMax,
-                            value: sliderValue,
-                            onChangeStart: (value) {
-                              setState(() {
-                                _isDragging = true;
-                                _dragPosition = value;
-                              });
-                            },
-                            onChanged: (value) {
-                              setState(() {
-                                _dragPosition = value;
-                              });
-                            },
-                            onChangeEnd: (value) {
-                              setState(() {
-                                _isDragging = false;
-                              });
-                              context.read<PlayerBloc>().add(
-                                    SeekEvent(Duration(milliseconds: value.toInt())),
-                                  );
-                            },
-                          ),
-                        );
-                      },
+                        ),
+                      ],
                     ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            formatDuration(position),
-                            style: GoogleFonts.outfit(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                            ),
-                          ),
-                          Text(
-                            formatDuration(duration),
-                            style: GoogleFonts.outfit(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
               const SizedBox(height: 20),
               // Control Action Buttons

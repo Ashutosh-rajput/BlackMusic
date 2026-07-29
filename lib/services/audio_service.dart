@@ -29,6 +29,16 @@ class AudioPlayerService {
     });
   }
 
+  Uri? _parseArtUri(String? artPath) {
+    if (artPath == null || artPath.trim().isEmpty) return null;
+    final trimmed = artPath.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return Uri.tryParse(trimmed);
+    }
+    final cleanPath = trimmed.startsWith('file://') ? Uri.parse(trimmed).toFilePath() : trimmed;
+    return Uri.file(cleanPath);
+  }
+
   AudioSource _buildAudioSource(Song song) {
     MediaItem? mediaItem;
     try {
@@ -37,7 +47,7 @@ class AudioPlayerService {
         album: song.album,
         title: song.title,
         artist: song.artist,
-        artUri: song.albumArt != null ? Uri.tryParse(song.albumArt!) : null,
+        artUri: _parseArtUri(song.albumArt),
       );
     } catch (e) {
       _logger.w('Error building MediaItem tag: $e');
@@ -65,6 +75,18 @@ class AudioPlayerService {
         Uri.file(cleanPath),
         tag: mediaItem,
       );
+    }
+  }
+
+  Future<void> prepare(Song song) async {
+    try {
+      final source = _buildAudioSource(song);
+      await player.setAudioSource(source);
+    } on PlayerInterruptedException {
+      _logger.i('Audio loading interrupted by new request.');
+    } catch (e) {
+      if (e.toString().contains('Loading interrupted')) return;
+      _logger.e('Error preparing audio source (${song.filePath}): $e');
     }
   }
 
