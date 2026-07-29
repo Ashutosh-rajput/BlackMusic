@@ -417,30 +417,38 @@ class DownloadService {
 
   Future<String> _getMusicDirectoryPath() async {
     if (Platform.isAndroid) {
+      // 1. Try public shared Downloads folder (/storage/emulated/0/Download/blackmusic)
       try {
-        final downloadsDir = await getDownloadsDirectory();
-        if (downloadsDir != null) {
-          final target = Directory('${downloadsDir.path}/blackmusic');
-          if (!await target.exists()) {
-            await target.create(recursive: true);
+        final publicDownloadDir =
+            Directory('/storage/emulated/0/Download/blackmusic');
+        if (!await publicDownloadDir.exists()) {
+          await publicDownloadDir.create(recursive: true);
+        }
+        return publicDownloadDir.path;
+      } catch (e) {
+        _logger.w('Failed creating public Download/blackmusic dir: $e');
+      }
+
+      // 2. Fallback to Android External Storage root / Download / blackmusic
+      try {
+        final extStorageDir = await getExternalStorageDirectory();
+        if (extStorageDir != null) {
+          final pathSegments = extStorageDir.path.split('/');
+          final androidIndex = pathSegments.indexOf('Android');
+          if (androidIndex > 0) {
+            final rootPath = pathSegments.sublist(0, androidIndex).join('/');
+            final target = Directory('$rootPath/Download/blackmusic');
+            if (!await target.exists()) {
+              await target.create(recursive: true);
+            }
+            return target.path;
           }
-          return target.path;
         }
       } catch (e) {
-        _logger.w('getDownloadsDirectory fallback: $e');
+        _logger.w('Failed external storage root fallback: $e');
       }
-      try {
-        final extDirs =
-            await getExternalStorageDirectories(type: StorageDirectory.music);
-        if (extDirs != null && extDirs.isNotEmpty) {
-          final dir = extDirs.first;
-          if (!await dir.exists()) {
-            await dir.create(recursive: true);
-          }
-          return dir.path;
-        }
-      } catch (_) {}
     }
+
     final appDir = await getApplicationDocumentsDirectory();
     final target = Directory('${appDir.path}/blackmusic');
     if (!await target.exists()) {
