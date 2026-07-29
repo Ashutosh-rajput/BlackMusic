@@ -64,6 +64,7 @@ class SettingsService {
   static const _keySearchHistoryList = 'setting_search_history_list';
 
   static const _keyShowPlayerWaveform = 'setting_show_player_waveform';
+  static const _keyPlayerBackgroundPattern = 'setting_player_bg_pattern';
 
   // Getters
   bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
@@ -92,6 +93,8 @@ class SettingsService {
       _prefs.getBool(_keyAutoScanMusicFolder) ?? false;
   bool get showPlayerWaveform =>
       _prefs.getBool(_keyShowPlayerWaveform) ?? true;
+  int get playerBackgroundPattern =>
+      _prefs.getInt(_keyPlayerBackgroundPattern) ?? 0;
   bool get ignoreShortAudio => _prefs.getBool(_keyIgnoreShortAudio) ?? true;
   bool get showHiddenFiles => _prefs.getBool(_keyShowHiddenFiles) ?? false;
   bool get includeOnlineResults => _prefs.getBool(_keyIncludeOnlineResults) ?? true;
@@ -123,6 +126,7 @@ class SettingsService {
   Future<void> setAlbumArtSize(String value) => _prefs.setString(_keyAlbumArtSize, value);
   Future<void> setAutoScanMusicFolder(bool value) => _prefs.setBool(_keyAutoScanMusicFolder, value);
   Future<void> setShowPlayerWaveform(bool value) => _prefs.setBool(_keyShowPlayerWaveform, value);
+  Future<void> setPlayerBackgroundPattern(int value) => _prefs.setInt(_keyPlayerBackgroundPattern, value);
   Future<void> setIgnoreShortAudio(bool value) => _prefs.setBool(_keyIgnoreShortAudio, value);
   Future<void> setShowHiddenFiles(bool value) => _prefs.setBool(_keyShowHiddenFiles, value);
   Future<void> setIncludeOnlineResults(bool value) => _prefs.setBool(_keyIncludeOnlineResults, value);

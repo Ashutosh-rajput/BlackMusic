@@ -16,6 +16,7 @@ import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/queue_bottom_sheet.dart';
 import 'package:pixel_player/presentation/widgets/sleep_timer_dialog.dart';
+import 'package:pixel_player/presentation/widgets/player_background_pattern.dart';
 
 class PlayerScreen extends StatefulWidget {
   final Song song;
@@ -177,7 +178,17 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             ],
           ),
-          body: Column(
+          body: Stack(
+            children: [
+              // Animated background pattern
+              Positioned.fill(
+                child: PlayerBackgroundPattern(
+                  patternIndex: getIt<SettingsService>().playerBackgroundPattern,
+                  animation: _waveController,
+                  accentColor: theme.colorScheme.primary,
+                ),
+              ),
+              Column(
             children: [
               const SizedBox(height: 20),
               // Album Art with Vinyl Spinning Effect
@@ -467,6 +478,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             ],
           ),
+            ], // Stack children
+          ), // Stack
         );
       },
     );

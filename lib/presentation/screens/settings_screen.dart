@@ -27,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _shuffleByDefault;
   late bool _resumeLastSong;
   late bool _showPlayerWaveform;
+  late int _playerBackgroundPattern;
   late double _defaultVolume;
 
   // Download Settings State
@@ -85,6 +86,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _shuffleByDefault = _settingsService.shuffleByDefault;
     _resumeLastSong = _settingsService.resumeLastSong;
     _showPlayerWaveform = _settingsService.showPlayerWaveform;
+    _playerBackgroundPattern = _settingsService.playerBackgroundPattern;
     _defaultVolume = _settingsService.defaultVolume;
 
     _downloadQuality = _settingsService.downloadQuality;
@@ -234,6 +236,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() => _showPlayerWaveform = val);
                   _settingsService.setShowPlayerWaveform(val);
                 },
+              ),
+              _divider(),
+              ListTile(
+                title: _tileTitle('Player Background Pattern'),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _tileSubtitle('Animated visual pattern behind the player'),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        {'label': 'None', 'tag': ''},
+                        {'label': 'Floating Orbs', 'tag': '✦ Live'},
+                        {'label': 'Sound Waves', 'tag': '✦ Live'},
+                        {'label': 'Geometric Grid', 'tag': '✦ Live'},
+                        {'label': 'Aurora Glow', 'tag': '✦ Live'},
+                        {'label': 'Honeycomb', 'tag': '◈ Static'},
+                        {'label': 'Diagonal Stripes', 'tag': '◈ Static'},
+                        {'label': 'Circuit Board', 'tag': '◈ Static'},
+                        {'label': 'Starburst', 'tag': '◈ Static'},
+                      ].asMap().entries.map((e) {
+                        final isSelected = _playerBackgroundPattern == e.key;
+                        final label = e.value['label'] as String;
+                        final tag = e.value['tag'] as String;
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() => _playerBackgroundPattern = e.key);
+                            _settingsService.setPlayerBackgroundPattern(e.key);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? _accentColor
+                                  : _accentColor.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isSelected
+                                    ? _accentColor
+                                    : _accentColor.withValues(alpha: 0.3),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  label,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSelected ? Colors.white : null,
+                                  ),
+                                ),
+                                if (tag.isNotEmpty)
+                                  Text(
+                                    tag,
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w500,
+                                      color: isSelected
+                                          ? Colors.white.withValues(alpha: 0.75)
+                                          : _accentColor.withValues(alpha: 0.6),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
               ),
               _divider(),
               ListTile(
