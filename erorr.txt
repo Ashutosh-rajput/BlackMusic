@@ -1,0 +1,33 @@
+
+Launching lib\main.dart on M2101K7BI in debug mode...
+WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): fluttertoast, on_audio_query_android
+Future versions of Flutter will fail to build if your app uses plugins that apply KGP.
+
+Please check the changelogs of these plugins and upgrade to a version that supports Built-in Kotlin.
+If no such version exists, report the issue to the plugin. If necessary, here is a guide on filing 
+an issue against a plugin: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers#report-incompatible-kotlin-gradle-plugin-usage-to-plugin-authors
+
+If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+D:\pixelPlayer\blackmusic\android\app\src\debug\AndroidManifest.xml Error:
+	Attribute service#id.flutter.flutter_background_service.BackgroundService@exported value=(false) from (unknown)
+	is also present at [:flutter_background_service_android] AndroidManifest.xml:15:13-36 value=(true).
+	Suggestion: add 'tools:replace="android:exported"' to <service> element at AndroidManifest.xml to override.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:processDebugMainManifest'.
+> Manifest merger failed : Attribute service#id.flutter.flutter_background_service.BackgroundService@exported value=(false) from (unknown)
+  	is also present at [:flutter_background_service_android] AndroidManifest.xml:15:13-36 value=(true).
+  	Suggestion: add 'tools:replace="android:exported"' to <service> element at AndroidManifest.xml to override.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 5s
+Error: Gradle task assembleDebug failed with exit code 1
