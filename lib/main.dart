@@ -9,8 +9,10 @@ import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 import 'package:pixel_player/presentation/screens/splash_screen.dart';
-import 'package:pixel_player/presentation/widgets/download_dialog.dart';
+import 'package:pixel_player/presentation/widgets/download_queue_sheet.dart';
+import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
+import 'package:pixel_player/services/download_service.dart';
 import 'package:pixel_player/services/audio_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
@@ -108,9 +110,26 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> with WidgetsBindingObse
   }
 
   void _handleSharedUrl(String text) {
+    final url = text.trim();
+    if (url.isEmpty) return;
+
+    // Enqueue immediately in the background — sharing a song must never bring
+    // the app UI to the foreground. Progress/completion are surfaced via
+    // DownloadNotificationService; this snackbar is just a same-instant nod
+    // for when the app already happens to be visible.
+    getIt<DownloadService>().enqueueDownload(url: url, fromShare: true);
+
     final context = _navigatorKey.currentContext;
-    if (context != null && text.trim().isNotEmpty) {
-      DownloadDialog.show(context, initialUrl: text);
+    if (context != null && context.mounted) {
+      showDownloadQueuedSnackBar(
+        context,
+        title: url,
+        onViewQueue: () {
+          if (context.mounted) {
+            DownloadQueueSheet.show(context);
+          }
+        },
+      );
     }
   }
 

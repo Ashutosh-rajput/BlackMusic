@@ -37,6 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _skipAlreadyDownloaded;
   late bool _downloadOnlyOnWifi;
   late double _maxSimultaneousDownloads;
+  late bool _autoAddSharedSongs;
 
   // Appearance State
   late String _themeMode;
@@ -95,6 +96,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _skipAlreadyDownloaded = _settingsService.skipAlreadyDownloaded;
     _downloadOnlyOnWifi = _settingsService.downloadOnlyOnWifi;
     _maxSimultaneousDownloads = _settingsService.maxSimultaneousDownloads.toDouble();
+    _autoAddSharedSongs = _settingsService.autoAddSharedSongs;
 
     _themeMode = _settingsService.themeMode;
     _accentColorIndex = _settingsService.accentColorIndex.clamp(0, _accentColors.length - 1);
@@ -430,6 +432,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   setState(() => _downloadOnlyOnWifi = val);
                   _settingsService.setDownloadOnlyOnWifi(val);
+                },
+              ),
+              _divider(),
+              SwitchListTile(
+                title: _tileTitle('Auto-add Shared Songs'),
+                subtitle: _tileSubtitle(
+                    'Automatically add songs received via Share to your library. When off, review and accept them from the download queue.'),
+                value: _autoAddSharedSongs,
+                activeThumbColor: _accentColor,
+                onChanged: (val) {
+                  setState(() => _autoAddSharedSongs = val);
+                  _settingsService.setAutoAddSharedSongs(val);
                 },
               ),
               _divider(),

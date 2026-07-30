@@ -27,6 +27,18 @@ class ActiveDownload {
   final String? errorMessage;
   final int? targetPlaylistId;
 
+  /// True when this download originated from the OS share sheet rather than
+  /// a manually pasted link. Used to gate auto-add-to-library behavior.
+  final bool fromShare;
+
+  /// True when the file has finished downloading but is waiting for the user
+  /// to explicitly accept it into the library (see [SettingsService.autoAddSharedSongs]).
+  final bool pendingLibraryAcceptance;
+
+  /// The downloaded song, kept around so a pending shared download can be
+  /// accepted (or discarded) later without re-downloading.
+  final Song? resultSong;
+
   ActiveDownload({
     required this.id,
     required this.url,
@@ -36,6 +48,9 @@ class ActiveDownload {
     this.status = DownloadStatus.queued,
     this.errorMessage,
     this.targetPlaylistId,
+    this.fromShare = false,
+    this.pendingLibraryAcceptance = false,
+    this.resultSong,
   });
 
   bool get isCompleted => status == DownloadStatus.completed;
@@ -53,6 +68,9 @@ class ActiveDownload {
     DownloadStatus? status,
     String? errorMessage,
     int? targetPlaylistId,
+    bool? fromShare,
+    bool? pendingLibraryAcceptance,
+    Song? resultSong,
   }) {
     return ActiveDownload(
       id: id ?? this.id,
@@ -63,6 +81,9 @@ class ActiveDownload {
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,
       targetPlaylistId: targetPlaylistId ?? this.targetPlaylistId,
+      fromShare: fromShare ?? this.fromShare,
+      pendingLibraryAcceptance: pendingLibraryAcceptance ?? this.pendingLibraryAcceptance,
+      resultSong: resultSong ?? this.resultSong,
     );
   }
 }
@@ -163,8 +184,15 @@ class DownloadService {
     return trackUrls;
   }
 
-  /// Enqueue download for background multi-track execution
-  Future<void> enqueueDownload({required String url, String? title}) async {
+  /// Enqueue download for background multi-track execution.
+  /// [fromShare] marks downloads that arrived via the OS share sheet, which
+  /// are subject to [SettingsService.autoAddSharedSongs] before being added
+  /// to the library.
+  Future<void> enqueueDownload({
+    required String url,
+    String? title,
+    bool fromShare = false,
+  }) async {
     final cleanUrl = _extractFirstUrl(url.trim());
     if (cleanUrl.isEmpty) return;
 
@@ -179,6 +207,7 @@ class DownloadService {
           progress: 0.0,
           statusMessage: 'Scanning playlist...',
           status: DownloadStatus.queued,
+          fromShare: fromShare,
         ));
         downloadQueueNotifier.value = currentList;
       }
@@ -232,6 +261,7 @@ class DownloadService {
               statusMessage: 'Queued...',
               status: DownloadStatus.queued,
               targetPlaylistId: autoPlaylist?.id,
+              fromShare: fromShare,
             ));
           }
         }
@@ -255,6 +285,7 @@ class DownloadService {
           progress: 0.0,
           statusMessage: 'Queued...',
           status: DownloadStatus.queued,
+          fromShare: fromShare,
         );
       }
     } else {
@@ -265,11 +296,47 @@ class DownloadService {
         progress: 0.0,
         statusMessage: 'Queued...',
         status: DownloadStatus.queued,
+        fromShare: fromShare,
       ));
     }
 
     downloadQueueNotifier.value = existingList;
     unawaited(_processQueue());
+  }
+
+  /// Builds the completed [ActiveDownload] state for a successful download,
+  /// either finalizing it into the library/playlist (when [autoAddToLibrary]
+  /// is true) or parking it as [ActiveDownload.pendingLibraryAcceptance] so
+  /// the user can accept/discard it later via [acceptSharedDownload] /
+  /// [discardSharedDownload].
+  Future<ActiveDownload> _finalizeCompletedDownload(
+    ActiveDownload item,
+    Song result,
+    bool autoAddToLibrary,
+  ) async {
+    if (!autoAddToLibrary) {
+      return item.copyWith(
+        progress: 1.0,
+        statusMessage: 'Downloaded — review to add to library',
+        status: DownloadStatus.completed,
+        pendingLibraryAcceptance: true,
+        resultSong: result,
+      );
+    }
+
+    if (item.targetPlaylistId != null) {
+      try {
+        await _repository.addSongToPlaylist(item.targetPlaylistId!, result);
+        _logger.i('[PLAYLIST_SHARE] Added "${result.title}" to target playlist ID ${item.targetPlaylistId}');
+      } catch (err) {
+        _logger.w('[PLAYLIST_SHARE] Error adding song to target playlist: $err');
+      }
+    }
+    return item.copyWith(
+      progress: 1.0,
+      statusMessage: 'Download complete!',
+      status: DownloadStatus.completed,
+    );
   }
 
   Future<void> _processQueue() async {
@@ -292,10 +359,14 @@ class DownloadService {
           _cancelTokens[target.id] = CancelToken();
           downloadQueueNotifier.value = List.from(list);
 
+          final autoAddToLibrary = !target.fromShare ||
+              (_settingsService?.autoAddSharedSongs ?? true);
+
           try {
             final result = await downloadFromUrl(
               url: target.url,
               downloadId: target.id,
+              addToLibrary: autoAddToLibrary,
               onProgress: (progress, statusMsg) {
                 final now = DateTime.now();
                 final last = _lastProgressUpdate[target.id];
@@ -332,19 +403,11 @@ class DownloadService {
                   statusMessage: 'Cancelled',
                 );
               } else {
-                endList[endIdx] = endList[endIdx].copyWith(
-                  progress: 1.0,
-                  statusMessage: 'Download complete!',
-                  status: DownloadStatus.completed,
+                endList[endIdx] = await _finalizeCompletedDownload(
+                  endList[endIdx],
+                  result,
+                  autoAddToLibrary,
                 );
-                if (target.targetPlaylistId != null) {
-                  try {
-                    await _repository.addSongToPlaylist(target.targetPlaylistId!, result);
-                    _logger.i('[PLAYLIST_SHARE] Added "${result.title}" to target playlist ID ${target.targetPlaylistId}');
-                  } catch (err) {
-                    _logger.w('[PLAYLIST_SHARE] Error adding song to target playlist: $err');
-                  }
-                }
               }
               downloadQueueNotifier.value = endList;
             }
@@ -358,6 +421,7 @@ class DownloadService {
                 final resultRetry = await downloadFromUrl(
                   url: target.url,
                   downloadId: target.id,
+                  addToLibrary: autoAddToLibrary,
                   onProgress: (progress, statusMsg) {},
                 );
                 if (resultRetry != null) {
@@ -365,16 +429,11 @@ class DownloadService {
                   final endList = List<ActiveDownload>.from(downloadQueueNotifier.value);
                   final endIdx = endList.indexWhere((d) => d.id == target.id);
                   if (endIdx != -1) {
-                    endList[endIdx] = endList[endIdx].copyWith(
-                      progress: 1.0,
-                      statusMessage: 'Download complete!',
-                      status: DownloadStatus.completed,
+                    endList[endIdx] = await _finalizeCompletedDownload(
+                      endList[endIdx],
+                      resultRetry,
+                      autoAddToLibrary,
                     );
-                    if (target.targetPlaylistId != null) {
-                      try {
-                        await _repository.addSongToPlaylist(target.targetPlaylistId!, resultRetry);
-                      } catch (_) {}
-                    }
                     downloadQueueNotifier.value = endList;
                   }
                 }
@@ -443,9 +502,62 @@ class DownloadService {
   void clearCompletedDownloads() {
     final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
     list.removeWhere((d) =>
-        d.status == DownloadStatus.completed ||
+        (d.status == DownloadStatus.completed && !d.pendingLibraryAcceptance) ||
         d.status == DownloadStatus.cancelled ||
         d.status == DownloadStatus.failed);
+    downloadQueueNotifier.value = list;
+  }
+
+  /// Adds a previously downloaded shared song into the library (and its
+  /// target playlist, if any) once the user has explicitly accepted it.
+  Future<void> acceptSharedDownload(String downloadId) async {
+    final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
+    final idx = list.indexWhere((d) => d.id == downloadId);
+    if (idx == -1) return;
+
+    final item = list[idx];
+    final song = item.resultSong;
+    if (song == null || !item.pendingLibraryAcceptance) return;
+
+    try {
+      await _repository.addSong(song);
+      if (item.targetPlaylistId != null) {
+        try {
+          await _repository.addSongToPlaylist(item.targetPlaylistId!, song);
+        } catch (e) {
+          _logger.w('[SHARE_ACCEPT] Error adding accepted song to target playlist: $e');
+        }
+      }
+      list[idx] = item.copyWith(
+        pendingLibraryAcceptance: false,
+        statusMessage: 'Added to library',
+      );
+      downloadQueueNotifier.value = list;
+    } catch (e) {
+      _logger.e('[SHARE_ACCEPT] Failed to add accepted song to library: $e');
+    }
+  }
+
+  /// Discards a previously downloaded shared song: deletes the downloaded
+  /// file and removes it from the queue without adding it to the library.
+  Future<void> discardSharedDownload(String downloadId) async {
+    final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
+    final idx = list.indexWhere((d) => d.id == downloadId);
+    if (idx == -1) return;
+
+    final song = list[idx].resultSong;
+    if (song != null) {
+      try {
+        final file = File(song.filePath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        _logger.w('[SHARE_ACCEPT] Failed to delete discarded download file: $e');
+      }
+    }
+
+    list.removeAt(idx);
     downloadQueueNotifier.value = list;
   }
 
@@ -468,10 +580,14 @@ class DownloadService {
   }
 
   /// Main entry point: Detects link platform and downloads high-quality audio file.
+  /// When [addToLibrary] is false the file is still downloaded to disk and the
+  /// returned [Song] is populated, but it is not persisted to the repository —
+  /// used for shared downloads awaiting explicit user acceptance.
   Future<Song?> downloadFromUrl({
     required String url,
     required Function(double progress, String status) onProgress,
     String? downloadId,
+    bool addToLibrary = true,
   }) async {
     final cleanUrl = _extractFirstUrl(url.trim());
     if (cleanUrl.isEmpty) {
@@ -500,9 +616,9 @@ class DownloadService {
     }
 
     if (cleanUrl.contains('youtube.com') || cleanUrl.contains('youtu.be')) {
-      return _downloadFromYoutube(cleanUrl, onProgress, id);
+      return _downloadFromYoutube(cleanUrl, onProgress, id, addToLibrary: addToLibrary);
     } else {
-      return _downloadDirectAudio(cleanUrl, onProgress, id);
+      return _downloadDirectAudio(cleanUrl, onProgress, id, addToLibrary: addToLibrary);
     }
   }
 
@@ -561,8 +677,9 @@ class DownloadService {
   Future<Song?> _downloadFromYoutube(
     String url,
     Function(double progress, String status) onProgress,
-    String downloadId,
-  ) async {
+    String downloadId, {
+    bool addToLibrary = true,
+  }) async {
     final cleanUrl = _extractFirstUrl(url.trim());
     final yt = YoutubeExplode();
     final notifId = generateStableId(cleanUrl);
@@ -867,13 +984,17 @@ class DownloadService {
         albumArt: albumArt,
       );
 
-      await _repository.addSong(song);
+      if (addToLibrary) {
+        await _repository.addSong(song);
+      }
       onProgress(1.0, 'Download complete!');
       unawaited(_notificationService.cancelNotification(notifId));
       unawaited(_notificationService.showDownloadCompleted(
         id: notifId,
         title: video.title,
-        subTitle: '${video.title} downloaded successfully',
+        subTitle: addToLibrary
+            ? '${video.title} downloaded successfully'
+            : '${video.title} downloaded — open BlackMusic to add it to your library',
       ));
       return song;
     } catch (e) {
@@ -1059,8 +1180,9 @@ class DownloadService {
   Future<Song?> _downloadDirectAudio(
     String url,
     Function(double progress, String status) onProgress,
-    String downloadId,
-  ) async {
+    String downloadId, {
+    bool addToLibrary = true,
+  }) async {
     final cancelToken = _cancelTokens.putIfAbsent(downloadId, CancelToken.new);
 
     try {
@@ -1107,7 +1229,9 @@ class DownloadService {
         albumArtist: 'Unknown Artist',
       );
 
-      await _repository.addSong(song);
+      if (addToLibrary) {
+        await _repository.addSong(song);
+      }
       onProgress(1.0, 'Download complete!');
       return song;
     } catch (e) {

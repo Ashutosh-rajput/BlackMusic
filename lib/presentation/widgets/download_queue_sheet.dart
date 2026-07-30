@@ -215,7 +215,11 @@ class _QueueItemTile extends StatelessWidget {
     Widget statusIcon;
     Color statusColor;
 
-    if (item.isCompleted) {
+    if (item.pendingLibraryAcceptance) {
+      statusIcon =
+          const Icon(Icons.download_done_rounded, color: Colors.amber, size: 24);
+      statusColor = Colors.amber.shade800;
+    } else if (item.isCompleted) {
       statusIcon =
           const Icon(Icons.check_circle_rounded, color: Colors.green, size: 24);
       statusColor = Colors.green;
@@ -274,7 +278,23 @@ class _QueueItemTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (item.isDownloading || item.isQueued)
+                if (item.pendingLibraryAcceptance) ...[
+                  IconButton(
+                    icon: const Icon(Icons.playlist_add_check_rounded, size: 22),
+                    color: Colors.green,
+                    tooltip: 'Add to Library',
+                    onPressed: () {
+                      getIt<DownloadService>().acceptSharedDownload(item.id);
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                    tooltip: 'Discard',
+                    onPressed: () {
+                      getIt<DownloadService>().discardSharedDownload(item.id);
+                    },
+                  ),
+                ] else if (item.isDownloading || item.isQueued)
                   IconButton(
                     icon: const Icon(Icons.close_rounded, size: 20),
                     tooltip: 'Cancel',
