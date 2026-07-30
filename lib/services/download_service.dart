@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pixel_player/data/models/song_model.dart';
+import 'package:pixel_player/data/models/playlist_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:logger/logger.dart';
 
@@ -24,6 +25,7 @@ class ActiveDownload {
   final String statusMessage;
   final DownloadStatus status;
   final String? errorMessage;
+  final int? targetPlaylistId;
 
   ActiveDownload({
     required this.id,
@@ -33,6 +35,7 @@ class ActiveDownload {
     required this.statusMessage,
     this.status = DownloadStatus.queued,
     this.errorMessage,
+    this.targetPlaylistId,
   });
 
   bool get isCompleted => status == DownloadStatus.completed;
@@ -49,6 +52,7 @@ class ActiveDownload {
     String? statusMessage,
     DownloadStatus? status,
     String? errorMessage,
+    int? targetPlaylistId,
   }) {
     return ActiveDownload(
       id: id ?? this.id,
@@ -58,6 +62,7 @@ class ActiveDownload {
       statusMessage: statusMessage ?? this.statusMessage,
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,
+      targetPlaylistId: targetPlaylistId ?? this.targetPlaylistId,
     );
   }
 }
@@ -178,6 +183,36 @@ class DownloadService {
         downloadQueueNotifier.value = currentList;
       }
 
+      String pName = title ?? 'Shared Playlist';
+      final yt = YoutubeExplode();
+      try {
+        final playlistId = PlaylistId(cleanUrl).value;
+        final playlist = await yt.playlists.get(playlistId);
+        if (playlist.title.trim().isNotEmpty) {
+          pName = playlist.title.trim();
+        }
+      } catch (e) {
+        _logger.w('[PLAYLIST_SHARE] Failed fetching playlist title: $e');
+      } finally {
+        yt.close();
+      }
+
+      // FIRST STEP: Create playlist immediately in database/repository
+      PlaylistModel? autoPlaylist;
+      try {
+        final existingPlaylists = await _repository.getPlaylists();
+        final match = existingPlaylists.where(
+            (p) => p.name.trim().toLowerCase() == pName.trim().toLowerCase());
+        if (match.isNotEmpty) {
+          autoPlaylist = match.first;
+        } else {
+          autoPlaylist = await _repository.createPlaylist(
+              pName, 'Auto-created from shared playlist');
+        }
+      } catch (e) {
+        _logger.w('[PLAYLIST_SHARE] Failed to auto-create playlist "$pName": $e');
+      }
+
       final trackUrls = await _getPlaylistTrackUrls(cleanUrl);
 
       // Remove temporary placeholder
@@ -192,10 +227,11 @@ class DownloadService {
             updatedList.add(ActiveDownload(
               id: tId,
               url: tUrl,
-              title: 'Playlist Track ${i + 1} of ${trackUrls.length}',
+              title: '${autoPlaylist?.name ?? pName} - Track ${i + 1}/${trackUrls.length}',
               progress: 0.0,
               statusMessage: 'Queued...',
               status: DownloadStatus.queued,
+              targetPlaylistId: autoPlaylist?.id,
             ));
           }
         }
@@ -301,6 +337,14 @@ class DownloadService {
                   statusMessage: 'Download complete!',
                   status: DownloadStatus.completed,
                 );
+                if (target.targetPlaylistId != null) {
+                  try {
+                    await _repository.addSongToPlaylist(target.targetPlaylistId!, result);
+                    _logger.i('[PLAYLIST_SHARE] Added "${result.title}" to target playlist ID ${target.targetPlaylistId}');
+                  } catch (err) {
+                    _logger.w('[PLAYLIST_SHARE] Error adding song to target playlist: $err');
+                  }
+                }
               }
               downloadQueueNotifier.value = endList;
             }
@@ -326,6 +370,11 @@ class DownloadService {
                       statusMessage: 'Download complete!',
                       status: DownloadStatus.completed,
                     );
+                    if (target.targetPlaylistId != null) {
+                      try {
+                        await _repository.addSongToPlaylist(target.targetPlaylistId!, resultRetry);
+                      } catch (_) {}
+                    }
                     downloadQueueNotifier.value = endList;
                   }
                 }
@@ -902,12 +951,16 @@ class DownloadService {
     final yt = YoutubeExplode();
     final downloadedSongs = <Song>[];
     List<String> trackUrls = [];
+    String? playlistTitle;
 
     try {
       onProgress(0, 1, 0.0, 'Fetching playlist details...');
       try {
         final playlistId = PlaylistId(url).value;
         final playlist = await yt.playlists.get(playlistId);
+        if (playlist.title.trim().isNotEmpty) {
+          playlistTitle = playlist.title.trim();
+        }
 
         onProgress(0, 1, 0.05, 'Loading playlist tracks...');
         await for (final video in yt.playlists.getVideos(playlist.id)) {
@@ -936,9 +989,29 @@ class DownloadService {
         throw Exception('No videos found in this playlist.');
       }
 
+      // Auto-create local playlist in app database
+      final pName = (playlistTitle != null && playlistTitle.isNotEmpty)
+          ? playlistTitle
+          : 'Shared Playlist ${DateTime.now().day}/${DateTime.now().month}';
+      
+      PlaylistModel? autoPlaylist;
+      try {
+        final existingPlaylists = await _repository.getPlaylists();
+        final match = existingPlaylists.where(
+            (p) => p.name.trim().toLowerCase() == pName.toLowerCase());
+        if (match.isNotEmpty) {
+          autoPlaylist = match.first;
+        } else {
+          autoPlaylist = await _repository.createPlaylist(
+              pName, 'Auto-created from shared playlist');
+        }
+      } catch (e) {
+        _logger.w('[PLAYLIST_DOWNLOAD] Failed to auto-create playlist "$pName": $e');
+      }
+
       final totalSongs = trackUrls.length;
       _logger.i(
-          '[PLAYLIST_DOWNLOAD] Enqueuing $totalSongs tracks from playlist');
+          '[PLAYLIST_DOWNLOAD] Enqueuing $totalSongs tracks from playlist "${autoPlaylist?.name ?? pName}"');
 
       for (int i = 0; i < trackUrls.length; i++) {
         if (_isCancelled(downloadId)) {
@@ -959,6 +1032,14 @@ class DownloadService {
           }, downloadId);
           if (song != null) {
             downloadedSongs.add(song);
+            if (autoPlaylist != null) {
+              try {
+                await _repository.addSongToPlaylist(autoPlaylist.id, song);
+                _logger.i('[PLAYLIST_DOWNLOAD] Added "${song.title}" to playlist "${autoPlaylist.name}"');
+              } catch (e) {
+                _logger.w('[PLAYLIST_DOWNLOAD] Error adding song to playlist: $e');
+              }
+            }
           }
         } catch (e) {
           _logger.w(

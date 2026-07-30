@@ -11,6 +11,7 @@ import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 import 'package:pixel_player/presentation/screens/splash_screen.dart';
 import 'package:pixel_player/presentation/widgets/download_dialog.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
+import 'package:pixel_player/services/audio_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -24,7 +25,7 @@ void main() async {
       androidNotificationChannelName: 'Audio Playback',
       androidNotificationChannelDescription:
           'Controls and track details for music currently playing',
-      androidNotificationOngoing: true,
+      androidNotificationOngoing: false,
       androidNotificationIcon: 'mipmap/ic_launcher',
     );
     debugPrint("Background initialized");
@@ -64,14 +65,26 @@ class PixelPlayerApp extends StatefulWidget {
   State<PixelPlayerApp> createState() => _PixelPlayerAppState();
 }
 
-class _PixelPlayerAppState extends State<PixelPlayerApp> {
+class _PixelPlayerAppState extends State<PixelPlayerApp> with WidgetsBindingObserver {
   StreamSubscription? _intentDataStreamSubscription;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initShareIntentListener();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      try {
+        getIt<AudioPlayerService>().stop();
+      } catch (e) {
+        debugPrint('Error stopping player on app detach: $e');
+      }
+    }
   }
 
   void _initShareIntentListener() {
@@ -103,6 +116,7 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _intentDataStreamSubscription?.cancel();
     super.dispose();
   }
