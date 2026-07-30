@@ -13,27 +13,15 @@ import 'package:pixel_player/presentation/bloc/library/library_state.dart';
 
 class MockFileService implements FileService {
   @override
-  Future<List<Song>> scanStorageForAudioFiles() async => [];
-  @override
-  Future<List<Song>> scanFolder(String folderPath) async => [];
-  @override
   Future<List<Song>> scanMusicLibrary({
     List<String>? specificPaths,
     bool recursive = true,
     bool ignoreShortAudio = true,
     bool showHiddenFiles = false,
   }) async => [];
-  @override
-  Future<bool> deleteFile(String path) async => true;
 }
 
 class MockPermissionService implements PermissionService {
-  @override
-  Future<bool> requestStoragePermission() async => true;
-  @override
-  Future<bool> hasStoragePermission() async => true;
-  @override
-  Future<bool> requestNotificationPermission() async => true;
   @override
   Future<bool> requestMusicPermission() async => true;
 }

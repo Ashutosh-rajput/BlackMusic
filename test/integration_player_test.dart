@@ -54,7 +54,7 @@ void main() {
     });
 
     test('Initial state is PlayerInitial', () {
-      expect(playerBloc.state, isA<PlayerState>());
+      expect(playerBloc.state, isA<PlayerInitial>());
     });
 
     blocTest<PlayerBloc, PlayerState>(
@@ -119,25 +119,34 @@ void main() {
     );
 
     blocTest<PlayerBloc, PlayerState>(
-      'Toggles shuffle mode without crashing queue',
+      'Toggles shuffle mode and updates isShuffle flag',
       build: () => playerBloc,
-      act: (bloc) {
+      act: (bloc) async {
         bloc.add(PlaySongEvent(song1, queue: [song1, song2, song3]));
+        await Future.delayed(const Duration(milliseconds: 50));
         bloc.add(const ToggleShuffleEvent());
       },
       verify: (bloc) {
-        expect(bloc.state, isA<PlayerState>());
+        expect(bloc.state, isA<PlayerPlaying>());
+        final state = bloc.state as PlayerPlaying;
+        expect(state.isShuffle, isTrue);
+        expect(state.queue.length, equals(3));
       },
     );
 
     blocTest<PlayerBloc, PlayerState>(
-      'Toggles repeat mode',
+      'Toggles repeat mode and cycles Off -> One',
       build: () => playerBloc,
-      act: (bloc) {
+      act: (bloc) async {
+        bloc.add(PlaySongEvent(song1, queue: [song1, song2, song3]));
+        await Future.delayed(const Duration(milliseconds: 50));
         bloc.add(const ToggleRepeatEvent());
       },
       verify: (bloc) {
-        expect(bloc.state, isA<PlayerState>());
+        expect(bloc.state, isA<PlayerPlaying>());
+        final state = bloc.state as PlayerPlaying;
+        expect(state.isRepeat, isTrue);
+        expect(state.repeatMode, equals('One'));
       },
     );
   });

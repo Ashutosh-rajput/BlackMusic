@@ -11,12 +11,12 @@ class MockAudioPlayerService implements AudioPlayerService {
   final _positionController = StreamController<Duration>.broadcast();
   final _currentIndexController = StreamController<int?>.broadcast();
 
-  Song? _currentSong;
   List<Song> _queue = [];
   int _currentIndex = 0;
+  AudioPlayer? _player;
 
   @override
-  AudioPlayer get player => AudioPlayer();
+  AudioPlayer get player => _player ??= AudioPlayer();
 
   @override
   Stream<PlayerState> get playerStateStream => _playerStateController.stream;
@@ -32,7 +32,6 @@ class MockAudioPlayerService implements AudioPlayerService {
 
   @override
   Future<void> play(String path, {Song? songInfo}) async {
-    _currentSong = songInfo;
     _playerStateController.add(PlayerState(true, ProcessingState.ready));
   }
 
@@ -41,9 +40,6 @@ class MockAudioPlayerService implements AudioPlayerService {
     _queue = List.from(queue);
     _currentIndex = initialIndex;
     _currentIndexController.add(_currentIndex);
-    if (queue.isNotEmpty) {
-      _currentSong = queue[initialIndex];
-    }
     _playerStateController.add(PlayerState(true, ProcessingState.ready));
   }
 
@@ -68,16 +64,13 @@ class MockAudioPlayerService implements AudioPlayerService {
   }
 
   @override
-  Future<void> prepare(Song song) async {
-    _currentSong = song;
-  }
+  Future<void> prepare(Song song) async {}
 
   @override
   Future<void> seekToNext() async {
     if (_queue.isNotEmpty && _currentIndex < _queue.length - 1) {
       _currentIndex++;
       _currentIndexController.add(_currentIndex);
-      _currentSong = _queue[_currentIndex];
     }
   }
 
@@ -86,7 +79,6 @@ class MockAudioPlayerService implements AudioPlayerService {
     if (_queue.isNotEmpty && _currentIndex > 0) {
       _currentIndex--;
       _currentIndexController.add(_currentIndex);
-      _currentSong = _queue[_currentIndex];
     }
   }
 
@@ -110,6 +102,8 @@ class MockAudioPlayerService implements AudioPlayerService {
     _playerStateController.close();
     _positionController.close();
     _currentIndexController.close();
+    _player?.dispose();
+    _player = null;
   }
 }
 
