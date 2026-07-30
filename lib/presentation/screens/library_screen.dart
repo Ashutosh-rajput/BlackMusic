@@ -29,51 +29,28 @@ class LibraryScreen extends StatefulWidget {
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen>
-    with WidgetsBindingObserver {
+class _LibraryScreenState extends State<LibraryScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   bool _showHistory = false;
-  bool _wasSearchKeyboardVisible = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _searchFocusNode.addListener(() {
-      setState(() {
-        _showHistory = _searchFocusNode.hasFocus;
-      });
+      if (mounted) {
+        setState(() {
+          _showHistory = _searchFocusNode.hasFocus;
+        });
+      }
     });
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
-  }
-
-  @override
-  void didChangeMetrics() {
-    super.didChangeMetrics();
-    final view = WidgetsBinding.instance.platformDispatcher.views.first;
-    final keyboardIsVisible = view.viewInsets.bottom > 0;
-
-    if (keyboardIsVisible) {
-      _wasSearchKeyboardVisible = true;
-      return;
-    }
-
-    // Android's back button hides the keyboard without always removing focus.
-    // Only react to a real visible-to-hidden transition; the first layout
-    // change after tapping the search field can still report no keyboard.
-    if (_wasSearchKeyboardVisible && _searchFocusNode.hasFocus) {
-      _wasSearchKeyboardVisible = false;
-      _searchFocusNode.unfocus();
-      if (mounted) setState(() => _showHistory = false);
-    }
   }
 
   @override
@@ -81,7 +58,15 @@ class _LibraryScreenState extends State<LibraryScreen>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return Scaffold(
+    return PopScope(
+      canPop: !_searchFocusNode.hasFocus,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _searchFocusNode.hasFocus) {
+          _searchFocusNode.unfocus();
+          if (mounted) setState(() => _showHistory = false);
+        }
+      },
+      child: Scaffold(
       body: SafeArea(
         child: Column(
           children: [
@@ -301,8 +286,9 @@ class _LibraryScreenState extends State<LibraryScreen>
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildSearchHistoryOverlay(BuildContext context) {
     final settings = getIt<SettingsService>();

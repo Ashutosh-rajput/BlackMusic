@@ -16,10 +16,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.muskmelon.blackmusic"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -28,9 +25,11 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
@@ -41,9 +40,9 @@ android {
     }
 }
 
-// AGP 9 does not currently pick up Flutter's AOT output automatically.  The
+// AGP 9 does not currently pick up Flutter's AOT output automatically. The
 // Flutter build writes `app.so` for each ABI, while Android packages native
-// libraries only when they are named `lib*.so`.  Stage those files alongside
+// libraries only when they are named `lib*.so`. Stage those files alongside
 // Flutter's native assets before the release APK is assembled.
 val stageFlutterReleaseJniLibs by tasks.registering(Copy::class) {
     dependsOn(tasks.named("compileFlutterBuildRelease"))

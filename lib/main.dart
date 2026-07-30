@@ -12,6 +12,7 @@ import 'package:pixel_player/presentation/screens/splash_screen.dart';
 import 'package:pixel_player/presentation/widgets/download_dialog.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
 
+import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
 void main() async {
@@ -19,9 +20,6 @@ void main() async {
 
   try {
     await JustAudioBackground.init(
-      // Keep this channel specific to the installed Android app. Older
-      // releases used a different package/channel ID, which can leave the
-      // playback channel disabled even when download notifications work.
       androidNotificationChannelId: 'com.muskmelon.blackmusic.playback',
       androidNotificationChannelName: 'Audio Playback',
       androidNotificationChannelDescription:
@@ -39,6 +37,14 @@ void main() async {
     await session.configure(const AudioSessionConfiguration.music());
   } catch (e) {
     debugPrint('Audio session configuration error: $e');
+  }
+
+  try {
+    if (await Permission.notification.isDenied) {
+      await Permission.notification.request();
+    }
+  } catch (e) {
+    debugPrint('Notification permission error: $e');
   }
 
   await getItSetup();

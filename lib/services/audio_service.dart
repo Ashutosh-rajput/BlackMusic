@@ -32,6 +32,7 @@ class AudioPlayerService {
   Uri? _parseArtUri(String? artPath) {
     if (artPath == null || artPath.trim().isEmpty) return null;
     final trimmed = artPath.trim();
+    if (trimmed.startsWith('mediastore://')) return null;
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
       return Uri.tryParse(trimmed);
     }

@@ -11,6 +11,9 @@ import 'package:pixel_player/presentation/screens/player_screen.dart';
 import 'package:pixel_player/presentation/screens/playlists_screen.dart';
 import 'package:pixel_player/presentation/screens/settings_screen.dart';
 
+import 'package:pixel_player/core/di/injection_container.dart';
+import 'package:pixel_player/services/audio_service.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -113,102 +116,125 @@ class _MiniPlayerDock extends StatelessWidget {
         }
 
         if (currentSong == null) return const SizedBox();
+        final song = currentSong;
 
         return GestureDetector(
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => PlayerScreen(song: currentSong!),
+                builder: (_) => PlayerScreen(song: song),
               ),
             );
           },
-          child: Container(
-            height: 60,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? const Color(0xFF232330)
-                  : const Color(0xFFF2F2F7),
-              border: Border(
-                top: BorderSide(
-                  color: isDark ? const Color(0xFF323242) : Colors.black12,
-                  width: 0.8,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 60,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF232330)
+                      : const Color(0xFFF2F2F7),
+                  border: Border(
+                    top: BorderSide(
+                      color: isDark ? const Color(0xFF323242) : Colors.black12,
+                      width: 0.8,
+                    ),
+                  ),
                 ),
-                bottom: BorderSide(
-                  color: isDark ? const Color(0xFF323242) : Colors.black12,
-                  width: 0.8,
+                child: Row(
+                  children: [
+                    AlbumArtWidget(
+                      albumArt: song.albumArt,
+                      width: 44,
+                      height: 44,
+                      borderRadius: BorderRadius.circular(10),
+                      fallbackIcon: Icons.music_note_rounded,
+                      iconSize: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            song.title,
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            song.artist,
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.7),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isLoading)
+                      const Padding(
+                        padding: EdgeInsets.all(12.0),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    else
+                      IconButton(
+                        icon: Icon(
+                          isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                        ),
+                        onPressed: () {
+                          if (isPlaying) {
+                            context.read<PlayerBloc>().add(const PauseEvent());
+                          } else {
+                            context.read<PlayerBloc>().add(const ResumeEvent());
+                          }
+                        },
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.skip_next_rounded),
+                      onPressed: () {
+                        context.read<PlayerBloc>().add(const NextSongEvent());
+                      },
+                    ),
+                  ],
                 ),
               ),
-            ),
-            child: Row(
-              children: [
-                AlbumArtWidget(
-                  albumArt: currentSong.albumArt,
-                  width: 44,
-                  height: 44,
-                  borderRadius: BorderRadius.circular(10),
-                  fallbackIcon: Icons.music_note_rounded,
-                  iconSize: 24,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        currentSong.title,
-                        style: GoogleFonts.outfit(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        currentSong.artist,
-                        style: GoogleFonts.outfit(
-                          fontSize: 12,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                if (isLoading)
-                  const Padding(
-                    padding: EdgeInsets.all(12.0),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                else
-                  IconButton(
-                    icon: Icon(
-                      isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                    ),
-                    onPressed: () {
-                      if (isPlaying) {
-                        context.read<PlayerBloc>().add(const PauseEvent());
-                      } else {
-                        context.read<PlayerBloc>().add(const ResumeEvent());
-                      }
-                    },
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.skip_next_rounded),
-                  onPressed: () {
-                    context.read<PlayerBloc>().add(const NextSongEvent());
-                  },
-                ),
-              ],
-            ),
+              StreamBuilder<Duration>(
+                stream: getIt<AudioPlayerService>().positionStream,
+                builder: (context, snapshot) {
+                  final livePos = snapshot.data ?? Duration.zero;
+                  final durationMs = song.duration.inMilliseconds.toDouble();
+                  final progress = durationMs > 0
+                      ? (livePos.inMilliseconds.toDouble() / durationMs)
+                          .clamp(0.0, 1.0)
+                      : 0.0;
+
+                  return LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 2.5,
+                    backgroundColor:
+                        theme.colorScheme.primary.withValues(alpha: 0.15),
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+                  );
+                },
+              ),
+            ],
           ),
         );
       },

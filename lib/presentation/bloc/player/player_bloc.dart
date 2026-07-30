@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerEvent, PlayerState;
 import 'package:just_audio_background/just_audio_background.dart';
@@ -191,6 +192,8 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       return;
     }
 
+    final previousSong = _currentSong;
+
     try {
       _isChangingSong = true;
       _currentSong = song;
@@ -223,6 +226,8 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       if (e.toString().contains('Loading interrupted')) {
         return;
       }
+      _currentSong = previousSong;
+      debugPrint('Failed to play song (${song.filePath}): $e');
       emit(PlayerError('Failed to play song: $e'));
     }
   }
@@ -231,23 +236,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     if (event.queue != null && event.queue!.isNotEmpty) {
       _queue = List.from(event.queue!);
       _originalQueue = List.from(event.queue!);
-      final initialIndex = _queue.indexWhere((s) => s.id == event.song.id);
-      if (initialIndex != -1 && _queue.length > 1) {
-        _currentSong = event.song;
-        emit(PlayerLoading(song: event.song, isShuffle: _isShuffle, isRepeat: _isRepeat));
-        await _audioService.playQueue(_queue, initialIndex: initialIndex);
-        final dur = _audioService.player.duration ?? event.song.duration;
-        emit(PlayerPlaying(
-          song: event.song,
-          position: Duration.zero,
-          duration: dur,
-          isShuffle: _isShuffle,
-          isRepeat: _isRepeat,
-          queue: _queue,
-        ));
-        _isChangingSong = false;
-        return;
-      }
     } else if (!_queue.any((s) => s.id == event.song.id)) {
       _queue.add(event.song);
       _originalQueue.add(event.song);
@@ -266,23 +254,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
     final safeIndex = event.initialIndex.clamp(0, _queue.length - 1);
     _currentSong = _queue[safeIndex];
-    emit(PlayerLoading(song: _currentSong, isShuffle: _isShuffle, isRepeat: _isRepeat));
-
-    if (_queue.length > 1) {
-      await _audioService.playQueue(_queue, initialIndex: safeIndex);
-      final dur = _audioService.player.duration ?? _currentSong!.duration;
-      emit(PlayerPlaying(
-        song: _currentSong!,
-        position: Duration.zero,
-        duration: dur,
-        isShuffle: _isShuffle,
-        isRepeat: _isRepeat,
-        queue: _queue,
-      ));
-      _isChangingSong = false;
-    } else {
-      await _playSongInternal(_currentSong!, emit);
-    }
+    await _playSongInternal(_currentSong!, emit);
   }
 
   Future<void> _onPlaySongAtIndex(PlaySongAtIndexEvent event, Emitter<PlayerState> emit) async {
@@ -523,12 +495,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   Future<void> _onNextSong(NextSongEvent event, Emitter<PlayerState> emit) async {
     if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
 
-    final sequence = _audioService.player.sequence;
-    if (sequence.length > 1 && _audioService.player.hasNext) {
-      await _audioService.seekToNext();
-      return;
-    }
-
     Song? nextSong;
     if (_isShuffle && _queue.length > 1) {
       final available = _queue.where((s) => s.id != _currentSong!.id).toList();
@@ -552,12 +518,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   Future<void> _onPreviousSong(PreviousSongEvent event, Emitter<PlayerState> emit) async {
     if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
-
-    final sequence = _audioService.player.sequence;
-    if (sequence.length > 1 && _audioService.player.hasPrevious) {
-      await _audioService.seekToPrevious();
-      return;
-    }
 
     Song? prevSong;
     final currentIndex = _queue.indexWhere((s) => s.id == _currentSong!.id);

@@ -74,21 +74,59 @@ class AlbumArtWidget extends StatelessWidget {
 
       // Android MediaStore artwork
       else if (path.startsWith('mediastore://')) {
-        final id =
-            int.tryParse(path.replaceFirst('mediastore://', ''));
+        int? audioId;
+        int? albumId;
 
-        if (id != null) {
+        if (path.contains('audio:')) {
+          final audioMatch = RegExp(r'audio:(\d+)').firstMatch(path);
+          if (audioMatch != null) {
+            audioId = int.tryParse(audioMatch.group(1)!);
+          }
+        }
+        if (path.contains('album:')) {
+          final albumMatch = RegExp(r'album:(\d+)').firstMatch(path);
+          if (albumMatch != null) {
+            albumId = int.tryParse(albumMatch.group(1)!);
+          }
+        }
+
+        if (audioId == null && albumId == null) {
+          audioId = int.tryParse(path.replaceFirst('mediastore://', ''));
+        }
+
+        final targetSize = (width * 2).toInt().clamp(150, 800);
+
+        Widget buildAlbumFallback() {
+          if (albumId != null) {
+            return QueryArtworkWidget(
+              id: albumId,
+              type: ArtworkType.ALBUM,
+              artworkFit: BoxFit.cover,
+              artworkWidth: width,
+              artworkHeight: height,
+              format: ArtworkFormat.JPEG,
+              size: targetSize,
+              nullArtworkWidget: placeholder,
+              errorBuilder: (_, __, ___) => placeholder,
+            );
+          }
+          return placeholder;
+        }
+
+        if (audioId != null) {
           content = QueryArtworkWidget(
-            id: id,
+            id: audioId,
             type: ArtworkType.AUDIO,
             artworkFit: BoxFit.cover,
             artworkWidth: width,
             artworkHeight: height,
             format: ArtworkFormat.JPEG,
-            size: (width * 2).toInt().clamp(150, 800),
-            nullArtworkWidget: placeholder,
-            errorBuilder: (_, __, ___) => placeholder,
+            size: targetSize,
+            nullArtworkWidget: buildAlbumFallback(),
+            errorBuilder: (_, __, ___) => buildAlbumFallback(),
           );
+        } else if (albumId != null) {
+          content = buildAlbumFallback();
         }
       }
 

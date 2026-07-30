@@ -43,6 +43,13 @@ class FileService {
                 ? DateTime.fromMillisecondsSinceEpoch(dateSec * 1000)
                 : DateTime.now();
 
+            final audioId = item.id;
+            final albumId = item.albumId;
+            String artUriStr = 'mediastore://audio:$audioId';
+            if (albumId != null) {
+              artUriStr += '/album:$albumId';
+            }
+
             songs.add(Song(
               id: stableId,
               title: item.title.trim().isNotEmpty ? item.title : 'Unknown Track',
@@ -58,7 +65,7 @@ class FileService {
               dateModified: dateModified,
               genre: item.genre,
               albumArtist: item.artist,
-              albumArt: 'mediastore://${item.id}',
+              albumArt: artUriStr,
             ));
           }
           if (songs.isNotEmpty) return songs;
@@ -92,6 +99,50 @@ class FileService {
           showHiddenFiles: showHiddenFiles,
         ),
       );
+
+      // Enrich folder-scanned songs with MediaStore artwork & metadata on Android
+      if (Platform.isAndroid && rawSongs.isNotEmpty) {
+        try {
+          final mediaStoreSongs = await _audioQuery.querySongs();
+          final pathMap = <String, SongModel>{};
+          for (final m in mediaStoreSongs) {
+            if (m.data.isNotEmpty) {
+              final normalizedPath = m.data.toLowerCase().replaceAll(r'\', '/');
+              pathMap[normalizedPath] = m;
+            }
+          }
+
+          final enriched = rawSongs.map((song) {
+            final key = song.filePath.toLowerCase().replaceAll(r'\', '/');
+            final match = pathMap[key];
+            if (match != null) {
+              final audioId = match.id;
+              final albumId = match.albumId;
+              String artUriStr = 'mediastore://audio:$audioId';
+              if (albumId != null) artUriStr += '/album:$albumId';
+
+              final artist = (match.artist != null && match.artist != '<unknown>')
+                  ? match.artist!
+                  : song.artist;
+              final album = (match.album != null && match.album != '<unknown>')
+                  ? match.album!
+                  : song.album;
+
+              return song.copyWith(
+                albumArt: artUriStr,
+                artist: song.artist == 'Unknown Artist' ? artist : song.artist,
+                album: song.album == 'Local Music' ? album : song.album,
+              );
+            }
+            return song;
+          }).toList();
+
+          return enriched;
+        } catch (e) {
+          _logger.w('MediaStore enrichment warning ($e)');
+        }
+      }
+
       return rawSongs;
     } catch (e) {
       _logger.e('Background folder scan error: $e');
