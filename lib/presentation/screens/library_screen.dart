@@ -219,19 +219,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'No tracks found',
+                              'No music yet',
                               style: GoogleFonts.outfit(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             const SizedBox(height: 8),
-                            Text(
-                              'Tap the folder icon above to add your music folder',
-                              style: GoogleFonts.outfit(
-                                fontSize: 14,
-                                color: theme.colorScheme.onSurface
-                                    .withValues(alpha: 0.6),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 32),
+                              child: Text(
+                                'Use the search bar or download icon above to find music, or share a song or playlist from another app to add it here',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 14,
+                                  color: theme.colorScheme.onSurface
+                                      .withValues(alpha: 0.6),
+                                ),
                               ),
                             ),
                           ],

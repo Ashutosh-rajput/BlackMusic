@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:pixel_player/core/di/injection_container.dart';
 import 'package:pixel_player/core/theme/app_theme.dart';
@@ -9,8 +11,7 @@ import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 import 'package:pixel_player/presentation/screens/splash_screen.dart';
-import 'package:pixel_player/presentation/widgets/download_queue_sheet.dart';
-import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
+import 'package:pixel_player/services/download_background_service.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
 import 'package:pixel_player/services/download_service.dart';
 import 'package:pixel_player/services/audio_service.dart';
@@ -20,6 +21,34 @@ import 'package:just_audio_background/just_audio_background.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Minimal setup needed to enqueue a download: DI + notifications + the
+  // keep-alive shield. Checked before any audio/session setup so a
+  // share-only cold start never touches playback machinery it doesn't need.
+  await getItSetup();
+  try {
+    await DownloadNotificationService().init();
+  } catch (e) {
+    debugPrint('DownloadNotificationService init error: $e');
+  }
+  try {
+    await initializeDownloadBackgroundService();
+  } catch (e) {
+    debugPrint('Download keep-alive service init error: $e');
+  }
+
+  final initialMedia = await ReceiveSharingIntent.instance.getInitialMedia();
+  final sharedUrl = initialMedia.isNotEmpty ? initialMedia.first.path.trim() : '';
+
+  if (sharedUrl.isNotEmpty) {
+    // Launched purely to receive a shared link: never show the app UI.
+    // Enqueue the download in the background, toast over whatever app the
+    // user is still looking at, and hand control straight back to it.
+    await _handleSharedUrl(sharedUrl);
+    runApp(const SizedBox.shrink());
+    SystemNavigator.pop();
+    return;
+  }
 
   try {
     await JustAudioBackground.init(
@@ -50,14 +79,24 @@ void main() async {
     debugPrint('Notification permission error: $e');
   }
 
-  await getItSetup();
-  try {
-    await DownloadNotificationService().init();
-  } catch (e) {
-    debugPrint('DownloadNotificationService init error: $e');
-  }
-
   runApp(const PixelPlayerApp());
+}
+
+/// Enqueues a shared link for background download and lets the user know via
+/// a native toast — a real overlay that floats above whatever app currently
+/// has the screen, unlike an in-app SnackBar which requires our UI to be
+/// visible.
+Future<void> _handleSharedUrl(String text) async {
+  final url = text.trim();
+  if (url.isEmpty) return;
+
+  getIt<DownloadService>().enqueueDownload(url: url, fromShare: true);
+
+  try {
+    await Fluttertoast.showToast(msg: 'Song download started…');
+  } catch (e) {
+    debugPrint('Failed to show download-started toast: $e');
+  }
 }
 
 class PixelPlayerApp extends StatefulWidget {
@@ -90,47 +129,16 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> with WidgetsBindingObse
   }
 
   void _initShareIntentListener() {
-    // For sharing text/URLs while app is in memory
+    // Cold-start shares are already handled and consumed in main() before
+    // this widget is ever built. This only needs to cover shares arriving
+    // while the app is already alive in memory.
     _intentDataStreamSubscription = ReceiveSharingIntent.instance.getMediaStream().listen((value) {
       if (value.isNotEmpty) {
-        final sharedText = value.first.path;
-        _handleSharedUrl(sharedText);
+        _handleSharedUrl(value.first.path);
       }
     }, onError: (err) {
       debugPrint("getIntentDataStream error: $err");
     });
-
-    // For sharing text/URLs when app is closed / launched via share
-    ReceiveSharingIntent.instance.getInitialMedia().then((value) {
-      if (value.isNotEmpty) {
-        final sharedText = value.first.path;
-        _handleSharedUrl(sharedText);
-      }
-    });
-  }
-
-  void _handleSharedUrl(String text) {
-    final url = text.trim();
-    if (url.isEmpty) return;
-
-    // Enqueue immediately in the background — sharing a song must never bring
-    // the app UI to the foreground. Progress/completion are surfaced via
-    // DownloadNotificationService; this snackbar is just a same-instant nod
-    // for when the app already happens to be visible.
-    getIt<DownloadService>().enqueueDownload(url: url, fromShare: true);
-
-    final context = _navigatorKey.currentContext;
-    if (context != null && context.mounted) {
-      showDownloadQueuedSnackBar(
-        context,
-        title: url,
-        onViewQueue: () {
-          if (context.mounted) {
-            DownloadQueueSheet.show(context);
-          }
-        },
-      );
-    }
   }
 
   @override

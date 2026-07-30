@@ -9,6 +9,7 @@ import 'package:pixel_player/presentation/bloc/library/library_event.dart';
 import 'package:pixel_player/presentation/bloc/library/library_state.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
+import 'package:pixel_player/presentation/screens/category_detail_screen.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 
@@ -116,16 +117,16 @@ class PlaylistsScreen extends StatelessWidget {
                       iconColor: theme.colorScheme.primary,
                       isDark: isDark,
                       onTap: () {
-                        if (recentlyAdded.isNotEmpty) {
-                          context.read<PlayerBloc>().add(
-                                PlaySongEvent(recentlyAdded.first, queue: recentlyAdded),
-                              );
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => PlayerScreen(song: recentlyAdded.first),
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => CategoryDetailScreen(
+                              title: 'Recently Added',
+                              subtitle: 'Smart Playlist',
+                              icon: Icons.auto_awesome_rounded,
+                              songs: recentlyAdded,
                             ),
-                          );
-                        }
+                          ),
+                        );
                       },
                     ),
                   ),
@@ -139,16 +140,16 @@ class PlaylistsScreen extends StatelessWidget {
                       iconColor: theme.colorScheme.secondary,
                       isDark: isDark,
                       onTap: () {
-                        if (downloaded.isNotEmpty) {
-                          context.read<PlayerBloc>().add(
-                                PlaySongEvent(downloaded.first, queue: downloaded),
-                              );
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => PlayerScreen(song: downloaded.first),
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => CategoryDetailScreen(
+                              title: 'Downloaded',
+                              subtitle: 'Smart Playlist',
+                              icon: Icons.download_for_offline_rounded,
+                              songs: downloaded,
                             ),
-                          );
-                        }
+                          ),
+                        );
                       },
                     ),
                   ),

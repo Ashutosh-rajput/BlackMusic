@@ -10,6 +10,7 @@ import 'package:logger/logger.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:pixel_player/core/utils/hash_utils.dart';
+import 'package:pixel_player/services/download_background_service.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
 import 'package:pixel_player/services/settings_service.dart';
 
@@ -342,6 +343,7 @@ class DownloadService {
   Future<void> _processQueue() async {
     if (_isProcessingQueue) return;
     _isProcessingQueue = true;
+    unawaited(startDownloadKeepAlive());
 
     try {
       while (true) {
@@ -472,6 +474,7 @@ class DownloadService {
       }
     } finally {
       _isProcessingQueue = false;
+      unawaited(stopDownloadKeepAlive());
     }
   }
 
