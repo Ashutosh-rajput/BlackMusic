@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/services/audio_service.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
+import 'helpers/mock_audio_service.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  setupPlatformMocks();
 
   group('PlayerBloc Unit Tests', () {
     late PlayerBloc playerBloc;
@@ -23,7 +23,7 @@ void main() {
     );
 
     setUp(() {
-      final audioService = AudioPlayerService();
+      final audioService = MockAudioPlayerService();
       playerBloc = PlayerBloc(audioService: audioService);
     });
 
@@ -47,7 +47,7 @@ void main() {
           duration: const Duration(minutes: 3),
           isShuffle: false,
           isRepeat: false,
-          queue: const [],
+          queue: [testSong],
         ),
       ],
     );
