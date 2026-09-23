@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/data/models/playlist_model.dart';
 import 'package:pixel_player/data/models/youtube_video_item.dart';
+import 'package:pixel_player/data/models/jiosaavn_item.dart';
 
 abstract class LibraryState extends Equatable {
   const LibraryState();
@@ -25,6 +26,7 @@ class LibraryLoaded extends LibraryState {
   final String searchQuery;
   final String selectedCategory;
   final List<YouTubeVideoItem> onlineResults;
+  final List<JioSaavnItem> jiosaavnResults;
   final bool isSearchingOnline;
 
   const LibraryLoaded({
@@ -34,6 +36,7 @@ class LibraryLoaded extends LibraryState {
     this.searchQuery = '',
     this.selectedCategory = 'All',
     this.onlineResults = const [],
+    this.jiosaavnResults = const [],
     this.isSearchingOnline = false,
   });
 
@@ -44,6 +47,7 @@ class LibraryLoaded extends LibraryState {
     String? searchQuery,
     String? selectedCategory,
     List<YouTubeVideoItem>? onlineResults,
+    List<JioSaavnItem>? jiosaavnResults,
     bool? isSearchingOnline,
   }) {
     return LibraryLoaded(
@@ -53,6 +57,7 @@ class LibraryLoaded extends LibraryState {
       searchQuery: searchQuery ?? this.searchQuery,
       selectedCategory: selectedCategory ?? this.selectedCategory,
       onlineResults: onlineResults ?? this.onlineResults,
+      jiosaavnResults: jiosaavnResults ?? this.jiosaavnResults,
       isSearchingOnline: isSearchingOnline ?? this.isSearchingOnline,
     );
   }
@@ -65,6 +70,7 @@ class LibraryLoaded extends LibraryState {
         searchQuery,
         selectedCategory,
         onlineResults,
+        jiosaavnResults,
         isSearchingOnline,
       ];
 }
@@ -76,3 +82,4 @@ class LibraryError extends LibraryState {
   @override
   List<Object?> get props => [message];
 }
+

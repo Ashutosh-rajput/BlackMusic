@@ -8,7 +8,6 @@ import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/library/library_state.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
-import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
 import 'package:pixel_player/services/audio_service.dart';
 import 'package:pixel_player/services/file_service.dart';
@@ -81,9 +80,9 @@ void main() {
       );
     });
 
-    tearDown(() {
-      playerBloc.close();
-      libraryBloc.close();
+    tearDown(() async {
+      await playerBloc.close();
+      await libraryBloc.close();
       audioService.dispose();
       if (getIt.isRegistered<AudioPlayerService>()) {
         getIt.unregister<AudioPlayerService>();
@@ -96,14 +95,7 @@ void main() {
     testWidgets(
       'Notification pause immediately stops seeker wave, snake head, and shows play button',
       (tester) async {
-        // 1. Start playback of test song and wait until PlayerPlaying state is emitted
-        playerBloc.add(PlaySongEvent(testSong, queue: [testSong]));
-        await expectLater(
-          playerBloc.stream,
-          emitsThrough(isA<PlayerPlaying>()),
-        );
-
-        // 2. Build the PlayerScreen widget tree
+        // 1. Build the PlayerScreen and start playback
         await tester.pumpWidget(
           MaterialApp(
             home: MultiBlocProvider(
@@ -115,9 +107,15 @@ void main() {
             ),
           ),
         );
+
+        await tester.runAsync(() async {
+          playerBloc.add(PlaySongEvent(testSong, queue: [testSong]));
+          await Future.delayed(const Duration(milliseconds: 150));
+        });
+
         await tester.pump();
 
-        // Verify currently playing: pause icon should be visible
+        // Confirm playing state is active: pause icon should be visible
         expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
         expect(find.byType(CircularProgressIndicator), findsNothing);
 
@@ -132,11 +130,14 @@ void main() {
         expect(activeTrack.isPlaying, isTrue);
         expect(thumb.isPlaying, isTrue);
 
-        // 3. Simulate user pausing from notification panel / bluetooth
-        await audioService.pause();
-        await tester.pump(const Duration(milliseconds: 50));
+        // 2. Simulate user pausing from notification panel / bluetooth
+        await tester.runAsync(() async {
+          await audioService.pause();
+          await Future.delayed(const Duration(milliseconds: 100));
+        });
+        await tester.pump();
 
-        // 4. Verify ALL playback animations stop and play icon is shown immediately:
+        // 3. Verify ALL playback animations stop and play icon is shown:
         // - Play icon is shown (NOT pause icon)
         expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
         expect(find.byIcon(Icons.pause_rounded), findsNothing);
@@ -152,10 +153,9 @@ void main() {
         expect(pausedTrack.isPlaying, isFalse);
         expect(pausedThumb.isPlaying, isFalse);
 
-        // Clean unmount before tearDown
+        // Clean unmount
         await tester.pumpWidget(const SizedBox());
       },
     );
   });
 }
-

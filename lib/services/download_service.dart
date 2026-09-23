@@ -13,6 +13,7 @@ import 'package:pixel_player/core/utils/hash_utils.dart';
 import 'package:pixel_player/services/download_background_service.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
 import 'package:pixel_player/services/settings_service.dart';
+import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
 
 final _logger = Logger();
 
@@ -22,6 +23,10 @@ class ActiveDownload {
   final String id;
   final String url;
   final String title;
+  final String? artist;
+  final String? album;
+  final String? albumArt;
+  final Duration? duration;
   final double progress;
   final String statusMessage;
   final DownloadStatus status;
@@ -44,6 +49,10 @@ class ActiveDownload {
     required this.id,
     required this.url,
     required this.title,
+    this.artist,
+    this.album,
+    this.albumArt,
+    this.duration,
     required this.progress,
     required this.statusMessage,
     this.status = DownloadStatus.queued,
@@ -64,6 +73,10 @@ class ActiveDownload {
     String? id,
     String? url,
     String? title,
+    String? artist,
+    String? album,
+    String? albumArt,
+    Duration? duration,
     double? progress,
     String? statusMessage,
     DownloadStatus? status,
@@ -77,6 +90,10 @@ class ActiveDownload {
       id: id ?? this.id,
       url: url ?? this.url,
       title: title ?? this.title,
+      artist: artist ?? this.artist,
+      album: album ?? this.album,
+      albumArt: albumArt ?? this.albumArt,
+      duration: duration ?? this.duration,
       progress: progress ?? this.progress,
       statusMessage: statusMessage ?? this.statusMessage,
       status: status ?? this.status,
@@ -192,10 +209,57 @@ class DownloadService {
   Future<void> enqueueDownload({
     required String url,
     String? title,
+    String? artist,
+    String? album,
+    String? albumArt,
+    Duration? duration,
     bool fromShare = false,
   }) async {
-    final cleanUrl = _extractFirstUrl(url.trim());
+    var cleanUrl = _extractFirstUrl(url.trim());
     if (cleanUrl.isEmpty) return;
+
+    if (cleanUrl.startsWith('jiosaavn:')) {
+      final decrypted = JioSaavnDecoder.decryptMediaUrl(cleanUrl.substring(9));
+      if (decrypted != null) {
+        cleanUrl = decrypted;
+      }
+    }
+
+    if (cleanUrl.startsWith('jiosaavn-album:')) {
+      final token = cleanUrl.substring(15);
+      final tracks = await JioSaavnDecoder.fetchAlbumTracks(token);
+      for (final t in tracks) {
+        if (t['url'] != null) {
+          enqueueDownload(
+            url: t['url']!,
+            title: t['title'] ?? title,
+            artist: artist,
+            album: album ?? title,
+            albumArt: albumArt,
+            fromShare: fromShare,
+          );
+        }
+      }
+      return;
+    }
+
+    if (cleanUrl.startsWith('jiosaavn-playlist:')) {
+      final token = cleanUrl.substring(18);
+      final tracks = await JioSaavnDecoder.fetchPlaylistTracks(token);
+      for (final t in tracks) {
+        if (t['url'] != null) {
+          enqueueDownload(
+            url: t['url']!,
+            title: t['title'] ?? title,
+            artist: artist,
+            album: album ?? title,
+            albumArt: albumArt,
+            fromShare: fromShare,
+          );
+        }
+      }
+      return;
+    }
 
     if (_isPlaylistUrl(cleanUrl)) {
       final tempId = _downloadId(cleanUrl);
@@ -283,6 +347,10 @@ class DownloadService {
           id: downloadId,
           url: cleanUrl,
           title: title ?? existing.title,
+          artist: artist ?? existing.artist,
+          album: album ?? existing.album,
+          albumArt: albumArt ?? existing.albumArt,
+          duration: duration ?? existing.duration,
           progress: 0.0,
           statusMessage: 'Queued...',
           status: DownloadStatus.queued,
@@ -294,6 +362,10 @@ class DownloadService {
         id: downloadId,
         url: cleanUrl,
         title: title ?? 'Audio Download',
+        artist: artist,
+        album: album,
+        albumArt: albumArt,
+        duration: duration,
         progress: 0.0,
         statusMessage: 'Queued...',
         status: DownloadStatus.queued,
@@ -616,6 +688,13 @@ class DownloadService {
         },
       );
       return songs.isNotEmpty ? songs.first : null;
+    }
+
+    if (cleanUrl.startsWith('jiosaavn:')) {
+      final decrypted = JioSaavnDecoder.decryptMediaUrl(cleanUrl.substring(9));
+      if (decrypted != null) {
+        return _downloadDirectAudio(decrypted, onProgress, id, addToLibrary: addToLibrary);
+      }
     }
 
     if (cleanUrl.contains('youtube.com') || cleanUrl.contains('youtu.be')) {
@@ -1190,9 +1269,22 @@ class DownloadService {
 
     try {
       final musicDir = await _getMusicDirectoryPath();
-      final fileName = url.split('/').last.split('?').first;
+      final queueMatch = downloadQueueNotifier.value.where((d) => d.id == downloadId);
+      final active = queueMatch.isNotEmpty ? queueMatch.first : null;
+      final itemTitle = (active != null && active.title.isNotEmpty && active.title != 'Audio Download')
+          ? active.title
+          : null;
+      final itemArtist = active?.artist;
+      final itemAlbum = active?.album;
+      final itemAlbumArt = active?.albumArt;
+      final itemDuration = active?.duration;
+
+      final rawFileName = url.split('/').last.split('?').first;
+      final rawExt = rawFileName.contains('.') ? rawFileName.split('.').last.toLowerCase() : 'm4a';
+      final actualExt = (rawExt == 'mp4' || rawExt == 'm4a') ? 'm4a' : 'mp3';
+      final displayFileName = itemTitle != null ? '$itemTitle.$actualExt' : rawFileName;
       final sanitizedFileName =
-          _sanitizeFileName(fileName.isEmpty ? 'audio_track.mp3' : fileName);
+          _sanitizeFileName(displayFileName.isEmpty ? 'audio_track.$actualExt' : displayFileName);
       final savePath = '$musicDir/$sanitizedFileName';
 
       onProgress(0.20, 'Downloading audio file...');
@@ -1206,10 +1298,10 @@ class DownloadService {
             final p = (received / total);
             onProgress(
               p,
-              'Downloading $fileName... (${(p * 100).toInt()}%)',
+              'Downloading $displayFileName... (${(p * 100).toInt()}%)',
             );
           } else {
-            onProgress(0.50, 'Downloading $fileName...');
+            onProgress(0.50, 'Downloading $displayFileName...');
           }
         },
       );
@@ -1217,19 +1309,36 @@ class DownloadService {
       final file = File(savePath);
       final length = await file.length();
       final titleWithoutExt =
-          sanitizedFileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+          itemTitle ?? sanitizedFileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+
+      // Download thumbnail artwork alongside audio file so it's fully accessible offline
+      String? localArtPath;
+      if (itemAlbumArt != null && itemAlbumArt.startsWith('http')) {
+        try {
+          final artFileName = _sanitizeFileName('${titleWithoutExt}_art.jpg');
+          final artSavePath = '$musicDir/$artFileName';
+          await _dio.download(itemAlbumArt, artSavePath);
+          if (await File(artSavePath).exists()) {
+            localArtPath = artSavePath;
+          }
+        } catch (e) {
+          _logger.w('Failed downloading thumbnail artwork: $e');
+          localArtPath = itemAlbumArt; // fallback to remote URL
+        }
+      }
 
       final song = Song(
         id: generateStableId(savePath),
         title: titleWithoutExt,
-        artist: 'Unknown Artist',
-        album: 'Direct Downloads',
+        artist: itemArtist ?? 'Unknown Artist',
+        album: itemAlbum ?? 'Downloads',
         filePath: savePath,
-        duration: const Duration(minutes: 3),
+        duration: itemDuration ?? const Duration(minutes: 3),
         fileSize: length,
         dateModified: DateTime.now(),
-        genre: 'Audio Download',
-        albumArtist: 'Unknown Artist',
+        genre: 'Downloaded',
+        albumArtist: itemArtist ?? 'Unknown Artist',
+        albumArt: localArtPath ?? itemAlbumArt,
       );
 
       if (addToLibrary) {

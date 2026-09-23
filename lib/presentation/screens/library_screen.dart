@@ -7,6 +7,8 @@ import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/services/download_service.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/data/models/youtube_video_item.dart';
+import 'package:pixel_player/data/models/jiosaavn_item.dart';
+import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
 import 'package:pixel_player/core/utils/duration_formatter.dart';
 import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/library/library_event.dart';
@@ -81,15 +83,39 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         child: TextField(
                           controller: _searchController,
                           focusNode: _searchFocusNode,
+                          textInputAction: TextInputAction.search,
                           onChanged: (query) {
-                            context
-                                .read<LibraryBloc>()
-                                .add(SearchSongsEvent(query));
+                            if (query.trim().isEmpty) {
+                              context
+                                  .read<LibraryBloc>()
+                                  .add(const SearchSongsEvent(''));
+                            }
+                            setState(() {});
+                          },
+                          onSubmitted: (query) {
+                            final q = query.trim();
+                            if (q.isNotEmpty) {
+                              context
+                                  .read<LibraryBloc>()
+                                  .add(SearchSongsEvent(q));
+                            }
                           },
                           decoration: InputDecoration(
                             hintText:
                                 'Search songs, artists, albums, YouTube...',
-                            prefixIcon: const Icon(Icons.search_rounded),
+                            prefixIcon: IconButton(
+                              icon: const Icon(Icons.search_rounded),
+                              tooltip: 'Search',
+                              onPressed: () {
+                                final q = _searchController.text.trim();
+                                if (q.isNotEmpty) {
+                                  _searchFocusNode.unfocus();
+                                  context
+                                      .read<LibraryBloc>()
+                                      .add(SearchSongsEvent(q));
+                                }
+                              },
+                            ),
                             suffixIcon: _searchController.text.isNotEmpty
                                 ? IconButton(
                                     icon: const Icon(Icons.clear_rounded),
@@ -381,9 +407,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       BuildContext context, LibraryLoaded state, ThemeData theme) {
     final localSongs = state.displayedSongs;
     final onlineItems = state.onlineResults;
+    final jiosaavnItems = state.jiosaavnResults;
     final isSearchingOnline = state.isSearchingOnline;
 
-    if (localSongs.isEmpty && onlineItems.isEmpty && !isSearchingOnline) {
+    if (localSongs.isEmpty && onlineItems.isEmpty && jiosaavnItems.isEmpty && !isSearchingOnline) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -432,13 +459,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
               )),
           const SizedBox(height: 16),
         ],
-        if (isSearchingOnline || onlineItems.isNotEmpty) ...[
+        if (isSearchingOnline || onlineItems.isNotEmpty || jiosaavnItems.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
                 Text(
-                  '🌐 YouTube Online Results',
+                  '🌐 Online Results',
                   style: GoogleFonts.outfit(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -453,6 +480,72 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ],
+              ],
+            ),
+          ),
+        ],
+        if (jiosaavnItems.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF6B35).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '🎶 JioSaavn',
+                    style: GoogleFonts.outfit(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFFFF6B35),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${jiosaavnItems.length} results',
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...jiosaavnItems.map((item) => _JioSaavnResultTile(item: item)),
+          const SizedBox(height: 12),
+        ],
+        if (onlineItems.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '▶ YouTube',
+                    style: GoogleFonts.outfit(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${onlineItems.length} results',
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
               ],
             ),
           ),
@@ -898,7 +991,209 @@ class _OnlineResultTile extends StatelessWidget {
   }
 
   void _triggerDownload(BuildContext context, DownloadService service) {
-    service.enqueueDownload(url: item.url, title: item.title);
+    service.enqueueDownload(
+      url: item.url,
+      title: item.title,
+      artist: item.author,
+      albumArt: item.thumbnailUrl,
+      duration: item.duration,
+    );
+    showDownloadQueuedSnackBar(
+      context,
+      title: item.title,
+      onViewQueue: () => DownloadQueueSheet.show(context),
+    );
+  }
+}
+
+// ── JioSaavn result tile ──────────────────────────────────────────────────────
+
+class _JioSaavnResultTile extends StatelessWidget {
+  final JioSaavnItem item;
+
+  const _JioSaavnResultTile({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final downloadService = getIt<DownloadService>();
+    final theme = Theme.of(context);
+
+    IconData typeIcon;
+    if (item.isAlbum) {
+      typeIcon = Icons.album_rounded;
+    } else if (item.isArtist) {
+      typeIcon = Icons.person_rounded;
+    } else if (item.isPlaylist) {
+      typeIcon = Icons.queue_music_rounded;
+    } else {
+      typeIcon = Icons.music_note_rounded;
+    }
+
+    String subtitleText = item.subtitle;
+    if (item.isSong && item.duration != null) {
+      final secs = int.tryParse(item.duration ?? '0') ?? 0;
+      subtitleText += ' • ${formatDuration(Duration(seconds: secs))}';
+    } else if ((item.isAlbum || item.isPlaylist) && item.songCount != null) {
+      subtitleText = '${item.songCount} songs';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: theme.colorScheme.surfaceContainerLow,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: item.imageUrl.isNotEmpty
+              ? CachedNetworkImage(
+                  imageUrl: item.imageUrl,
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => Container(
+                    width: 50,
+                    height: 50,
+                    color: theme.colorScheme.primaryContainer,
+                    child: Icon(typeIcon, color: theme.colorScheme.onPrimaryContainer),
+                  ),
+                )
+              : Container(
+                  width: 50,
+                  height: 50,
+                  color: theme.colorScheme.primaryContainer,
+                  child: Icon(typeIcon, color: theme.colorScheme.onPrimaryContainer),
+                ),
+        ),
+        title: Text(
+          item.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 14),
+        ),
+        subtitle: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B35).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                item.type.toUpperCase(),
+                style: GoogleFonts.outfit(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFFFF6B35),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                subtitleText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        trailing: item.isSong && (item.directMediaUrl != null || item.encryptedMediaUrl != null)
+            ? ValueListenableBuilder<List<ActiveDownload>>(
+                valueListenable: downloadService.downloadQueueNotifier,
+                builder: (context, queue, _) {
+                  final directUrl = item.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(item.encryptedMediaUrl);
+                  final active = queue.where((d) =>
+                      (directUrl != null && d.url == directUrl) ||
+                      (item.encryptedMediaUrl != null &&
+                          (d.url == item.encryptedMediaUrl || d.url == 'jiosaavn:${item.encryptedMediaUrl}')) ||
+                      d.id == item.id).isNotEmpty
+                      ? queue.lastWhere((d) =>
+                          (directUrl != null && d.url == directUrl) ||
+                          (item.encryptedMediaUrl != null &&
+                              (d.url == item.encryptedMediaUrl || d.url == 'jiosaavn:${item.encryptedMediaUrl}')) ||
+                          d.id == item.id)
+                      : null;
+
+                  if (active == null) {
+                    return IconButton.filledTonal(
+                      icon: const Icon(Icons.download_rounded, size: 20),
+                      tooltip: 'Download from JioSaavn',
+                      onPressed: () => _triggerJioSaavnDownload(context, downloadService),
+                    );
+                  } else if (active.isCompleted) {
+                    return const Icon(Icons.check_circle_rounded, color: Colors.green, size: 24);
+                  } else if (active.isDownloading) {
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 34,
+                          height: 34,
+                          child: CircularProgressIndicator(
+                            value: active.progress > 0 ? active.progress : null,
+                            strokeWidth: 3,
+                          ),
+                        ),
+                        Text(
+                          '${(active.progress * 100).toInt()}%',
+                          style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    );
+                  } else if (active.isQueued) {
+                    return const Chip(
+                      avatar: Icon(Icons.schedule_rounded, size: 14, color: Colors.orange),
+                      label: Text('Queued', style: TextStyle(fontSize: 11, color: Colors.orange)),
+                      padding: EdgeInsets.zero,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    );
+                  } else {
+                    return IconButton(
+                      icon: const Icon(Icons.refresh_rounded, color: Colors.red, size: 20),
+                      tooltip: 'Retry',
+                      onPressed: () => _triggerJioSaavnDownload(context, downloadService),
+                    );
+                  }
+                },
+              )
+            : item.isAlbum || item.isPlaylist
+                ? IconButton.filledTonal(
+                    icon: const Icon(Icons.download_for_offline_rounded, size: 20),
+                    tooltip: 'Download all from JioSaavn',
+                    onPressed: () => _triggerJioSaavnDownload(context, downloadService),
+                  )
+                : null,
+        onTap: () => _triggerJioSaavnDownload(context, downloadService),
+      ),
+    );
+  }
+
+  void _triggerJioSaavnDownload(BuildContext context, DownloadService service) {
+    String url;
+    if (item.directMediaUrl != null && item.directMediaUrl!.isNotEmpty) {
+      url = item.directMediaUrl!;
+    } else if (item.encryptedMediaUrl != null) {
+      final decrypted = JioSaavnDecoder.decryptMediaUrl(item.encryptedMediaUrl);
+      url = decrypted ?? 'jiosaavn:${item.encryptedMediaUrl}';
+    } else if (item.isAlbum) {
+      url = 'jiosaavn-album:${item.token}';
+    } else if (item.isPlaylist) {
+      url = 'jiosaavn-playlist:${item.token}';
+    } else {
+      url = 'jiosaavn-token:${item.token}';
+    }
+    final secs = int.tryParse(item.duration ?? '0') ?? 0;
+    service.enqueueDownload(
+      url: url,
+      title: item.title,
+      artist: item.subtitle,
+      album: item.isAlbum ? item.title : (item.subtitle.isNotEmpty ? item.subtitle : 'JioSaavn'),
+      albumArt: item.imageUrl,
+      duration: secs > 0 ? Duration(seconds: secs) : null,
+    );
     showDownloadQueuedSnackBar(
       context,
       title: item.title,

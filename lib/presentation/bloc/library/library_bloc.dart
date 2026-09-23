@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pixel_player/data/models/jiosaavn_item.dart';
 import 'package:pixel_player/data/models/playlist_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/services/file_service.dart';
@@ -124,6 +126,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
           searchQuery: '',
           displayedSongs: current.allSongs,
           onlineResults: [],
+          jiosaavnResults: [],
           isSearchingOnline: false,
         ));
         return;
@@ -140,6 +143,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         displayedSongs: filteredLocal,
         isSearchingOnline: includeOnline,
         onlineResults: includeOnline ? current.onlineResults : [],
+        jiosaavnResults: includeOnline ? current.jiosaavnResults : [],
       ));
 
       if (includeOnline) {
@@ -154,35 +158,92 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
           return;
         }
 
-        try {
-          final youtube = yt.YoutubeExplode();
-          final searchList = await youtube.search.search(q);
-          final items = searchList.take(8).map((v) {
-            return YouTubeVideoItem(
-              id: v.id.value,
-              title: v.title,
-              author: v.author,
-              duration: v.duration ?? Duration.zero,
-              thumbnailUrl: v.thumbnails.mediumResUrl,
-              url: v.url,
-            );
-          }).toList();
-          youtube.close();
+        // Run YouTube and JioSaavn searches in parallel
+        final dio = Dio();
+        const jiosaavnBase = 'https://jiosaavn-api-eight-beryl.vercel.app';
 
-          if (!emit.isDone &&
-              state is LibraryLoaded &&
-              (state as LibraryLoaded).searchQuery == q) {
-            emit((state as LibraryLoaded).copyWith(
-              onlineResults: items,
-              isSearchingOnline: false,
-            ));
-          }
-        } catch (_) {
-          if (!emit.isDone &&
-              state is LibraryLoaded &&
-              (state as LibraryLoaded).searchQuery == q) {
-            emit((state as LibraryLoaded).copyWith(isSearchingOnline: false));
-          }
+        final results = await Future.wait([
+          // YouTube search
+          () async {
+            try {
+              final youtube = yt.YoutubeExplode();
+              final searchList = await youtube.search.search(q);
+              final items = searchList.take(8).map((v) {
+                return YouTubeVideoItem(
+                  id: v.id.value,
+                  title: v.title,
+                  author: v.author,
+                  duration: v.duration ?? Duration.zero,
+                  thumbnailUrl: v.thumbnails.mediumResUrl,
+                  url: v.url,
+                );
+              }).toList();
+              youtube.close();
+              return items;
+            } catch (_) {
+              return <YouTubeVideoItem>[];
+            }
+          }(),
+
+          // JioSaavn songs search
+          () async {
+            try {
+              final response = await dio.get(
+                '$jiosaavnBase/api/songs',
+                queryParameters: {'q': q},
+                options: Options(
+                  receiveTimeout: const Duration(seconds: 8),
+                  sendTimeout: const Duration(seconds: 8),
+                ),
+              );
+              final data = response.data;
+              if (data is Map && data['results'] is List) {
+                return (data['results'] as List)
+                    .take(6)
+                    .map((json) => JioSaavnItem.fromSongJson(Map<String, dynamic>.from(json as Map)))
+                    .toList();
+              }
+            } catch (_) {}
+            return <JioSaavnItem>[];
+          }(),
+
+          // JioSaavn albums search
+          () async {
+            try {
+              final response = await dio.get(
+                '$jiosaavnBase/api/albums',
+                queryParameters: {'q': q},
+                options: Options(
+                  receiveTimeout: const Duration(seconds: 8),
+                  sendTimeout: const Duration(seconds: 8),
+                ),
+              );
+              final data = response.data;
+              if (data is Map && data['results'] is List) {
+                return (data['results'] as List)
+                    .take(3)
+                    .map((json) => JioSaavnItem.fromAlbumJson(Map<String, dynamic>.from(json as Map)))
+                    .toList();
+              }
+            } catch (_) {}
+            return <JioSaavnItem>[];
+          }(),
+        ]);
+
+        dio.close();
+
+        if (!emit.isDone &&
+            state is LibraryLoaded &&
+            (state as LibraryLoaded).searchQuery == q) {
+          final ytItems = results[0] as List<YouTubeVideoItem>;
+          final saavnSongs = results[1] as List<JioSaavnItem>;
+          final saavnAlbums = results[2] as List<JioSaavnItem>;
+
+          emit((state as LibraryLoaded).copyWith(
+            onlineResults: ytItems,
+            jiosaavnResults: [...saavnSongs, ...saavnAlbums],
+            isSearchingOnline: false,
+          ));
         }
       }
     }
