@@ -233,9 +233,9 @@ class DownloadService {
           enqueueDownload(
             url: t['url']!,
             title: t['title'] ?? title,
-            artist: artist,
-            album: album ?? title,
-            albumArt: albumArt,
+            artist: t['artist'] ?? artist,
+            album: t['album'] ?? album ?? title,
+            albumArt: t['albumArt'] ?? albumArt,
             fromShare: fromShare,
           );
         }
@@ -251,9 +251,9 @@ class DownloadService {
           enqueueDownload(
             url: t['url']!,
             title: t['title'] ?? title,
-            artist: artist,
-            album: album ?? title,
-            albumArt: albumArt,
+            artist: t['artist'] ?? artist,
+            album: t['album'] ?? album ?? title,
+            albumArt: t['albumArt'] ?? albumArt,
             fromShare: fromShare,
           );
         }

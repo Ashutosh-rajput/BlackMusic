@@ -67,10 +67,12 @@ class JioSaavnItem extends Equatable {
 
   factory JioSaavnItem.fromAlbumJson(Map<String, dynamic> json) {
     final moreInfo = json['more_info'] as Map<String, dynamic>? ?? {};
+    final id = json['id']?.toString() ?? '';
+    final tok = json['token']?.toString();
     return JioSaavnItem(
       type: 'album',
-      id: json['id']?.toString() ?? '',
-      token: json['token']?.toString() ?? '',
+      id: id,
+      token: (tok != null && tok.isNotEmpty) ? tok : id,
       title: json['title']?.toString() ?? '',
       subtitle: json['subtitle']?.toString() ?? '',
       imageUrl: (json['image']?.toString() ?? '').replaceAll('150x150', '500x500'),
@@ -82,10 +84,12 @@ class JioSaavnItem extends Equatable {
   }
 
   factory JioSaavnItem.fromArtistJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString() ?? '';
+    final tok = json['token']?.toString();
     return JioSaavnItem(
       type: 'artist',
-      id: json['id']?.toString() ?? '',
-      token: json['token']?.toString() ?? '',
+      id: id,
+      token: (tok != null && tok.isNotEmpty) ? tok : id,
       title: json['name']?.toString() ?? '',
       subtitle: 'Artist',
       imageUrl: (json['image']?.toString() ?? '').replaceAll('150x150', '500x500'),
@@ -94,10 +98,12 @@ class JioSaavnItem extends Equatable {
 
   factory JioSaavnItem.fromPlaylistJson(Map<String, dynamic> json) {
     final moreInfo = json['more_info'] as Map<String, dynamic>? ?? {};
+    final id = json['id']?.toString() ?? '';
+    final tok = json['token']?.toString();
     return JioSaavnItem(
       type: 'playlist',
-      id: json['id']?.toString() ?? '',
-      token: json['token']?.toString() ?? '',
+      id: id,
+      token: (tok != null && tok.isNotEmpty) ? tok : id,
       title: json['title']?.toString() ?? '',
       subtitle: json['subtitle']?.toString() ?? '',
       imageUrl: (json['image']?.toString() ?? '').replaceAll('150x150', '500x500'),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:dart_des/dart_des.dart';
 import 'package:dio/dio.dart';
+import 'package:pixel_player/data/models/jiosaavn_item.dart';
 
 class JioSaavnDecoder {
   // Key documented for JioSaavn DES-ECB media decryption
@@ -41,13 +42,24 @@ class JioSaavnDecoder {
       final data = resp.data;
       if (data is Map && data['songs'] is List) {
         final list = <Map<String, String>>[];
+        final albumTitle = data['title']?.toString();
+        final albumArt = (data['image']?.toString() ?? '').replaceAll('150x150', '500x500');
         for (final song in data['songs'] as List) {
           final s = Map<String, dynamic>.from(song as Map);
           final title = s['title']?.toString() ?? 'Track';
-          final encUrl = s['encrypted_media_url']?.toString();
+          final moreInfo = s['more_info'] as Map<String, dynamic>?;
+          final encUrl = s['encrypted_media_url']?.toString() ??
+              moreInfo?['encrypted_media_url']?.toString();
           final directUrl = decryptMediaUrl(encUrl);
+          final artist = s['subtitle']?.toString();
           if (directUrl != null) {
-            list.add({'title': title, 'url': directUrl});
+            list.add({
+              'title': title,
+              'url': directUrl,
+              if (artist != null) 'artist': artist,
+              if (albumTitle != null) 'album': albumTitle,
+              if (albumArt.isNotEmpty) 'albumArt': albumArt,
+            });
           }
         }
         return list;
@@ -67,16 +79,123 @@ class JioSaavnDecoder {
         queryParameters: {'token': playlistToken},
       );
       final data = resp.data;
-      if (data is Map && data['list'] is List) {
+      final songList = data is Map ? (data['list'] ?? data['songs']) : null;
+      if (data is Map && songList is List) {
         final list = <Map<String, String>>[];
-        for (final song in data['list'] as List) {
+        final playlistTitle = data['title']?.toString();
+        final playlistArt = (data['image']?.toString() ?? '').replaceAll('150x150', '500x500');
+        for (final song in songList) {
           final s = Map<String, dynamic>.from(song as Map);
           final title = s['title']?.toString() ?? 'Track';
-          final encUrl = s['encrypted_media_url']?.toString();
+          final moreInfo = s['more_info'] as Map<String, dynamic>?;
+          final encUrl = s['encrypted_media_url']?.toString() ??
+              moreInfo?['encrypted_media_url']?.toString();
           final directUrl = decryptMediaUrl(encUrl);
+          final artist = s['subtitle']?.toString();
           if (directUrl != null) {
-            list.add({'title': title, 'url': directUrl});
+            list.add({
+              'title': title,
+              'url': directUrl,
+              if (artist != null) 'artist': artist,
+              if (playlistTitle != null) 'album': playlistTitle,
+              if (playlistArt.isNotEmpty) 'albumArt': playlistArt,
+            });
           }
+        }
+        return list;
+      }
+    } catch (_) {} finally {
+      dio.close();
+    }
+    return [];
+  }
+
+  /// Fetches complete JioSaavnItem objects for all tracks in an album.
+  static Future<List<JioSaavnItem>> fetchAlbumSongs(String albumToken) async {
+    final dio = Dio();
+    try {
+      final resp = await dio.get(
+        '$apiBase/api/album',
+        queryParameters: {'token': albumToken},
+        options: Options(
+          receiveTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+        ),
+      );
+      final data = resp.data;
+      if (data is Map && data['songs'] is List) {
+        final list = <JioSaavnItem>[];
+        final albumArt = (data['image']?.toString() ?? '').replaceAll('150x150', '500x500');
+        final albumTitle = data['title']?.toString() ?? 'Album';
+        for (final song in data['songs'] as List) {
+          final s = Map<String, dynamic>.from(song as Map);
+          final moreInfo = s['more_info'] as Map<String, dynamic>?;
+          final encUrl = s['encrypted_media_url']?.toString() ??
+              moreInfo?['encrypted_media_url']?.toString();
+          final directUrl = decryptMediaUrl(encUrl);
+          final songId = s['id']?.toString() ?? s['token']?.toString() ?? '';
+          final durationSecs = s['duration']?.toString() ?? moreInfo?['duration']?.toString();
+          final songArt = (s['image']?.toString() ?? '').replaceAll('150x150', '500x500');
+          list.add(JioSaavnItem(
+            type: 'song',
+            id: songId,
+            token: s['token']?.toString() ?? songId,
+            title: s['title']?.toString() ?? 'Track',
+            subtitle: s['subtitle']?.toString() ?? albumTitle,
+            imageUrl: songArt.isNotEmpty ? songArt : albumArt,
+            encryptedMediaUrl: encUrl,
+            directMediaUrl: directUrl,
+            duration: durationSecs,
+            quality: '320 kbps',
+          ));
+        }
+        return list;
+      }
+    } catch (_) {} finally {
+      dio.close();
+    }
+    return [];
+  }
+
+  /// Fetches complete JioSaavnItem objects for all tracks in a playlist.
+  static Future<List<JioSaavnItem>> fetchPlaylistSongs(String playlistToken) async {
+    final dio = Dio();
+    try {
+      final resp = await dio.get(
+        '$apiBase/api/playlist',
+        queryParameters: {'token': playlistToken},
+        options: Options(
+          receiveTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+        ),
+      );
+      final data = resp.data;
+      final songList = data is Map ? (data['list'] ?? data['songs']) : null;
+      if (data is Map && songList is List) {
+        final list = <JioSaavnItem>[];
+        final playlistArt = (data['image']?.toString() ?? '').replaceAll('150x150', '500x500');
+        final playlistTitle = data['title']?.toString() ?? 'Playlist';
+        for (final song in songList) {
+          final s = Map<String, dynamic>.from(song as Map);
+          final moreInfo = s['more_info'] as Map<String, dynamic>?;
+          final encUrl = s['encrypted_media_url']?.toString() ??
+              moreInfo?['encrypted_media_url']?.toString();
+          final directUrl = decryptMediaUrl(encUrl);
+          final songId = s['id']?.toString() ?? s['token']?.toString() ?? '';
+          final durationSecs = s['duration']?.toString() ?? moreInfo?['duration']?.toString();
+          final songArt = (s['image']?.toString() ?? '').replaceAll('150x150', '500x500');
+          list.add(JioSaavnItem(
+            type: 'song',
+            id: songId,
+            token: s['token']?.toString() ?? songId,
+            title: s['title']?.toString() ?? 'Track',
+            subtitle: s['subtitle']?.toString() ?? playlistTitle,
+            imageUrl: songArt.isNotEmpty ? songArt : playlistArt,
+            encryptedMediaUrl: encUrl,
+            directMediaUrl: directUrl,
+            duration: durationSecs,
+            quality: '320 kbps',
+          ));
         }
         return list;
       }
