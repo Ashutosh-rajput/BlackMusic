@@ -149,5 +149,72 @@ void main() {
         expect(state.repeatMode, equals('One'));
       },
     );
+
+    blocTest<PlayerBloc, PlayerState>(
+      'Automatically skips to next song and emits error when audio source fails to play',
+      build: () {
+        audioService.failPath = song1.filePath;
+        return playerBloc;
+      },
+      act: (bloc) async {
+        bloc.add(PlaySongEvent(song1, queue: [song1, song2, song3]));
+      },
+      wait: const Duration(milliseconds: 500),
+      verify: (bloc) {
+        expect(bloc.state, isA<PlayerPlaying>());
+        final state = bloc.state as PlayerPlaying;
+        // song1 failed with source error, so it automatically skipped and played song2
+        expect(state.song.id, equals(song2.id));
+      },
+    );
+
+    blocTest<PlayerBloc, PlayerState>(
+      'Handles background notification Next button (seekToNext) and updates current song',
+      build: () => playerBloc,
+      act: (bloc) async {
+        bloc.add(PlaySongEvent(song1, queue: [song1, song2, song3]));
+        await Future.delayed(const Duration(milliseconds: 50));
+        await audioService.seekToNext();
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (bloc) {
+        expect(bloc.state, isA<PlayerPlaying>());
+        final state = bloc.state as PlayerPlaying;
+        expect(state.song.id, equals(song2.id));
+      },
+    );
+
+    blocTest<PlayerBloc, PlayerState>(
+      'Handles background notification Previous button (seekToPrevious) and wraps around',
+      build: () => playerBloc,
+      act: (bloc) async {
+        bloc.add(PlaySongEvent(song1, queue: [song1, song2, song3]));
+        await Future.delayed(const Duration(milliseconds: 50));
+        await audioService.seekToPrevious();
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (bloc) {
+        expect(bloc.state, isA<PlayerPlaying>());
+        final state = bloc.state as PlayerPlaying;
+        expect(state.song.id, equals(song3.id));
+      },
+    );
+
+    blocTest<PlayerBloc, PlayerState>(
+      'Pauses immediately when audio service pauses from notification',
+      build: () => playerBloc,
+      act: (bloc) async {
+        bloc.add(PlaySongEvent(song1, queue: [song1, song2, song3]));
+        await Future.delayed(const Duration(milliseconds: 50));
+        await audioService.pause();
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (bloc) {
+        expect(bloc.state, isA<PlayerPaused>());
+        final state = bloc.state as PlayerPaused;
+        expect(state.song.id, equals(song1.id));
+      },
+    );
   });
 }
+

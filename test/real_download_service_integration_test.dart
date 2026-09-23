@@ -39,11 +39,8 @@ void main() {
     test('Enqueueing download adds active entry to queue notifier', () async {
       expect(downloadService.downloadQueueNotifier.value.isEmpty, isTrue);
 
-      // Video id is intentionally malformed (not 11 chars) so YoutubeExplode's
-      // VideoId parsing rejects it synchronously before any real network call
-      // is made, keeping this test hermetic and independent of YouTube itself.
       await downloadService.enqueueDownload(
-        url: 'https://www.youtube.com/watch?v=invalid',
+        url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
         title: 'Rick Astley - Never Gonna Give You Up',
       );
 
@@ -72,3 +69,4 @@ void main() {
     });
   });
 }
+

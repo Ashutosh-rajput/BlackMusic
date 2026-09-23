@@ -103,16 +103,18 @@ class _MiniPlayerDock extends StatelessWidget {
         Song? currentSong;
         bool isPlaying = false;
         bool isLoading = false;
+        final isActuallyPlaying = (state is PlayerPlaying) && getIt<AudioPlayerService>().isPlaying;
+        final isActuallyLoading = (state is PlayerLoading) && getIt<AudioPlayerService>().isPlaying;
 
         if (state is PlayerPlaying) {
           currentSong = state.song;
-          isPlaying = true;
+          isPlaying = isActuallyPlaying;
         } else if (state is PlayerPaused) {
           currentSong = state.song;
           isPlaying = false;
         } else if (state is PlayerLoading) {
           currentSong = state.song;
-          isLoading = true;
+          isLoading = isActuallyLoading;
         }
 
         if (currentSong == null) return const SizedBox();

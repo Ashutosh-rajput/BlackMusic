@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:pixel_player/data/models/song_model.dart';
@@ -79,6 +80,25 @@ class AudioPlayerService {
     }
   }
 
+  static const int _maxWindowSize = 25;
+
+  (List<Song>, int) _buildWindowWithIndex(List<Song> queue, int activeIndex) {
+    if (queue.isEmpty) return (<Song>[], 0);
+    if (queue.length <= _maxWindowSize) {
+      final safeIndex = activeIndex.clamp(0, queue.length - 1);
+      return (List<Song>.from(queue), safeIndex);
+    }
+
+    final halfWindow = _maxWindowSize ~/ 2;
+    final window = <Song>[];
+    for (int i = -halfWindow; i <= halfWindow; i++) {
+      final index = (activeIndex + i) % queue.length;
+      final normalizedIndex = index < 0 ? index + queue.length : index;
+      window.add(queue[normalizedIndex]);
+    }
+    return (window, halfWindow);
+  }
+
   Future<void> prepare(Song song) async {
     try {
       final source = _buildAudioSource(song);
@@ -91,8 +111,52 @@ class AudioPlayerService {
     }
   }
 
-  Future<void> play(String path, {Song? songInfo}) async {
+  Future<void> play(
+    String path, {
+    Song? songInfo,
+    List<Song>? queue,
+    int? initialIndex,
+  }) async {
     try {
+      if (!path.startsWith('http://') && !path.startsWith('https://')) {
+        final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+        final file = File(cleanPath);
+        if (Platform.isAndroid || Platform.isIOS) {
+          if (!file.existsSync()) {
+            throw Exception('Audio file not found on disk ($cleanPath)');
+          }
+          if (file.lengthSync() == 0) {
+            throw Exception('Audio file is empty or corrupted (0 bytes)');
+          }
+        }
+      }
+
+      if (queue != null && queue.length > 1) {
+        final activeSong = songInfo ?? queue.firstWhere(
+          (s) => s.filePath == path,
+          orElse: () => Song(
+            id: DateTime.now().millisecondsSinceEpoch,
+            title: path.split(Platform.pathSeparator).last,
+            artist: 'Unknown Artist',
+            album: 'Unknown Album',
+            filePath: path,
+            duration: Duration.zero,
+            dateModified: DateTime.now(),
+          ),
+        );
+
+        final activeIndex = queue.indexWhere((s) => s.id == activeSong.id);
+        final safeActiveIndex = activeIndex != -1 ? activeIndex : (initialIndex ?? 0).clamp(0, queue.length - 1);
+
+        final (window, indexInWindow) = _buildWindowWithIndex(queue, safeActiveIndex);
+        final audioSources = window.map(_buildAudioSource).toList();
+
+        await player.setAudioSources(audioSources, initialIndex: indexInWindow);
+        await player.setLoopMode(LoopMode.all);
+        await player.play();
+        return;
+      }
+
       AudioSource source;
       if (songInfo != null) {
         source = _buildAudioSource(songInfo);
@@ -105,6 +169,7 @@ class AudioPlayerService {
         }
       }
       await player.setAudioSource(source);
+      await player.setLoopMode(LoopMode.off);
       await player.play();
     } on PlayerInterruptedException {
       _logger.i('Audio loading interrupted by user/new playback request.');
@@ -121,9 +186,10 @@ class AudioPlayerService {
   Future<void> playQueue(List<Song> queue, {required int initialIndex}) async {
     if (queue.isEmpty) return;
     try {
-      final audioSources = queue.map(_buildAudioSource).toList();
-      final safeIndex = initialIndex.clamp(0, queue.length - 1);
-      await player.setAudioSources(audioSources, initialIndex: safeIndex);
+      final (window, indexInWindow) = _buildWindowWithIndex(queue, initialIndex);
+      final audioSources = window.map(_buildAudioSource).toList();
+      await player.setAudioSources(audioSources, initialIndex: indexInWindow);
+      await player.setLoopMode(LoopMode.all);
       await player.play();
     } on PlayerInterruptedException {
       _logger.i('Queue playback interrupted by new request.');
@@ -133,6 +199,8 @@ class AudioPlayerService {
       rethrow;
     }
   }
+
+  Future<void> setLoopMode(LoopMode mode) => player.setLoopMode(mode);
 
   Future<void> pause() => player.pause();
 
@@ -172,7 +240,11 @@ class AudioPlayerService {
 
   Stream<PlayerState> get playerStateStream => player.playerStateStream;
 
+  Stream<bool> get playingStream => player.playingStream;
+
   Stream<Duration?> get durationStream => player.durationStream;
+
+  bool get isPlaying => _audioPlayer?.playing ?? false;
 
   void dispose() {
     _audioPlayer?.dispose();

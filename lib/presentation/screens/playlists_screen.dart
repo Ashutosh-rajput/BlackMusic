@@ -49,6 +49,9 @@ class PlaylistsScreen extends StatelessWidget {
 
           final allSongs = state is LibraryLoaded ? state.allSongs : <Song>[];
           final playlists = state is LibraryLoaded ? state.playlists : <PlaylistModel>[];
+          final artDim = context.select<ThemeCubit, double>(
+            (c) => c.state.albumArtDimension * 0.85,
+          );
 
           final recentlyAdded = List<Song>.from(allSongs)
             ..sort((a, b) => b.dateModified.compareTo(a.dateModified));
@@ -290,7 +293,6 @@ class PlaylistsScreen extends StatelessWidget {
                                 )
                               ]
                             : playlist.songs.map((song) {
-                                final artDim = context.watch<ThemeCubit>().state.albumArtDimension * 0.85;
                                 return ListTile(
                                   leading: AlbumArtWidget(
                                     albumArt: song.albumArt,

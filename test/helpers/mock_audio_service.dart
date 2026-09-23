@@ -10,6 +10,7 @@ class MockAudioPlayerService implements AudioPlayerService {
   final _playerStateController = StreamController<PlayerState>.broadcast();
   final _positionController = StreamController<Duration>.broadcast();
   final _currentIndexController = StreamController<int?>.broadcast();
+  final _playingController = StreamController<bool>.broadcast();
 
   List<Song> _queue = [];
   int _currentIndex = 0;
@@ -22,6 +23,9 @@ class MockAudioPlayerService implements AudioPlayerService {
   Stream<PlayerState> get playerStateStream => _playerStateController.stream;
 
   @override
+  Stream<bool> get playingStream => _playingController.stream;
+
+  @override
   Stream<Duration> get positionStream => _positionController.stream;
 
   @override
@@ -30,13 +34,37 @@ class MockAudioPlayerService implements AudioPlayerService {
   @override
   Stream<int?> get currentIndexStream => _currentIndexController.stream;
 
+  bool _isPlaying = false;
+
   @override
-  Future<void> play(String path, {Song? songInfo}) async {
+  bool get isPlaying => _isPlaying;
+
+  String? failPath;
+
+  @override
+  Future<void> play(
+    String path, {
+    Song? songInfo,
+    List<Song>? queue,
+    int? initialIndex,
+  }) async {
+    if (failPath != null && path == failPath) {
+      throw Exception('(0) Source error');
+    }
+    _isPlaying = true;
+    _playingController.add(true);
+    if (queue != null) {
+      _queue = List.from(queue);
+      _currentIndex = initialIndex ?? (songInfo != null ? _queue.indexWhere((s) => s.id == songInfo.id) : 0);
+      if (_currentIndex < 0) _currentIndex = 0;
+    }
     _playerStateController.add(PlayerState(true, ProcessingState.ready));
   }
 
   @override
   Future<void> playQueue(List<Song> queue, {required int initialIndex}) async {
+    _isPlaying = true;
+    _playingController.add(true);
     _queue = List.from(queue);
     _currentIndex = initialIndex;
     _currentIndexController.add(_currentIndex);
@@ -45,16 +73,22 @@ class MockAudioPlayerService implements AudioPlayerService {
 
   @override
   Future<void> pause() async {
+    _isPlaying = false;
+    _playingController.add(false);
     _playerStateController.add(PlayerState(false, ProcessingState.ready));
   }
 
   @override
   Future<void> resume() async {
+    _isPlaying = true;
+    _playingController.add(true);
     _playerStateController.add(PlayerState(true, ProcessingState.ready));
   }
 
   @override
   Future<void> stop() async {
+    _isPlaying = false;
+    _playingController.add(false);
     _playerStateController.add(PlayerState(false, ProcessingState.idle));
   }
 
@@ -68,16 +102,16 @@ class MockAudioPlayerService implements AudioPlayerService {
 
   @override
   Future<void> seekToNext() async {
-    if (_queue.isNotEmpty && _currentIndex < _queue.length - 1) {
-      _currentIndex++;
+    if (_queue.isNotEmpty) {
+      _currentIndex = (_currentIndex + 1) % _queue.length;
       _currentIndexController.add(_currentIndex);
     }
   }
 
   @override
   Future<void> seekToPrevious() async {
-    if (_queue.isNotEmpty && _currentIndex > 0) {
-      _currentIndex--;
+    if (_queue.isNotEmpty) {
+      _currentIndex = (_currentIndex - 1 + _queue.length) % _queue.length;
       _currentIndexController.add(_currentIndex);
     }
   }
@@ -87,6 +121,9 @@ class MockAudioPlayerService implements AudioPlayerService {
     _currentIndex = index;
     _currentIndexController.add(_currentIndex);
   }
+
+  @override
+  Future<void> setLoopMode(LoopMode mode) async {}
 
   @override
   Future<void> setVolume(double volume) async {}
@@ -123,5 +160,11 @@ void setupPlatformMocks() {
       return {'duration': 180000000};
     }
     return {};
+  });
+
+  const toastChannel = MethodChannel('PonnamKarthik/fluttertoast');
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(toastChannel, (MethodCall methodCall) async {
+    return true;
   });
 }

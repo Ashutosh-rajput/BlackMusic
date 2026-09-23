@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -28,15 +29,17 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _rotationController;
   late AnimationController _waveController;
+  StreamSubscription<bool>? _playingSubscription;
   bool _isDragging = false;
   double _dragPosition = 0.0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _rotationController = AnimationController(
       duration: const Duration(seconds: 20),
       vsync: this,
@@ -46,22 +49,46 @@ class _PlayerScreenState extends State<PlayerScreen>
       vsync: this,
     );
 
+    final isAudioPlaying = getIt<AudioPlayerService>().isPlaying;
     final playerState = context.read<PlayerBloc>().state;
-    if (playerState is PlayerPlaying) {
+    if (playerState is PlayerPlaying && isAudioPlaying) {
       _rotationController.repeat();
       _waveController.repeat();
     }
+
+    _playingSubscription = getIt<AudioPlayerService>().playingStream.listen((playing) {
+      if (!playing) {
+        if (_rotationController.isAnimating) _rotationController.stop();
+        if (_waveController.isAnimating) _waveController.stop();
+      } else {
+        if (mounted && context.read<PlayerBloc>().state is PlayerPlaying) {
+          if (!_rotationController.isAnimating) _rotationController.repeat();
+          if (!_waveController.isAnimating) _waveController.repeat();
+        }
+      }
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _playingSubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _rotationController.dispose();
     _waveController.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    if (lifecycleState == AppLifecycleState.resumed) {
+      _syncAnimation(context.read<PlayerBloc>().state);
+    }
+  }
+
   void _syncAnimation(PlayerState state) {
-    if (state is PlayerPlaying) {
+    final shouldAnimate = state is PlayerPlaying && getIt<AudioPlayerService>().isPlaying;
+    if (shouldAnimate) {
       if (!_rotationController.isAnimating) {
         _rotationController.repeat();
       }
@@ -111,13 +138,16 @@ class _PlayerScreenState extends State<PlayerScreen>
         bool isShuffle = false;
         String repeatMode = 'Off';
 
+        final isActuallyPlaying = (state is PlayerPlaying) && getIt<AudioPlayerService>().isPlaying;
+        final isActuallyLoading = (state is PlayerLoading) && getIt<AudioPlayerService>().isPlaying;
+
         if (state is PlayerPlaying) {
           currentSong = state.song;
           position = state.position;
           duration = state.duration.inMilliseconds > 0
               ? state.duration
               : currentSong.duration;
-          isPlaying = true;
+          isPlaying = isActuallyPlaying;
           isShuffle = state.isShuffle;
           repeatMode = state.repeatMode;
         } else if (state is PlayerPaused) {
@@ -134,10 +164,19 @@ class _PlayerScreenState extends State<PlayerScreen>
             currentSong = state.song!;
           }
           duration = currentSong.duration;
-          isLoading = true;
+          isLoading = isActuallyLoading;
+          isPlaying = false;
           isShuffle = state.isShuffle;
           repeatMode = state.repeatMode;
         }
+
+        if (!isPlaying) {
+          if (_rotationController.isAnimating) _rotationController.stop();
+          if (_waveController.isAnimating) _waveController.stop();
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _syncAnimation(state);
+        });
 
         return Scaffold(
           appBar: AppBar(

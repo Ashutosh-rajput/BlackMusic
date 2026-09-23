@@ -653,15 +653,19 @@ class _SongListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final themeState = context.watch<ThemeCubit>().state;
-    final artDimension = themeState.albumArtDimension;
-    final playerState = context.watch<PlayerBloc>().state;
+    final artDimension = context.select<ThemeCubit, double>(
+      (cubit) => cubit.state.albumArtDimension,
+    );
 
-    final isCurrentSong =
-        (playerState is PlayerPlaying && playerState.song.id == song.id) ||
-            (playerState is PlayerPaused && playerState.song.id == song.id);
-    final isPlaying =
-        playerState is PlayerPlaying && playerState.song.id == song.id;
+    final isCurrentSong = context.select<PlayerBloc, bool>((bloc) {
+      final s = bloc.state;
+      return (s is PlayerPlaying && s.song.id == song.id) ||
+          (s is PlayerPaused && s.song.id == song.id);
+    });
+    final isPlaying = context.select<PlayerBloc, bool>((bloc) {
+      final s = bloc.state;
+      return s is PlayerPlaying && s.song.id == song.id;
+    });
 
     final titleColor =
         isCurrentSong ? theme.colorScheme.primary : theme.colorScheme.onSurface;

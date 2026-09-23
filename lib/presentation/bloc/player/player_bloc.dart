@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerEvent, PlayerState;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:pixel_player/data/models/song_model.dart';
@@ -18,6 +19,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   StreamSubscription? _durationSubscription;
   StreamSubscription? _playerStateSubscription;
   StreamSubscription? _currentIndexSubscription;
+  StreamSubscription? _playingSubscription;
 
   Song? _currentSong;
   List<Song> _queue = [];
@@ -27,6 +29,16 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   bool _autoPlayNext = true;
   String _repeatMode = 'Off';
   bool _isChangingSong = false;
+  int _consecutiveFailures = 0;
+
+  void _showToast(String message) {
+    try {
+      Fluttertoast.showToast(
+        msg: message,
+        toastLength: Toast.LENGTH_SHORT,
+      );
+    } catch (_) {}
+  }
 
   PlayerBloc({
     required AudioPlayerService audioService,
@@ -65,6 +77,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<RestoreLastPlayedEvent>(_onRestoreLastPlayed);
     on<PositionChangedEvent>(_onPositionChanged);
     on<DurationChangedEvent>(_onDurationChanged);
+    on<TrackChangedEvent>(_onTrackChanged);
 
     _listenToStreams();
     add(const RestoreLastPlayedEvent());
@@ -81,23 +94,37 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       }
     });
 
-    _currentIndexSubscription = _audioService.player.currentIndexStream.listen((index) {
+    _currentIndexSubscription = _audioService.currentIndexStream.listen((index) {
       if (index != null && index >= 0 && !_isChangingSong) {
         final sequence = _audioService.player.sequenceState.sequence;
-        if (index < sequence.length) {
+        if (sequence.isNotEmpty && index < sequence.length) {
           final tag = sequence[index].tag;
           if (tag is MediaItem) {
             final songId = int.tryParse(tag.id);
             if (songId != null) {
               final matching = _queue.where((s) => s.id == songId);
               if (matching.isNotEmpty) {
-                _currentSong = matching.first;
+                final newSong = matching.first;
+                if (_currentSong?.id != newSong.id) {
+                  add(TrackChangedEvent(
+                    newSong,
+                    sequenceIndex: index,
+                    sequenceLength: sequence.length,
+                  ));
+                }
                 return;
               }
             }
           }
-          if (sequence.length == _queue.length && index < _queue.length) {
-            _currentSong = _queue[index];
+        }
+        if (index < _queue.length) {
+          final newSong = _queue[index];
+          if (_currentSong?.id != newSong.id) {
+            add(TrackChangedEvent(
+              newSong,
+              sequenceIndex: index,
+              sequenceLength: _queue.length,
+            ));
           }
         }
       }
@@ -106,6 +133,14 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _playerStateSubscription = _audioService.playerStateStream.listen((playerState) async {
       final procState = playerState.processingState;
       final isPlaying = playerState.playing;
+
+      if (!isPlaying) {
+        _isChangingSong = false;
+        if (state is PlayerPlaying || state is PlayerLoading) {
+          add(const PauseEvent());
+        }
+        return;
+      }
 
       if (procState == ProcessingState.ready && isPlaying) {
         _isChangingSong = false;
@@ -120,20 +155,26 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         } else if (_autoPlayNext) {
           add(const NextSongEvent());
         } else {
-          await _audioService.pause();
-          await _audioService.seek(Duration.zero);
           add(const PauseEvent());
+          await _audioService.seek(Duration.zero);
           _isChangingSong = false;
         }
         return;
       }
 
-      if (procState == ProcessingState.ready || procState == ProcessingState.buffering) {
-        if (!isPlaying && state is PlayerPlaying) {
+      if (isPlaying && (state is PlayerPaused || state is PlayerStopped)) {
+        add(const ResumeEvent());
+      }
+    });
+
+    _playingSubscription = _audioService.playingStream.listen((isPlaying) {
+      if (!isPlaying) {
+        _isChangingSong = false;
+        if (state is PlayerPlaying || state is PlayerLoading) {
           add(const PauseEvent());
-        } else if (isPlaying && state is PlayerPaused) {
-          add(const ResumeEvent());
         }
+      } else if (state is PlayerPaused || state is PlayerStopped) {
+        add(const ResumeEvent());
       }
     });
   }
@@ -143,22 +184,47 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _settingsService?.setLastPlayedSongId(_currentSong!.id);
       _settingsService?.setLastPlayedPositionMs(event.position.inMilliseconds);
     }
+    final isActuallyPlaying = _audioService.isPlaying;
     if (state is PlayerPlaying) {
-      final current = state as PlayerPlaying;
-      emit(current.copyWith(song: _currentSong, position: event.position));
+      if (!isActuallyPlaying) {
+        emit(PlayerPaused(
+          song: _currentSong ?? (state as PlayerPlaying).song,
+          position: event.position,
+          duration: (state as PlayerPlaying).duration,
+          isShuffle: _isShuffle,
+          isRepeat: _isRepeat,
+          repeatMode: _repeatMode,
+          queue: List.from(_queue),
+        ));
+      } else {
+        final current = state as PlayerPlaying;
+        emit(current.copyWith(song: _currentSong, position: event.position));
+      }
     } else if (state is PlayerPaused) {
       final current = state as PlayerPaused;
       emit(current.copyWith(song: _currentSong, position: event.position));
     } else if (state is PlayerLoading && _currentSong != null) {
       final current = state as PlayerLoading;
-      emit(PlayerPlaying(
-        song: _currentSong!,
-        position: event.position,
-        duration: _audioService.player.duration ?? _currentSong!.duration,
-        isShuffle: current.isShuffle,
-        isRepeat: current.isRepeat,
-        queue: _queue,
-      ));
+      if (isActuallyPlaying) {
+        emit(PlayerPlaying(
+          song: _currentSong!,
+          position: event.position,
+          duration: _audioService.player.duration ?? _currentSong!.duration,
+          isShuffle: current.isShuffle,
+          isRepeat: current.isRepeat,
+          queue: _queue,
+        ));
+      } else {
+        emit(PlayerPaused(
+          song: _currentSong!,
+          position: event.position,
+          duration: _audioService.player.duration ?? _currentSong!.duration,
+          isShuffle: current.isShuffle,
+          isRepeat: current.isRepeat,
+          repeatMode: _repeatMode,
+          queue: _queue,
+        ));
+      }
     }
   }
 
@@ -202,7 +268,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         isShuffle: _isShuffle,
         isRepeat: _isRepeat,
       ));
-      await _audioService.play(song.filePath, songInfo: song);
+      await _audioService.play(song.filePath, songInfo: song, queue: _queue);
 
       final dur = _audioService.player.duration ?? song.duration;
       Song activeSong = song;
@@ -220,16 +286,61 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         isRepeat: _isRepeat,
         queue: _queue,
       ));
+      _consecutiveFailures = 0;
       _isChangingSong = false;
     } catch (e) {
       _isChangingSong = false;
       if (e.toString().contains('Loading interrupted')) {
         return;
       }
-      _currentSong = previousSong;
+      _consecutiveFailures++;
       debugPrint('Failed to play song (${song.filePath}): $e');
+      _showToast('Cannot play "${song.title}". Skipping to next track...');
       emit(PlayerError('Failed to play song: $e'));
+
+      // If queue has other songs and we haven't exhausted all tracks in queue
+      if (_queue.length > 1 && _consecutiveFailures < _queue.length) {
+        final nextSong = _getNextSong(song);
+        if (nextSong != null && nextSong.id != song.id) {
+          await Future.delayed(const Duration(milliseconds: 300));
+          await _playSongInternal(nextSong, emit);
+          return;
+        }
+      }
+
+      // If all tracks in queue failed or queue only has 1 track
+      _consecutiveFailures = 0;
+      _currentSong = previousSong;
+      if (_queue.length > 1) {
+        _showToast('Unable to play tracks in queue.');
+      }
+      emit(PlayerPaused(
+        song: song,
+        position: Duration.zero,
+        duration: song.duration,
+        isShuffle: _isShuffle,
+        isRepeat: _isRepeat,
+        queue: _queue,
+      ));
     }
+  }
+
+  Song? _getNextSong(Song current) {
+    if (_queue.isEmpty) return null;
+    if (_isShuffle && _queue.length > 1) {
+      final available = _queue.where((s) => s.id != current.id).toList();
+      if (available.isNotEmpty) {
+        available.shuffle();
+        return available.first;
+      }
+    }
+    final currentIndex = _queue.indexWhere((s) => s.id == current.id);
+    if (currentIndex != -1 && currentIndex < _queue.length - 1) {
+      return _queue[currentIndex + 1];
+    } else if (_queue.isNotEmpty) {
+      return _queue.first; // Wrap around
+    }
+    return null;
   }
 
   Future<void> _onPlaySong(PlaySongEvent event, Emitter<PlayerState> emit) async {
@@ -240,6 +351,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _queue.add(event.song);
       _originalQueue.add(event.song);
     }
+    _consecutiveFailures = 0;
     await _playSongInternal(event.song, emit);
   }
 
@@ -254,11 +366,13 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
     final safeIndex = event.initialIndex.clamp(0, _queue.length - 1);
     _currentSong = _queue[safeIndex];
+    _consecutiveFailures = 0;
     await _playSongInternal(_currentSong!, emit);
   }
 
   Future<void> _onPlaySongAtIndex(PlaySongAtIndexEvent event, Emitter<PlayerState> emit) async {
     if (event.index < 0 || event.index >= _queue.length) return;
+    _consecutiveFailures = 0;
     await _playSongInternal(_queue[event.index], emit);
   }
 
@@ -359,46 +473,53 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Future<void> _onPause(PauseEvent event, Emitter<PlayerState> emit) async {
+    final song = _currentSong ??
+        (state is PlayerPlaying
+            ? (state as PlayerPlaying).song
+            : (state is PlayerLoading ? (state as PlayerLoading).song : null));
+    if (song != null) {
+      final pos = _audioService.player.position;
+      final dur = _audioService.player.duration ?? song.duration;
+      emit(PlayerPaused(
+        song: song,
+        position: pos,
+        duration: dur,
+        isShuffle: _isShuffle,
+        isRepeat: _isRepeat,
+        repeatMode: _repeatMode,
+        queue: List.from(_queue),
+      ));
+    }
     try {
-      await _audioService.pause();
-      final song = _currentSong ?? (state is PlayerPlaying ? (state as PlayerPlaying).song : null);
-      if (song != null) {
-        final pos = _audioService.player.position;
-        final dur = _audioService.player.duration ?? song.duration;
-        emit(PlayerPaused(
-          song: song,
-          position: pos,
-          duration: dur,
-          isShuffle: _isShuffle,
-          isRepeat: _isRepeat,
-          repeatMode: _repeatMode,
-          queue: List.from(_queue),
-        ));
+      if (_audioService.isPlaying) {
+        await _audioService.pause();
       }
     } catch (e) {
-      emit(PlayerError('Failed to pause: $e'));
+      debugPrint('Error pausing player: $e');
     }
   }
 
   Future<void> _onResume(ResumeEvent event, Emitter<PlayerState> emit) async {
+    final song = _currentSong ?? (state is PlayerPaused ? (state as PlayerPaused).song : null);
+    if (song != null) {
+      final pos = _audioService.player.position;
+      final dur = _audioService.player.duration ?? song.duration;
+      emit(PlayerPlaying(
+        song: song,
+        position: pos,
+        duration: dur,
+        isShuffle: _isShuffle,
+        isRepeat: _isRepeat,
+        repeatMode: _repeatMode,
+        queue: List.from(_queue),
+      ));
+    }
     try {
-      await _audioService.resume();
-      final song = _currentSong ?? (state is PlayerPaused ? (state as PlayerPaused).song : null);
-      if (song != null) {
-        final pos = _audioService.player.position;
-        final dur = _audioService.player.duration ?? song.duration;
-        emit(PlayerPlaying(
-          song: song,
-          position: pos,
-          duration: dur,
-          isShuffle: _isShuffle,
-          isRepeat: _isRepeat,
-          repeatMode: _repeatMode,
-          queue: List.from(_queue),
-        ));
+      if (!_audioService.isPlaying) {
+        await _audioService.resume();
       }
     } catch (e) {
-      emit(PlayerError('Failed to resume: $e'));
+      debugPrint('Error resuming player: $e');
     }
   }
 
@@ -494,23 +615,8 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   Future<void> _onNextSong(NextSongEvent event, Emitter<PlayerState> emit) async {
     if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
-
-    Song? nextSong;
-    if (_isShuffle && _queue.length > 1) {
-      final available = _queue.where((s) => s.id != _currentSong!.id).toList();
-      if (available.isNotEmpty) {
-        available.shuffle();
-        nextSong = available.first;
-      }
-    } else {
-      final currentIndex = _queue.indexWhere((s) => s.id == _currentSong!.id);
-      if (currentIndex != -1 && currentIndex < _queue.length - 1) {
-        nextSong = _queue[currentIndex + 1];
-      } else if (_queue.isNotEmpty) {
-        nextSong = _queue.first; // Wrap around
-      }
-    }
-
+    _consecutiveFailures = 0;
+    final nextSong = _getNextSong(_currentSong!);
     if (nextSong != null) {
       await _playSongInternal(nextSong, emit);
     }
@@ -518,6 +624,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   Future<void> _onPreviousSong(PreviousSongEvent event, Emitter<PlayerState> emit) async {
     if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
+    _consecutiveFailures = 0;
 
     Song? prevSong;
     final currentIndex = _queue.indexWhere((s) => s.id == _currentSong!.id);
@@ -561,7 +668,46 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
   }
 
-  void _onToggleRepeat(ToggleRepeatEvent event, Emitter<PlayerState> emit) {
+  Future<void> _onTrackChanged(TrackChangedEvent event, Emitter<PlayerState> emit) async {
+    if (_currentSong?.id == event.song.id && state is PlayerPlaying) return;
+    _currentSong = event.song;
+    _settingsService?.setLastPlayedSongId(event.song.id);
+    _settingsService?.setLastPlayedPositionMs(0);
+    _repository?.updateSong(event.song, notify: false);
+
+    final dur = event.song.duration;
+    if (state is PlayerPlaying) {
+      emit((state as PlayerPlaying).copyWith(
+        song: event.song,
+        position: Duration.zero,
+        duration: dur,
+      ));
+    } else if (state is PlayerPaused) {
+      emit((state as PlayerPaused).copyWith(
+        song: event.song,
+        position: Duration.zero,
+        duration: dur,
+      ));
+    } else {
+      emit(PlayerPlaying(
+        song: event.song,
+        position: Duration.zero,
+        duration: dur,
+        isShuffle: _isShuffle,
+        isRepeat: _isRepeat,
+        repeatMode: _repeatMode,
+        queue: List.from(_queue),
+      ));
+    }
+
+    if (_queue.length > 25 && event.sequenceLength > 0) {
+      if (event.sequenceIndex <= 3 || event.sequenceIndex >= event.sequenceLength - 4) {
+        await _playSongInternal(event.song, emit);
+      }
+    }
+  }
+
+  Future<void> _onToggleRepeat(ToggleRepeatEvent event, Emitter<PlayerState> emit) async {
     if (_repeatMode == 'Off') {
       _repeatMode = 'One';
       _isRepeat = true;
@@ -572,6 +718,8 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _repeatMode = 'Off';
       _isRepeat = false;
     }
+    _settingsService?.setRepeatMode(_repeatMode);
+    await _updateAudioPlayerRepeatMode();
     if (state is PlayerPlaying) {
       emit((state as PlayerPlaying).copyWith(isRepeat: _isRepeat, repeatMode: _repeatMode));
     } else if (state is PlayerPaused) {
@@ -579,14 +727,28 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
   }
 
-  void _onSetRepeatMode(SetRepeatModeEvent event, Emitter<PlayerState> emit) {
+  Future<void> _onSetRepeatMode(SetRepeatModeEvent event, Emitter<PlayerState> emit) async {
     _repeatMode = event.mode;
     _isRepeat = event.mode != 'Off';
+    _settingsService?.setRepeatMode(_repeatMode);
+    await _updateAudioPlayerRepeatMode();
     if (state is PlayerPlaying) {
       emit((state as PlayerPlaying).copyWith(isRepeat: _isRepeat, repeatMode: _repeatMode));
     } else if (state is PlayerPaused) {
       emit((state as PlayerPaused).copyWith(isRepeat: _isRepeat, repeatMode: _repeatMode));
     }
+  }
+
+  Future<void> _updateAudioPlayerRepeatMode() async {
+    try {
+      if (_repeatMode == 'One') {
+        await _audioService.setLoopMode(LoopMode.one);
+      } else if (_queue.length > 1) {
+        await _audioService.setLoopMode(LoopMode.all);
+      } else {
+        await _audioService.setLoopMode(LoopMode.off);
+      }
+    } catch (_) {}
   }
 
   void _onSetAutoPlayNext(SetAutoPlayNextEvent event, Emitter<PlayerState> emit) {
@@ -599,6 +761,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _durationSubscription?.cancel();
     _playerStateSubscription?.cancel();
     _currentIndexSubscription?.cancel();
+    _playingSubscription?.cancel();
     _audioService.dispose();
     return super.close();
   }

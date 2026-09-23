@@ -137,12 +137,16 @@ class CategoryDetailScreen extends StatelessWidget {
                       ),
                     ),
                   )
-                : ListView.builder(
-                    itemCount: songs.length,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    itemBuilder: (context, index) {
-                      final song = songs[index];
-                      final artDim = context.watch<ThemeCubit>().state.albumArtDimension * 0.85;
+                : Builder(
+                    builder: (context) {
+                      final artDim = context.select<ThemeCubit, double>(
+                        (c) => c.state.albumArtDimension * 0.85,
+                      );
+                      return ListView.builder(
+                        itemCount: songs.length,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        itemBuilder: (context, index) {
+                          final song = songs[index];
 
                       return ListTile(
                         contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
@@ -185,7 +189,9 @@ class CategoryDetailScreen extends StatelessWidget {
                         },
                       );
                     },
-                  ),
+                  );
+                },
+              ),
           ),
         ],
       ),

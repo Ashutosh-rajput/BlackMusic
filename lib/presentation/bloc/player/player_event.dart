@@ -169,3 +169,19 @@ class DurationChangedEvent extends PlayerEvent {
   @override
   List<Object?> get props => [duration];
 }
+
+class TrackChangedEvent extends PlayerEvent {
+  final Song song;
+  final int sequenceIndex;
+  final int sequenceLength;
+
+  const TrackChangedEvent(
+    this.song, {
+    this.sequenceIndex = 0,
+    this.sequenceLength = 0,
+  });
+
+  @override
+  List<Object?> get props => [song, sequenceIndex, sequenceLength];
+}
+
