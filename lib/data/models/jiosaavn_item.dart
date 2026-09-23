@@ -17,6 +17,7 @@ class JioSaavnItem extends Equatable {
   final String? encryptedMediaUrl;
   final String? directMediaUrl;
   final String? duration;
+  final String quality;
 
   // Album-specific
   final String? songCount;
@@ -33,6 +34,7 @@ class JioSaavnItem extends Equatable {
     this.encryptedMediaUrl,
     this.directMediaUrl,
     this.duration,
+    this.quality = '320 kbps',
     this.songCount,
   });
 
@@ -45,6 +47,8 @@ class JioSaavnItem extends Equatable {
     final moreInfo = json['more_info'] as Map<String, dynamic>? ?? {};
     final encUrl = moreInfo['encrypted_media_url']?.toString();
     final direct = JioSaavnDecoder.decryptMediaUrl(encUrl);
+    final is320 = moreInfo['320kbps']?.toString() != 'false';
+    final q = is320 ? '320 kbps' : '160 kbps';
     return JioSaavnItem(
       type: 'song',
       id: json['id']?.toString() ?? '',
@@ -57,6 +61,7 @@ class JioSaavnItem extends Equatable {
       encryptedMediaUrl: encUrl,
       directMediaUrl: direct,
       duration: moreInfo['duration']?.toString(),
+      quality: q,
     );
   }
 
@@ -71,6 +76,7 @@ class JioSaavnItem extends Equatable {
       imageUrl: (json['image']?.toString() ?? '').replaceAll('150x150', '500x500'),
       language: json['language']?.toString(),
       year: json['year']?.toString(),
+      quality: '320 kbps',
       songCount: moreInfo['song_count']?.toString(),
     );
   }
@@ -95,12 +101,13 @@ class JioSaavnItem extends Equatable {
       title: json['title']?.toString() ?? '',
       subtitle: json['subtitle']?.toString() ?? '',
       imageUrl: (json['image']?.toString() ?? '').replaceAll('150x150', '500x500'),
+      quality: '320 kbps',
       songCount: moreInfo['song_count']?.toString(),
     );
   }
 
   @override
   List<Object?> get props =>
-      [type, id, token, title, subtitle, imageUrl, language, year, encryptedMediaUrl, directMediaUrl, duration, songCount];
+      [type, id, token, title, subtitle, imageUrl, language, year, encryptedMediaUrl, directMediaUrl, duration, quality, songCount];
 }
 

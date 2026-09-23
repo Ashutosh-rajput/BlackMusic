@@ -7,6 +7,7 @@ class YouTubeVideoItem extends Equatable {
   final Duration duration;
   final String thumbnailUrl;
   final String url;
+  final String quality;
 
   const YouTubeVideoItem({
     required this.id,
@@ -15,8 +16,9 @@ class YouTubeVideoItem extends Equatable {
     required this.duration,
     required this.thumbnailUrl,
     required this.url,
+    this.quality = '128 kbps',
   });
 
   @override
-  List<Object?> get props => [id, title, author, duration, thumbnailUrl, url];
+  List<Object?> get props => [id, title, author, duration, thumbnailUrl, url, quality];
 }

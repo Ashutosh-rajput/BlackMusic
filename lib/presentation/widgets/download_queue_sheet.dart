@@ -604,7 +604,7 @@ class _SearchTabState extends State<_SearchTab> {
         if (_saavnSongResults.isNotEmpty) ...[
           _SectionHeader(
             label: 'JioSaavn Songs',
-            badge: '${_saavnSongResults.length}',
+            badge: '${_saavnSongResults.length} • 320 kbps HQ',
             color: const Color(0xFFFF6B35),
           ),
           ..._saavnSongResults
@@ -615,7 +615,7 @@ class _SearchTabState extends State<_SearchTab> {
         if (_saavnAlbumResults.isNotEmpty) ...[
           _SectionHeader(
             label: 'JioSaavn Albums',
-            badge: '${_saavnAlbumResults.length}',
+            badge: '${_saavnAlbumResults.length} • 320 kbps',
             color: const Color(0xFFFF6B35),
           ),
           ..._saavnAlbumResults
@@ -626,7 +626,7 @@ class _SearchTabState extends State<_SearchTab> {
         if (_youtubeResults.isNotEmpty) ...[
           _SectionHeader(
             label: 'YouTube',
-            badge: '${_youtubeResults.length}',
+            badge: '${_youtubeResults.length} • 128 kbps',
             color: Colors.red,
           ),
           ..._youtubeResults.map((item) => _InlineYoutubeTile(item: item)),
@@ -788,11 +788,49 @@ class _InlineJioSaavnTile extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 14),
         ),
-        subtitle: Text(
-          subtitleText,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.outfit(fontSize: 12),
+        subtitle: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B35).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                item.type.toUpperCase(),
+                style: GoogleFonts.outfit(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFFFF6B35),
+                ),
+              ),
+            ),
+            const SizedBox(width: 5),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                item.quality,
+                style: GoogleFonts.outfit(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF00C853),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                subtitleText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(fontSize: 12),
+              ),
+            ),
+          ],
         ),
         trailing: ValueListenableBuilder<List<ActiveDownload>>(
           valueListenable: downloadService.downloadQueueNotifier,
@@ -897,11 +935,33 @@ class _InlineYoutubeTile extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 14),
         ),
-        subtitle: Text(
-          '${item.author} • ${formatDuration(item.duration)}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.outfit(fontSize: 12),
+        subtitle: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                item.quality,
+                style: GoogleFonts.outfit(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.redAccent,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                '${item.author} • ${formatDuration(item.duration)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(fontSize: 12),
+              ),
+            ),
+          ],
         ),
         trailing: ValueListenableBuilder<List<ActiveDownload>>(
           valueListenable: downloadService.downloadQueueNotifier,

@@ -506,7 +506,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${jiosaavnItems.length} results',
+                  '${jiosaavnItems.length} results • 320 kbps HQ',
                   style: GoogleFonts.outfit(
                     fontSize: 12,
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
@@ -540,7 +540,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${onlineItems.length} results',
+                  '${onlineItems.length} results • 128 kbps',
                   style: GoogleFonts.outfit(
                     fontSize: 12,
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
@@ -978,9 +978,33 @@ class _OnlineResultTile extends StatelessWidget {
               style:
                   GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 14),
             ),
-            subtitle: Text(
-              '${item.author} • ${formatDuration(item.duration)}',
-              style: GoogleFonts.outfit(fontSize: 12),
+            subtitle: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    item.quality,
+                    style: GoogleFonts.outfit(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.redAccent,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '${item.author} • ${formatDuration(item.duration)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.outfit(fontSize: 12),
+                  ),
+                ),
+              ],
             ),
             trailing: trailingWidget,
             onTap: () => _triggerDownload(context, downloadService),
@@ -1086,6 +1110,22 @@ class _JioSaavnResultTile extends StatelessWidget {
                   fontSize: 9,
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFFFF6B35),
+                ),
+              ),
+            ),
+            const SizedBox(width: 5),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                item.quality,
+                style: GoogleFonts.outfit(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF00C853),
                 ),
               ),
             ),
