@@ -793,12 +793,41 @@ class DownloadService {
       }
 
       onProgress(0.20, 'Getting stream manifest...');
-      final manifest = await yt.videos.streamsClient.getManifest(
-        videoId,
-        ytClients: [
-          YoutubeApiClient.androidVr,
-        ],
-      );
+      StreamManifest? manifest;
+      final candidateClients = [
+        [YoutubeApiClient.androidSdkless, YoutubeApiClient.android],
+        [YoutubeApiClient.tv],
+        [YoutubeApiClient.ios],
+        <YoutubeApiClient>[], // default clients
+        [YoutubeApiClient.androidVr],
+      ];
+
+      for (final clients in candidateClients) {
+        if (_isCancelled(downloadId) || (cancelToken?.isCancelled ?? false)) break;
+        try {
+          manifest = clients.isEmpty
+              ? await yt.videos.streamsClient.getManifest(videoId, requireWatchPage: false)
+              : await yt.videos.streamsClient.getManifest(videoId, ytClients: clients, requireWatchPage: false);
+          if (manifest.audioOnly.isNotEmpty || manifest.muxed.isNotEmpty) {
+            _logger.i('[YT_DOWNLOAD] Manifest retrieved with clients: ${clients.isEmpty ? "default" : clients.map((c) => c.payload["context"]?["client"]?["clientName"] ?? "client").toList()}');
+            break;
+          }
+        } catch (e) {
+          _logger.w('[YT_DOWNLOAD] Failed to get manifest with clients ($clients): $e');
+        }
+      }
+
+      if (manifest == null || (manifest.audioOnly.isEmpty && manifest.muxed.isEmpty)) {
+        try {
+          manifest = await yt.videos.streamsClient.getManifest(videoId);
+        } catch (e) {
+          _logger.e('[YT_DOWNLOAD] Ultimate manifest fallback failed: $e');
+        }
+      }
+
+      if (manifest == null) {
+        throw Exception('Could not retrieve playable audio stream from YouTube.');
+      }
 
       for (final s in manifest.audioOnly) {
         _logger.i(
@@ -985,9 +1014,10 @@ class DownloadService {
             savePath,
             cancelToken: cancelToken,
             options: Options(
-              headers: const {
+              headers: {
                 'User-Agent':
-                    'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+                    'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
+                'Range': 'bytes=0-',
                 'Referer': 'https://www.youtube.com/',
                 'Origin': 'https://www.youtube.com',
                 'Accept': '*/*',

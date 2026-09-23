@@ -130,36 +130,42 @@ class _DownloadQueueSheetState extends State<DownloadQueueSheet>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (hasActive)
-                          TextButton(
+                          TextButton.icon(
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
+                                  horizontal: 6, vertical: 2),
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
                             onPressed: () =>
                                 getIt<DownloadService>().cancelAllDownloads(),
-                            child: Text('Cancel All',
+                            icon: const Icon(Icons.cancel_outlined,
+                                size: 14, color: Colors.redAccent),
+                            label: Text('Cancel',
                                 style: GoogleFonts.outfit(
-                                    fontSize: 12,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.redAccent)),
                           ),
                         if (hasActive && hasFinished) const SizedBox(width: 4),
                         if (hasFinished)
-                          TextButton(
+                          TextButton.icon(
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
+                                  horizontal: 6, vertical: 2),
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
                             onPressed: () => getIt<DownloadService>()
                                 .clearCompletedDownloads(),
-                            child: Text('Clear Done',
+                            icon: Icon(Icons.cleaning_services_rounded,
+                                size: 14,
+                                color: theme.colorScheme.onSurfaceVariant),
+                            label: Text('Clear',
                                 style: GoogleFonts.outfit(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600)),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.colorScheme.onSurfaceVariant)),
                           ),
                       ],
                     );
