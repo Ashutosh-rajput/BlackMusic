@@ -291,6 +291,18 @@ class _PlayerScreenState extends State<PlayerScreen>
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
+                          // Source & quality badges
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Wrap(
+                              spacing: 6,
+                              children: [
+                                _SourceBadge(source: currentSong.effectiveSource),
+                                if (currentSong.effectiveAudioQuality != null)
+                                  _QualityBadge(quality: currentSong.effectiveAudioQuality!),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -786,5 +798,69 @@ class SnakeHeadSliderThumbShape extends SliderComponentShape {
     }
 
     canvas.restore();
+  }
+}
+
+/// Badge showing song source: YouTube, JioSaavn, or Local
+class _SourceBadge extends StatelessWidget {
+  final String source;
+  const _SourceBadge({required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, icon) = switch (source.toLowerCase()) {
+      'youtube' => ('YouTube', const Color(0xFFCC0000), Icons.smart_display_rounded),
+      'jiosaavn' => ('JioSaavn', const Color(0xFF2BC5B4), Icons.music_note_rounded),
+      _ => ('Local', Colors.blueGrey, Icons.folder_rounded),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        border: Border.all(color: color.withValues(alpha: 0.55), width: 1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Badge showing audio quality
+class _QualityBadge extends StatelessWidget {
+  final String quality;
+  const _QualityBadge({required this.quality});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.13),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.high_quality_rounded, size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            quality,
+            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
   }
 }

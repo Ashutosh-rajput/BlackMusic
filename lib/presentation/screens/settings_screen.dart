@@ -65,6 +65,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _lockScreenControls;
   late bool _downloadNotifications;
 
+  // Streaming State
+  late String _streamLanguage;
+
   // Storage Stats (Real File System Calculation)
   double _musicSizeMb = 0.0;
   double _cacheSizeMb = 0.0;
@@ -82,6 +85,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _loadSettingsFromStorage() {
+    _streamLanguage = _settingsService.streamLanguage;
     _autoPlayNext = _settingsService.autoPlayNext;
     _repeatMode = _settingsService.repeatMode;
     _shuffleByDefault = _settingsService.shuffleByDefault;
@@ -245,6 +249,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 trailing: Text(
                   '${(_defaultVolume * 100).toInt()}%',
                   style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 20),
+
+          // STREAMING & RECOMMENDATIONS SECTION
+          _buildSectionHeader('Streaming & Recommendations'),
+          _buildCardContainer(
+            isDark: isDark,
+            children: [
+              ListTile(
+                title: _tileTitle('Streaming Language'),
+                subtitle: _tileSubtitle(
+                  'Current: ${SettingsService.supportedStreamLanguages[_streamLanguage] ?? _streamLanguage}',
+                ),
+                trailing: DropdownButton<String>(
+                  value: SettingsService.supportedStreamLanguages.containsKey(_streamLanguage)
+                      ? _streamLanguage
+                      : 'hindi',
+                  underline: const SizedBox(),
+                  dropdownColor: isDark ? const Color(0xFF232330) : Colors.white,
+                  items: SettingsService.supportedStreamLanguages.entries.map((e) {
+                    return DropdownMenuItem(
+                      value: e.key,
+                      child: Text(e.value, style: GoogleFonts.outfit()),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _streamLanguage = val);
+                      _settingsService.setStreamLanguage(val);
+                      _showSnackBar('Streaming language set to ${SettingsService.supportedStreamLanguages[val]}');
+                    }
+                  },
+                ),
+              ),
+              _divider(),
+              ListTile(
+                title: _tileTitle('Streaming Quality'),
+                subtitle: _tileSubtitle('High Definition 320 kbps AAC streaming via JioSaavn'),
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2BC5B4).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF2BC5B4), width: 0.8),
+                  ),
+                  child: const Text(
+                    '320 kbps',
+                    style: TextStyle(
+                      color: Color(0xFF2BC5B4),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               ),
             ],

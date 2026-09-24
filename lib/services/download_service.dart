@@ -693,8 +693,12 @@ class DownloadService {
     if (cleanUrl.startsWith('jiosaavn:')) {
       final decrypted = JioSaavnDecoder.decryptMediaUrl(cleanUrl.substring(9));
       if (decrypted != null) {
-        return _downloadDirectAudio(decrypted, onProgress, id, addToLibrary: addToLibrary);
+        return _downloadDirectAudio(decrypted, onProgress, id, addToLibrary: addToLibrary, source: 'jiosaavn', audioQuality: '320 kbps');
       }
+    }
+
+    if (cleanUrl.contains('saavncdn.com') || cleanUrl.contains('jiosaavn')) {
+      return _downloadDirectAudio(cleanUrl, onProgress, id, addToLibrary: addToLibrary, source: 'jiosaavn', audioQuality: '320 kbps');
     }
 
     if (cleanUrl.contains('youtube.com') || cleanUrl.contains('youtu.be')) {
@@ -933,6 +937,8 @@ class DownloadService {
           genre: 'Downloaded',
           albumArtist: artist,
           albumArt: albumArt,
+          source: 'youtube',
+          audioQuality: '${(selectedStream.bitrate.kiloBitsPerSecond).round()} kbps',
         );
       }
 
@@ -1094,6 +1100,8 @@ class DownloadService {
         genre: 'Downloaded',
         albumArtist: artist,
         albumArt: albumArt,
+        source: 'youtube',
+        audioQuality: '${(downloadedStream.bitrate.kiloBitsPerSecond).round()} kbps',
       );
 
       if (addToLibrary) {
@@ -1294,6 +1302,8 @@ class DownloadService {
     Function(double progress, String status) onProgress,
     String downloadId, {
     bool addToLibrary = true,
+    String? source,
+    String? audioQuality,
   }) async {
     final cancelToken = _cancelTokens.putIfAbsent(downloadId, CancelToken.new);
 
@@ -1357,11 +1367,19 @@ class DownloadService {
         }
       }
 
+      final isJioSaavn = source == 'jiosaavn' ||
+          url.contains('saavncdn.com') ||
+          url.contains('jiosaavn') ||
+          (active?.album == 'JioSaavn');
+
+      final finalSource = isJioSaavn ? 'jiosaavn' : (source ?? 'direct');
+      final finalQuality = isJioSaavn ? '320 kbps' : audioQuality;
+
       final song = Song(
         id: generateStableId(savePath),
         title: titleWithoutExt,
         artist: itemArtist ?? 'Unknown Artist',
-        album: itemAlbum ?? 'Downloads',
+        album: itemAlbum ?? (isJioSaavn ? 'JioSaavn' : 'Downloads'),
         filePath: savePath,
         duration: itemDuration ?? const Duration(minutes: 3),
         fileSize: length,
@@ -1369,6 +1387,8 @@ class DownloadService {
         genre: 'Downloaded',
         albumArtist: itemArtist ?? 'Unknown Artist',
         albumArt: localArtPath ?? itemAlbumArt,
+        source: finalSource,
+        audioQuality: finalQuality,
       );
 
       if (addToLibrary) {

@@ -14,6 +14,10 @@ abstract class MusicRepository {
   Future<void> deleteSong(int songId, {bool notify = true});
   Future<List<Song>> searchSongs(String query);
   Future<void> saveSongsBatch(List<Song> songs, {bool notify = true});
+  Future<void> incrementPlayCount(int songId);
+  Future<void> recordSongPlay(Song song);
+  Future<List<Song>> getMostPlayedSongs({int limit = 20});
+  Future<List<Song>> getLastPlayedStreamSongs({int limit = 50});
 
   Future<List<PlaylistModel>> getPlaylists();
   Future<PlaylistModel> createPlaylist(String name, String? description, {bool notify = true});
@@ -99,6 +103,44 @@ class MusicRepositoryImpl implements MusicRepository {
     } catch (e) {
       _logger.e('Error saving songs batch: $e');
       rethrow;
+    }
+  }
+
+  @override
+  Future<void> incrementPlayCount(int songId) async {
+    try {
+      await (_localDatasource as dynamic).incrementPlayCount(songId);
+    } catch (e) {
+      _logger.e('Error incrementing play count: $e');
+    }
+  }
+
+  @override
+  Future<void> recordSongPlay(Song song) async {
+    try {
+      await (_localDatasource as dynamic).recordSongPlay(song);
+    } catch (e) {
+      _logger.e('Error recording song play: $e');
+    }
+  }
+
+  @override
+  Future<List<Song>> getMostPlayedSongs({int limit = 20}) async {
+    try {
+      return await (_localDatasource as dynamic).getMostPlayedSongs(limit: limit) as List<Song>;
+    } catch (e) {
+      _logger.e('Error fetching most played songs: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<List<Song>> getLastPlayedStreamSongs({int limit = 50}) async {
+    try {
+      return await (_localDatasource as dynamic).getLastPlayedStreamSongs(limit: limit) as List<Song>;
+    } catch (e) {
+      _logger.e('Error fetching last played stream songs: $e');
+      return [];
     }
   }
 

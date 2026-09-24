@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
+import 'package:pixel_player/data/models/song_model.dart';
 
 /// Represents a JioSaavn search result (song, album, artist or playlist).
 class JioSaavnItem extends Equatable {
@@ -42,6 +43,30 @@ class JioSaavnItem extends Equatable {
   bool get isAlbum => type == 'album';
   bool get isArtist => type == 'artist';
   bool get isPlaylist => type == 'playlist';
+
+  /// Converts this JioSaavnItem into a playable online Song model.
+  Song toSong({String? albumName, String? overrideStreamUrl}) {
+    final streamUrl = overrideStreamUrl ??
+        directMediaUrl ??
+        JioSaavnDecoder.decryptMediaUrl(encryptedMediaUrl) ??
+        '';
+    final durSecs = int.tryParse(duration ?? '0') ?? 0;
+    final idHash = (id.isNotEmpty ? id : token).hashCode.abs();
+    return Song(
+      id: idHash != 0 ? idHash : DateTime.now().millisecondsSinceEpoch,
+      title: title.isNotEmpty ? title : 'Track',
+      artist: subtitle.isNotEmpty ? subtitle : 'JioSaavn Artist',
+      album: albumName ?? (isAlbum ? title : (subtitle.isNotEmpty ? subtitle : 'JioSaavn')),
+      filePath: streamUrl,
+      duration: Duration(seconds: durSecs > 0 ? durSecs : 180),
+      dateModified: DateTime.now(),
+      genre: 'Streaming',
+      albumArtist: subtitle,
+      albumArt: imageUrl,
+      source: 'jiosaavn',
+      audioQuality: quality.isNotEmpty ? quality : '320 kbps',
+    );
+  }
 
   factory JioSaavnItem.fromSongJson(Map<String, dynamic> json) {
     final moreInfo = json['more_info'] as Map<String, dynamic>? ?? {};

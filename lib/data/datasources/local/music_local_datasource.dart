@@ -46,6 +46,23 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
       final List<int> seedIdsToDelete = [];
 
       for (var row in rows) {
+        String? resolvedSource = row.source;
+        String? resolvedQuality = row.audioQuality;
+
+        if (resolvedSource == null || resolvedSource == 'local') {
+          final lowerPath = row.filePath.toLowerCase();
+          if (row.album == 'YouTube Downloads') {
+            resolvedSource = 'youtube';
+            resolvedQuality ??= 'HD Audio';
+          } else if (row.album == 'JioSaavn' ||
+              row.genre == 'Downloaded' ||
+              lowerPath.contains('blackmusic') ||
+              lowerPath.contains('saavn')) {
+            resolvedSource = 'jiosaavn';
+            resolvedQuality ??= '320 kbps';
+          }
+        }
+
         final song = Song(
           id: row.id,
           title: row.title,
@@ -58,7 +75,23 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           genre: row.genre,
           albumArtist: row.albumArtist,
           albumArt: row.albumArt,
+          playCount: row.playCount,
+          lastPlayedAt: row.lastPlayedAt,
+          source: resolvedSource,
+          audioQuality: resolvedQuality,
         );
+
+        if (resolvedSource != row.source || resolvedQuality != row.audioQuality) {
+          _db.updateSongFull(
+            db.SongsCompanion(
+              id: Value(row.id),
+              filePath: Value(row.filePath),
+              source: Value(resolvedSource),
+              audioQuality: Value(resolvedQuality),
+            ),
+          );
+        }
+
         if (_isSeedSong(song)) {
           seedIdsToDelete.add(song.id);
         } else {
@@ -96,6 +129,8 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           genre: Value(song.genre),
           albumArtist: Value(song.albumArtist),
           albumArt: Value(song.albumArt),
+          source: Value(song.source),
+          audioQuality: Value(song.audioQuality),
         ),
       );
     } catch (e) {
@@ -120,11 +155,91 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           genre: Value(song.genre),
           albumArtist: Value(song.albumArtist),
           albumArt: Value(song.albumArt),
+          source: Value(song.source),
+          audioQuality: Value(song.audioQuality),
         ),
       );
     } catch (e) {
       logger.e('Error updating song in database: $e');
       rethrow;
+    }
+  }
+
+  Future<void> recordSongPlay(Song song) async {
+    try {
+      await _db.recordSongPlay(
+        id: song.id,
+        title: song.title,
+        artist: song.artist,
+        album: song.album,
+        filePath: song.filePath,
+        durationMs: song.duration.inMilliseconds,
+        albumArt: song.albumArt,
+        source: song.source,
+        audioQuality: song.audioQuality,
+      );
+    } catch (e) {
+      logger.e('Error recording song play for "${song.title}": $e');
+    }
+  }
+
+  Future<List<Song>> getLastPlayedStreamSongs({int limit = 50}) async {
+    try {
+      final rows = await _db.getLastPlayedStreamSongs(limit: limit);
+      return rows.map((row) => Song(
+        id: row.id,
+        title: row.title,
+        artist: row.artist,
+        album: row.album,
+        filePath: row.filePath,
+        duration: Duration(milliseconds: row.duration),
+        fileSize: row.fileSize,
+        dateModified: row.dateModified,
+        genre: row.genre,
+        albumArtist: row.albumArtist,
+        albumArt: row.albumArt,
+        playCount: row.playCount,
+        lastPlayedAt: row.lastPlayedAt,
+        source: row.source,
+        audioQuality: row.audioQuality,
+      )).toList();
+    } catch (e) {
+      logger.e('Error fetching last played stream songs: $e');
+      return [];
+    }
+  }
+
+  Future<void> incrementPlayCount(int songId) async {
+    try {
+      await _db.incrementPlayCount(songId);
+    } catch (e) {
+      logger.e('Error incrementing play count for song $songId: $e');
+    }
+  }
+
+  Future<List<Song>> getMostPlayedSongs({int limit = 20}) async {
+    try {
+      final rows = await _db.getMostPlayedSongs(limit: limit);
+      return rows.map((row) => Song(
+        id: row.id,
+        title: row.title,
+        artist: row.artist,
+        album: row.album,
+        filePath: row.filePath,
+        duration: Duration(milliseconds: row.duration),
+        fileSize: row.fileSize,
+        dateModified: row.dateModified,
+        genre: row.genre,
+        albumArtist: row.albumArtist,
+        albumArt: row.albumArt,
+        playCount: row.playCount,
+        lastPlayedAt: row.lastPlayedAt,
+        source: row.source,
+        audioQuality: row.audioQuality,
+      )).toList();
+    } catch (e) {
+      logger.e('Error fetching most played songs: $e');
+      return [];
     }
   }
 
@@ -172,6 +287,40 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
             ? existing.duration
             : song.duration.inMilliseconds;
 
+        // Determine merged source: preserve existing non-local source, or detect from folder/album
+        String? mergedSource;
+        if (existing?.source != null && existing!.source != 'local') {
+          mergedSource = existing.source;
+        } else if (song.source != null && song.source != 'local') {
+          mergedSource = song.source;
+        } else {
+          final lowerPath = song.filePath.toLowerCase();
+          final existingLowerPath = existing?.filePath.toLowerCase() ?? '';
+          if (song.album == 'YouTube Downloads' || (existing?.album == 'YouTube Downloads')) {
+            mergedSource = 'youtube';
+          } else if (song.album == 'JioSaavn' ||
+              (existing?.album == 'JioSaavn') ||
+              song.genre == 'Downloaded' ||
+              (existing?.genre == 'Downloaded') ||
+              lowerPath.contains('blackmusic') ||
+              existingLowerPath.contains('blackmusic') ||
+              lowerPath.contains('saavn') ||
+              existingLowerPath.contains('saavn')) {
+            mergedSource = 'jiosaavn';
+          } else {
+            mergedSource = existing?.source ?? song.source ?? 'local';
+          }
+        }
+
+        String? mergedQuality = existing?.audioQuality ?? song.audioQuality;
+        if (mergedQuality == null) {
+          if (mergedSource == 'jiosaavn') {
+            mergedQuality = '320 kbps';
+          } else if (mergedSource == 'youtube') {
+            mergedQuality = 'HD Audio';
+          }
+        }
+
         return db.SongsCompanion.insert(
           id: Value(song.id),
           title: song.title,
@@ -184,6 +333,10 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           genre: Value(mergedGenre),
           albumArtist: Value(song.albumArtist),
           albumArt: Value(mergedAlbumArt),
+          source: Value(mergedSource),
+          audioQuality: Value(mergedQuality),
+          playCount: Value(existing?.playCount ?? song.playCount),
+          lastPlayedAt: Value(existing?.lastPlayedAt ?? song.lastPlayedAt),
         );
       }).toList();
 

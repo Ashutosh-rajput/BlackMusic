@@ -7,6 +7,7 @@ import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/screens/library_screen.dart';
+import 'package:pixel_player/presentation/screens/stream_screen.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
 import 'package:pixel_player/presentation/screens/playlists_screen.dart';
 import 'package:pixel_player/presentation/screens/settings_screen.dart';
@@ -26,6 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<Widget> _pages = [
     const LibraryScreen(),
+    const StreamScreen(),
     const PlaylistsScreen(),
     const SettingsScreen(),
   ];
@@ -57,6 +59,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 icon: Icon(Icons.library_music_outlined),
                 selectedIcon: Icon(Icons.library_music_rounded),
                 label: 'Library',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.podcasts_outlined),
+                selectedIcon: Icon(Icons.podcasts_rounded),
+                label: 'Stream',
               ),
               NavigationDestination(
                 icon: Icon(Icons.playlist_play_outlined),

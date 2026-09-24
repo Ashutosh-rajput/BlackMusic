@@ -66,6 +66,7 @@ class FileService {
               genre: item.genre,
               albumArtist: item.artist,
               albumArt: artUriStr,
+              source: 'local',
             ));
           }
           if (songs.isNotEmpty) return songs;
@@ -239,6 +240,7 @@ void _syncScanDir(
           dateModified: stat.modified,
           genre: 'Audio Track',
           albumArtist: artist,
+          source: 'local',
         ));
       } else if (entity is Directory) {
         _syncScanDir(entity, songs, visitedFiles, visitedDirs, params, depth: depth + 1);

@@ -32,9 +32,12 @@ class AudioPlayerService {
 
   Uri? _parseArtUri(String? artPath) {
     if (artPath == null || artPath.trim().isEmpty) return null;
-    final trimmed = artPath.trim();
+    var trimmed = artPath.trim();
     if (trimmed.startsWith('mediastore://')) return null;
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    if (trimmed.startsWith('http://')) {
+      trimmed = 'https://${trimmed.substring(7)}';
+    }
+    if (trimmed.startsWith('https://')) {
       return Uri.tryParse(trimmed);
     }
     final cleanPath = trimmed.startsWith('file://') ? Uri.parse(trimmed).toFilePath() : trimmed;
@@ -55,15 +58,14 @@ class AudioPlayerService {
       _logger.w('Error building MediaItem tag: $e');
     }
 
-    final path = song.filePath;
+    final path = song.filePath.trim();
+    if (path.isEmpty) {
+      throw ArgumentError('Cannot create audio source for song with empty filePath: "${song.title}"');
+    }
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return AudioSource.uri(
         Uri.parse(path),
         tag: mediaItem,
-        headers: const {
-          'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
       );
     } else if (path.startsWith('asset://') || path.startsWith('assets/')) {
       final assetPath = path.replaceFirst('asset://', '');
@@ -131,24 +133,17 @@ class AudioPlayerService {
         }
       }
 
-      if (queue != null && queue.length > 1) {
-        final activeSong = songInfo ?? queue.firstWhere(
+      final validQueue = queue?.where((s) => s.filePath.trim().isNotEmpty).toList();
+      if (validQueue != null && validQueue.length > 1) {
+        final activeSong = songInfo ?? validQueue.firstWhere(
           (s) => s.filePath == path,
-          orElse: () => Song(
-            id: DateTime.now().millisecondsSinceEpoch,
-            title: path.split(Platform.pathSeparator).last,
-            artist: 'Unknown Artist',
-            album: 'Unknown Album',
-            filePath: path,
-            duration: Duration.zero,
-            dateModified: DateTime.now(),
-          ),
+          orElse: () => validQueue.first,
         );
 
-        final activeIndex = queue.indexWhere((s) => s.id == activeSong.id);
-        final safeActiveIndex = activeIndex != -1 ? activeIndex : (initialIndex ?? 0).clamp(0, queue.length - 1);
+        final activeIndex = validQueue.indexWhere((s) => s.id == activeSong.id);
+        final safeActiveIndex = activeIndex != -1 ? activeIndex : (initialIndex ?? 0).clamp(0, validQueue.length - 1);
 
-        final (window, indexInWindow) = _buildWindowWithIndex(queue, safeActiveIndex);
+        final (window, indexInWindow) = _buildWindowWithIndex(validQueue, safeActiveIndex);
         final audioSources = window.map(_buildAudioSource).toList();
 
         await player.setAudioSources(audioSources, initialIndex: indexInWindow);
@@ -184,9 +179,11 @@ class AudioPlayerService {
   }
 
   Future<void> playQueue(List<Song> queue, {required int initialIndex}) async {
-    if (queue.isEmpty) return;
+    final validQueue = queue.where((s) => s.filePath.trim().isNotEmpty).toList();
+    if (validQueue.isEmpty) return;
     try {
-      final (window, indexInWindow) = _buildWindowWithIndex(queue, initialIndex);
+      final safeIndex = initialIndex.clamp(0, validQueue.length - 1);
+      final (window, indexInWindow) = _buildWindowWithIndex(validQueue, safeIndex);
       final audioSources = window.map(_buildAudioSource).toList();
       await player.setAudioSources(audioSources, initialIndex: indexInWindow);
       await player.setLoopMode(LoopMode.all);

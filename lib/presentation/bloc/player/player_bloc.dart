@@ -286,6 +286,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         isRepeat: _isRepeat,
         queue: _queue,
       ));
+      _repository?.recordSongPlay(activeSong);
       _consecutiveFailures = 0;
       _isChangingSong = false;
     } catch (e) {
@@ -298,17 +299,17 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _showToast('Cannot play "${song.title}". Skipping to next track...');
       emit(PlayerError('Failed to play song: $e'));
 
-      // If queue has other songs and we haven't exhausted all tracks in queue
-      if (_queue.length > 1 && _consecutiveFailures < _queue.length) {
+      // If queue has other songs and we haven't reached max consecutive error threshold (3)
+      if (_queue.length > 1 && _consecutiveFailures < 3 && _consecutiveFailures < _queue.length) {
         final nextSong = _getNextSong(song);
-        if (nextSong != null && nextSong.id != song.id) {
+        if (nextSong != null && nextSong.id != song.id && nextSong.filePath.trim().isNotEmpty) {
           await Future.delayed(const Duration(milliseconds: 300));
           await _playSongInternal(nextSong, emit);
           return;
         }
       }
 
-      // If all tracks in queue failed or queue only has 1 track
+      // If all tracks in queue failed or queue only has 1 track or hit 3 errors
       _consecutiveFailures = 0;
       _currentSong = previousSong;
       if (_queue.length > 1) {
@@ -326,27 +327,35 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Song? _getNextSong(Song current) {
-    if (_queue.isEmpty) return null;
-    if (_isShuffle && _queue.length > 1) {
-      final available = _queue.where((s) => s.id != current.id).toList();
+    final validQueue = _queue.where((s) => s.filePath.trim().isNotEmpty).toList();
+    if (validQueue.isEmpty) return null;
+    if (_isShuffle && validQueue.length > 1) {
+      final available = validQueue.where((s) => s.id != current.id).toList();
       if (available.isNotEmpty) {
         available.shuffle();
         return available.first;
       }
     }
-    final currentIndex = _queue.indexWhere((s) => s.id == current.id);
-    if (currentIndex != -1 && currentIndex < _queue.length - 1) {
-      return _queue[currentIndex + 1];
-    } else if (_queue.isNotEmpty) {
-      return _queue.first; // Wrap around
+    final currentIndex = validQueue.indexWhere((s) => s.id == current.id);
+    if (currentIndex != -1 && currentIndex < validQueue.length - 1) {
+      return validQueue[currentIndex + 1];
+    } else if (validQueue.isNotEmpty) {
+      return validQueue.first; // Wrap around
     }
     return null;
   }
 
   Future<void> _onPlaySong(PlaySongEvent event, Emitter<PlayerState> emit) async {
+    if (event.song.filePath.trim().isEmpty) {
+      _showToast('Invalid audio stream URL.');
+      return;
+    }
     if (event.queue != null && event.queue!.isNotEmpty) {
-      _queue = List.from(event.queue!);
-      _originalQueue = List.from(event.queue!);
+      final valid = event.queue!.where((s) => s.filePath.trim().isNotEmpty).toList();
+      if (valid.isNotEmpty) {
+        _queue = List.from(valid);
+        _originalQueue = List.from(valid);
+      }
     } else if (!_queue.any((s) => s.id == event.song.id)) {
       _queue.add(event.song);
       _originalQueue.add(event.song);
@@ -356,9 +365,10 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Future<void> _onPlayQueue(PlayQueueEvent event, Emitter<PlayerState> emit) async {
-    if (event.queue.isEmpty) return;
-    _queue = List.from(event.queue);
-    _originalQueue = List.from(event.queue);
+    final validSongs = event.queue.where((s) => s.filePath.trim().isNotEmpty).toList();
+    if (validSongs.isEmpty) return;
+    _queue = List.from(validSongs);
+    _originalQueue = List.from(validSongs);
 
     if (_isShuffle) {
       _queue.shuffle();

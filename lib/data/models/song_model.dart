@@ -13,6 +13,14 @@ class Song extends Equatable {
   final String? albumArtist;
   final String? albumArt;
 
+  // Play tracking
+  final int playCount;
+  final DateTime? lastPlayedAt;
+  /// 'local', 'youtube', 'jiosaavn'
+  final String? source;
+  /// e.g. '320 kbps', '128 kbps', 'HD Audio'
+  final String? audioQuality;
+
   const Song({
     required this.id,
     required this.title,
@@ -25,7 +33,41 @@ class Song extends Equatable {
     this.genre,
     this.albumArtist,
     this.albumArt,
+    this.playCount = 0,
+    this.lastPlayedAt,
+    this.source,
+    this.audioQuality,
   });
+
+  String get effectiveSource {
+    if (source != null && source != 'local') {
+      return source!;
+    }
+    if (album == 'YouTube Downloads') {
+      return 'youtube';
+    }
+    final lowerPath = filePath.toLowerCase();
+    if (album == 'JioSaavn' ||
+        genre == 'Downloaded' ||
+        lowerPath.contains('blackmusic') ||
+        lowerPath.contains('saavn')) {
+      return 'jiosaavn';
+    }
+    return source ?? 'local';
+  }
+
+  String? get effectiveAudioQuality {
+    if (audioQuality != null && audioQuality!.isNotEmpty) {
+      return audioQuality;
+    }
+    if (effectiveSource == 'jiosaavn') {
+      return '320 kbps';
+    }
+    if (effectiveSource == 'youtube') {
+      return 'HD Audio';
+    }
+    return null;
+  }
 
   String get folderName {
     if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
@@ -61,6 +103,10 @@ class Song extends Equatable {
     String? genre,
     String? albumArtist,
     String? albumArt,
+    int? playCount,
+    DateTime? lastPlayedAt,
+    String? source,
+    String? audioQuality,
   }) {
     return Song(
       id: id ?? this.id,
@@ -74,6 +120,10 @@ class Song extends Equatable {
       genre: genre ?? this.genre,
       albumArtist: albumArtist ?? this.albumArtist,
       albumArt: albumArt ?? this.albumArt,
+      playCount: playCount ?? this.playCount,
+      lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
+      source: source ?? this.source,
+      audioQuality: audioQuality ?? this.audioQuality,
     );
   }
 
@@ -90,6 +140,10 @@ class Song extends Equatable {
       'genre': genre,
       'albumArtist': albumArtist,
       'albumArt': albumArt,
+      'playCount': playCount,
+      'lastPlayedAt': lastPlayedAt?.toIso8601String(),
+      'source': source,
+      'audioQuality': audioQuality,
     };
   }
 
@@ -106,6 +160,12 @@ class Song extends Equatable {
       genre: json['genre'] as String?,
       albumArtist: json['albumArtist'] as String?,
       albumArt: json['albumArt'] as String?,
+      playCount: json['playCount'] as int? ?? 0,
+      lastPlayedAt: json['lastPlayedAt'] != null
+          ? DateTime.parse(json['lastPlayedAt'] as String)
+          : null,
+      source: json['source'] as String?,
+      audioQuality: json['audioQuality'] as String?,
     );
   }
 
@@ -122,5 +182,9 @@ class Song extends Equatable {
         genre,
         albumArtist,
         albumArt,
+        playCount,
+        lastPlayedAt,
+        source,
+        audioQuality,
       ];
 }

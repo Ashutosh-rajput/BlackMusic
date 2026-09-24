@@ -66,8 +66,24 @@ class SettingsService {
 
   static const _keyShowPlayerWaveform = 'setting_show_player_waveform';
   static const _keyPlayerBackgroundPattern = 'setting_player_bg_pattern';
+  static const _keyStreamLanguage = 'setting_stream_language';
+
+  static const Map<String, String> supportedStreamLanguages = {
+    'hindi': 'Hindi',
+    'punjabi': 'Punjabi',
+    'english': 'English',
+    'tamil': 'Tamil',
+    'telugu': 'Telugu',
+    'bhojpuri': 'Bhojpuri',
+    'marathi': 'Marathi',
+    'bengali': 'Bengali',
+    'gujarati': 'Gujarati',
+    'kannada': 'Kannada',
+    'malayalam': 'Malayalam',
+  };
 
   // Getters
+  String get streamLanguage => _prefs.getString(_keyStreamLanguage) ?? 'hindi';
   bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
   String get repeatMode => _prefs.getString(_keyRepeatMode) ?? 'Off';
   bool get shuffleByDefault => _prefs.getBool(_keyShuffleByDefault) ?? false;
@@ -139,6 +155,7 @@ class SettingsService {
   Future<void> setLockScreenControls(bool value) => _prefs.setBool(_keyLockScreenControls, value);
   Future<void> setDownloadNotifications(bool value) => _prefs.setBool(_keyDownloadNotifications, value);
   Future<void> setAutoAddSharedSongs(bool value) => _prefs.setBool(_keyAutoAddSharedSongs, value);
+  Future<void> setStreamLanguage(String value) => _prefs.setString(_keyStreamLanguage, value);
   Future<void> setLastPlayedSongId(int? id) async {
     if (id != null) {
       await _prefs.setInt(_keyLastPlayedSongId, id);

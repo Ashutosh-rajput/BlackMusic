@@ -18,8 +18,22 @@ class Songs extends Table {
   TextColumn get albumArtist => text().nullable()();
   TextColumn get albumArt => text().nullable()();
 
+  // Play tracking
+  IntColumn get playCount => integer().withDefault(const Constant(0))();
+  DateTimeColumn get lastPlayedAt => dateTime().nullable()();
+  // Source: 'local', 'youtube', 'jiosaavn'
+  TextColumn get source => text().nullable()();
+  // Audio quality: '320 kbps', '128 kbps', 'HD Audio', etc.
+  TextColumn get audioQuality => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
+}
+
+class PlayHistory extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get songId => integer()();
+  DateTimeColumn get playedAt => dateTime()();
 }
 
 class Playlists extends Table {
@@ -50,12 +64,12 @@ class Settings extends Table {
   TextColumn get value => text()();
 }
 
-@DriftDatabase(tables: [Songs, Playlists, PlaylistSongs, Lyrics, Settings])
+@DriftDatabase(tables: [Songs, PlayHistory, Playlists, PlaylistSongs, Lyrics, Settings])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration {
@@ -64,7 +78,13 @@ class AppDatabase extends _$AppDatabase {
         await m.createAll();
       },
       onUpgrade: (m, from, to) async {
-        // Safe schema migration handling for future upgrades
+        if (from < 2) {
+          await m.addColumn(songs, songs.playCount);
+          await m.addColumn(songs, songs.lastPlayedAt);
+          await m.addColumn(songs, songs.source);
+          await m.addColumn(songs, songs.audioQuality);
+          await m.createTable(playHistory);
+        }
       },
     );
   }
@@ -86,6 +106,102 @@ class AppDatabase extends _$AppDatabase {
   Future<int> updateSongFull(SongsCompanion song) {
     return (update(songs)..where((t) => t.filePath.equals(song.filePath.value)))
         .write(song);
+  }
+
+  /// Increment play count and set lastPlayedAt for a song
+  Future<void> incrementPlayCount(int songId) async {
+    final now = DateTime.now();
+    final existing = await (select(songs)..where((t) => t.id.equals(songId))).getSingleOrNull();
+    final newCount = (existing?.playCount ?? 0) + 1;
+    await (update(songs)..where((t) => t.id.equals(songId))).write(
+      SongsCompanion(
+        playCount: Value(newCount),
+        lastPlayedAt: Value(now),
+      ),
+    );
+    // Also record a history entry
+    await into(playHistory).insert(
+      PlayHistoryCompanion.insert(songId: songId, playedAt: now),
+    );
+  }
+
+  /// Get most played songs ordered by play count descending
+  Future<List<Song>> getMostPlayedSongs({int limit = 20}) {
+    return (select(songs)
+          ..where((t) => t.playCount.isBiggerThanValue(0))
+          ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+          ..limit(limit))
+        .get();
+  }
+
+  /// Record a song play, inserting it if it's a streamed song, and updating lastPlayedAt & playCount
+  Future<void> recordSongPlay({
+    required int id,
+    required String title,
+    required String artist,
+    required String album,
+    required String filePath,
+    required int durationMs,
+    String? albumArt,
+    String? source,
+    String? audioQuality,
+  }) async {
+    final now = DateTime.now();
+    final existing = await (select(songs)..where((t) => t.id.equals(id))).getSingleOrNull() ??
+        await (select(songs)..where((t) => t.filePath.equals(filePath))).getSingleOrNull();
+
+    if (existing == null) {
+      await into(songs).insert(
+        SongsCompanion.insert(
+          id: Value(id),
+          title: title,
+          artist: artist,
+          album: album,
+          filePath: filePath,
+          duration: durationMs,
+          dateModified: now,
+          albumArt: Value(albumArt),
+          source: Value(source ?? 'jiosaavn'),
+          audioQuality: Value(audioQuality ?? '320 kbps'),
+          playCount: const Value(1),
+          lastPlayedAt: Value(now),
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+    } else {
+      await (update(songs)..where((t) => t.id.equals(existing.id))).write(
+        SongsCompanion(
+          playCount: Value(existing.playCount + 1),
+          lastPlayedAt: Value(now),
+          source: Value(existing.source ?? source),
+          audioQuality: Value(existing.audioQuality ?? audioQuality),
+          albumArt: Value(existing.albumArt ?? albumArt),
+        ),
+      );
+    }
+
+    await into(playHistory).insert(
+      PlayHistoryCompanion.insert(songId: existing?.id ?? id, playedAt: now),
+    );
+  }
+
+  /// Get stream songs that were played, ordered by lastPlayedAt descending
+  Future<List<Song>> getLastPlayedStreamSongs({int limit = 50}) {
+    return (select(songs)
+          ..where((t) =>
+              t.lastPlayedAt.isNotNull() &
+              (t.source.equals('jiosaavn') | t.filePath.like('https://%') | t.filePath.like('http://%')))
+          ..orderBy([(t) => OrderingTerm.desc(t.lastPlayedAt)])
+          ..limit(limit))
+        .get();
+  }
+
+  /// Get recent play history (distinct songs, ordered by playedAt desc)
+  Future<List<PlayHistoryData>> getPlayHistory({int limit = 50}) {
+    return (select(playHistory)
+          ..orderBy([(t) => OrderingTerm.desc(t.playedAt)])
+          ..limit(limit))
+        .get();
   }
 
   Future<int> insertPlaylist(PlaylistsCompanion playlist) =>
@@ -136,6 +252,7 @@ class AppDatabase extends _$AppDatabase {
   Future<int> deleteSongById(int songId) =>
       (delete(songs)..where((t) => t.id.equals(songId))).go();
 }
+
 
 QueryExecutor _openConnection() {
   if (Platform.isAndroid) {
