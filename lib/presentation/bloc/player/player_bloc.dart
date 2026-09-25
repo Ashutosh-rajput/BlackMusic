@@ -10,6 +10,9 @@ import 'package:pixel_player/services/audio_service.dart';
 import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
+import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
+import 'package:pixel_player/data/models/jiosaavn_item.dart';
+import 'package:pixel_player/services/stream_cache_service.dart';
 
 class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   final AudioPlayerService _audioService;
@@ -78,6 +81,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<PositionChangedEvent>(_onPositionChanged);
     on<DurationChangedEvent>(_onDurationChanged);
     on<TrackChangedEvent>(_onTrackChanged);
+    on<StartRadioEvent>(_onStartRadio);
 
     _listenToStreams();
     add(const RestoreLastPlayedEvent());
@@ -280,6 +284,9 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         queue: _queue,
       ));
       _repository?.recordSongPlay(activeSong);
+      if (activeSong.filePath.startsWith('http://') || activeSong.filePath.startsWith('https://')) {
+        unawaited(StreamCacheService.instance.cacheSong(activeSong));
+      }
       _consecutiveFailures = 0;
       _isChangingSong = false;
     } catch (e) {
@@ -455,6 +462,67 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _originalQueue.add(_currentSong!);
     }
     _emitUpdatedQueueState(emit);
+  }
+
+  Future<void> _onStartRadio(StartRadioEvent event, Emitter<PlayerState> emit) async {
+    final currentSong = _currentSong ?? event.song;
+    _showToast('Starting radio for "${currentSong.title}"...');
+
+    try {
+      String? jioSaavnId;
+
+      // 1. Search JioSaavn to find this track's authentic ID
+      final searchQuery = '${currentSong.title} ${currentSong.artist}'.trim();
+      final searchResults = await JioSaavnDecoder.searchSongs(searchQuery);
+
+      if (searchResults.isNotEmpty) {
+        final match = searchResults.firstWhere(
+          (s) => s.id.isNotEmpty,
+          orElse: () => searchResults.first,
+        );
+        jioSaavnId = match.id.isNotEmpty ? match.id : match.token;
+      }
+
+      List<JioSaavnItem> suggestions = [];
+      if (jioSaavnId != null && jioSaavnId.isNotEmpty) {
+        suggestions = await JioSaavnDecoder.fetchSongSuggestions(jioSaavnId, limit: 20);
+      }
+
+      // 2. Fallback to artist search if recommendations are empty
+      if (suggestions.isEmpty && currentSong.artist.trim().isNotEmpty && currentSong.artist != 'Unknown') {
+        final artistResults = await JioSaavnDecoder.searchSongs(currentSong.artist.trim());
+        suggestions = artistResults.where((item) => item.isSong).take(20).toList();
+      }
+
+      // Convert recommendations to Song instances with playable stream URLs
+      final radioSongs = suggestions
+          .where((item) => item.title.trim().isNotEmpty)
+          .map((item) => item.toSong())
+          .where((s) =>
+              s.filePath.trim().isNotEmpty &&
+              s.title.trim().toLowerCase() != currentSong.title.trim().toLowerCase())
+          .toList();
+
+      if (radioSongs.isEmpty) {
+        _showToast('Could not find radio tracks for "${currentSong.title}".');
+        return;
+      }
+
+      // Populate queue with current track followed by radio tracks
+      _queue = [currentSong, ...radioSongs];
+      _originalQueue = List.from(_queue);
+
+      if (state is! PlayerPlaying && state is! PlayerPaused) {
+        await _playSongInternal(currentSong, emit);
+      } else {
+        _emitUpdatedQueueState(emit);
+      }
+
+      _showToast('Radio station started! Added ${radioSongs.length} tracks.');
+    } catch (e) {
+      debugPrint('Error starting radio: $e');
+      _showToast('Failed to start radio.');
+    }
   }
 
   void _emitUpdatedQueueState(Emitter<PlayerState> emit) {

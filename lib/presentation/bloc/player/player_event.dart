@@ -185,3 +185,11 @@ class TrackChangedEvent extends PlayerEvent {
   List<Object?> get props => [song, sequenceIndex, sequenceLength];
 }
 
+class StartRadioEvent extends PlayerEvent {
+  final Song song;
+  const StartRadioEvent(this.song);
+
+  @override
+  List<Object?> get props => [song];
+}
+

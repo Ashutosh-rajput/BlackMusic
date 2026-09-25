@@ -103,14 +103,40 @@ class QueueBottomSheet extends StatelessWidget {
                         ),
                       ],
                     ),
-                    if (queue.length > 1)
-                      TextButton.icon(
-                        icon: const Icon(Icons.clear_all_rounded, size: 18),
-                        label: Text('Clear', style: GoogleFonts.outfit(fontSize: 13)),
-                        onPressed: () {
-                          context.read<PlayerBloc>().add(const ClearQueueEvent());
-                        },
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (currentSong != null)
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF2BC5B4),
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            icon: const Icon(Icons.radio_rounded, size: 18),
+                            label: Text(
+                              'Radio',
+                              style: GoogleFonts.outfit(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onPressed: () {
+                              context.read<PlayerBloc>().add(StartRadioEvent(currentSong!));
+                            },
+                          ),
+                        if (queue.length > 1)
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            icon: const Icon(Icons.clear_all_rounded, size: 18),
+                            label: Text('Clear', style: GoogleFonts.outfit(fontSize: 13)),
+                            onPressed: () {
+                              context.read<PlayerBloc>().add(const ClearQueueEvent());
+                            },
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),

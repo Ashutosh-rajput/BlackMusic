@@ -3,6 +3,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/services/file_service.dart';
+import 'package:pixel_player/services/stream_cache_service.dart';
 import 'package:logger/logger.dart';
 
 final _logger = Logger();
@@ -244,6 +245,7 @@ class SettingsService {
 
   Future<void> clearCache() async {
     try {
+      await StreamCacheService.instance.clearAllCache();
       final cacheDir = await getApplicationCacheDirectory();
       if (await cacheDir.exists()) {
         await for (final entity in cacheDir.list(followLinks: false)) {

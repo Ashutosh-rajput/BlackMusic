@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pixel_player/core/di/injection_container.dart';
 import 'package:pixel_player/core/theme/app_theme.dart';
 import 'package:pixel_player/services/settings_service.dart';
+import 'package:pixel_player/services/stream_cache_service.dart';
 import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:pixel_player/presentation/bloc/library/library_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
@@ -904,6 +905,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _storageRow('Music Files', '${(_musicSizeMb / 1024).toStringAsFixed(2)} GB (${_musicSizeMb.toStringAsFixed(1)} MB)', Colors.blueAccent),
                       const SizedBox(height: 12),
                       _storageRow('Cache', '${_cacheSizeMb.toStringAsFixed(1)} MB', Colors.orangeAccent),
+                      const SizedBox(height: 12),
+                      _storageRow('Stream Cache (Last 50)', '${StreamCacheService.instance.cachedCount} tracks (${StreamCacheService.instance.totalSizeMb.toStringAsFixed(1)} MB)', const Color(0xFF2BC5B4)),
                       const SizedBox(height: 12),
                       _storageRow('Thumbnails', '${_thumbnailsSizeMb.toStringAsFixed(1)} MB', Colors.purpleAccent),
                       const SizedBox(height: 20),

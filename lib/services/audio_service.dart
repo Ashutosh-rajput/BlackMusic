@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:pixel_player/data/models/song_model.dart';
+import 'package:pixel_player/services/stream_cache_service.dart';
 import 'package:logger/logger.dart';
 
 final _logger = Logger();
@@ -63,6 +64,14 @@ class AudioPlayerService {
       throw ArgumentError('Cannot create audio source for song with empty filePath: "${song.title}"');
     }
     if (path.startsWith('http://') || path.startsWith('https://')) {
+      final cachedPath = StreamCacheService.instance.getCachedFilePath(song.id);
+      if (cachedPath != null && File(cachedPath).existsSync()) {
+        _logger.i('AudioPlayerService: Playing from stream cache: ${song.title} ($cachedPath)');
+        return AudioSource.uri(
+          Uri.file(cachedPath),
+          tag: mediaItem,
+        );
+      }
       return AudioSource.uri(
         Uri.parse(path),
         tag: mediaItem,

@@ -14,6 +14,7 @@ import 'package:pixel_player/presentation/screens/splash_screen.dart';
 import 'package:pixel_player/services/download_background_service.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
 import 'package:pixel_player/services/download_service.dart';
+import 'package:pixel_player/services/stream_cache_service.dart';
 import 'package:pixel_player/services/audio_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
@@ -37,6 +38,11 @@ void main() async {
     await initializeDownloadBackgroundService();
   } catch (e) {
     debugPrint('Download keep-alive service init error: $e');
+  }
+  try {
+    await getIt<StreamCacheService>().init();
+  } catch (e) {
+    debugPrint('StreamCacheService init error: $e');
   }
 
   final initialMedia = await ReceiveSharingIntent.instance.getInitialMedia();

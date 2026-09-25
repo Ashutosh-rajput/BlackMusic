@@ -13,6 +13,7 @@ import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
 import 'package:pixel_player/services/download_service.dart';
 import 'package:pixel_player/services/settings_service.dart';
+import 'package:pixel_player/services/stream_cache_service.dart';
 
 class StreamScreen extends StatefulWidget {
   const StreamScreen({super.key});
@@ -64,9 +65,14 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
 
   Future<void> _loadLastPlayedSongs() async {
     try {
-      final history = await getIt<MusicRepository>().getLastPlayedStreamSongs();
+      final history = await getIt<MusicRepository>().getLastPlayedStreamSongs(limit: 50);
       if (mounted) {
         setState(() => _lastPlayedStreamSongs = history);
+      }
+      for (final song in history) {
+        if (!StreamCacheService.instance.isSongCached(song.id)) {
+          unawaited(StreamCacheService.instance.cacheSong(song));
+        }
       }
     } catch (_) {}
   }
@@ -1069,6 +1075,8 @@ class _StreamSongTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final songId = int.tryParse(item.id) ?? (item.id.isNotEmpty ? item.id : item.token).hashCode.abs();
+    final isCached = StreamCacheService.instance.isSongCached(songId);
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -1105,6 +1113,30 @@ class _StreamSongTile extends StatelessWidget {
               ),
             ),
           ),
+          if (isCached)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              margin: const EdgeInsets.only(right: 6),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.offline_pin_rounded, size: 10, color: Colors.greenAccent),
+                  const SizedBox(width: 2),
+                  Text(
+                    'Cached',
+                    style: GoogleFonts.outfit(
+                      fontSize: 10,
+                      color: Colors.greenAccent,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: Text(
               item.subtitle,

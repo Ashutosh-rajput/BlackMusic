@@ -219,6 +219,16 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
               IconButton(
                 icon: Icon(
+                  Icons.radio_rounded,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+                tooltip: 'Start Radio',
+                onPressed: () {
+                  context.read<PlayerBloc>().add(StartRadioEvent(currentSong));
+                },
+              ),
+              IconButton(
+                icon: Icon(
                   Icons.queue_music_rounded,
                   color: isDark ? Colors.white : Colors.black87,
                 ),
@@ -644,6 +654,28 @@ class _PlayerScreenState extends State<PlayerScreen>
                     }).toList(),
                   ),
                   const Divider(height: 28),
+
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.radio_rounded, color: Color(0xFF2BC5B4)),
+                    title: Text(
+                      'Start Radio',
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Queue similar tracks powered by JioSaavn recommendations',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      context.read<PlayerBloc>().add(StartRadioEvent(currentSong));
+                    },
+                  ),
+                  const Divider(height: 20),
 
                   // Lyrics Controls in Three-Dot Menu
                   ListTile(

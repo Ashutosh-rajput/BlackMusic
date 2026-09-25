@@ -215,6 +215,23 @@ void main() {
         expect(state.song.id, equals(song1.id));
       },
     );
+
+    blocTest<PlayerBloc, PlayerState>(
+      'Handles StartRadioEvent to fetch recommendations and populate radio queue',
+      build: () => playerBloc,
+      act: (bloc) async {
+        bloc.add(PlaySongEvent(song1, queue: [song1]));
+        await Future.delayed(const Duration(milliseconds: 50));
+        bloc.add(StartRadioEvent(song1));
+      },
+      wait: const Duration(seconds: 4),
+      verify: (bloc) {
+        expect(bloc.state, isA<PlayerPlaying>());
+        final state = bloc.state as PlayerPlaying;
+        expect(state.song.id, equals(song1.id));
+        expect(state.queue.isNotEmpty, isTrue);
+      },
+    );
   });
 }
 
