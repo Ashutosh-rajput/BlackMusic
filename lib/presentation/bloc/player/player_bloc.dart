@@ -554,7 +554,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         emit(paused.copyWith(position: event.position));
       }
     } catch (e) {
-      emit(PlayerError('Failed to seek: $e'));
+      debugPrint('Non-fatal seek error: $e');
     }
   }
 

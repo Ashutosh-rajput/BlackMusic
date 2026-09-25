@@ -11,6 +11,7 @@ import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/services/download_service.dart';
+import 'package:pixel_player/services/lyrics_service.dart';
 
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 
@@ -53,6 +54,9 @@ Future<void> getItSetup() async {
       repository: getIt<MusicRepository>(),
       settingsService: getIt<SettingsService>(),
     ),
+  );
+  getIt.registerLazySingleton<LyricsService>(
+    () => LyricsService(getIt<AppDatabase>()),
   );
 
   // BLoCs & Cubits

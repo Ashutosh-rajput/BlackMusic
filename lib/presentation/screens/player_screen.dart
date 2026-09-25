@@ -18,6 +18,7 @@ import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/queue_bottom_sheet.dart';
 import 'package:pixel_player/presentation/widgets/sleep_timer_dialog.dart';
 import 'package:pixel_player/presentation/widgets/player_background_pattern.dart';
+import 'package:pixel_player/presentation/widgets/lyrics_view.dart';
 
 class PlayerScreen extends StatefulWidget {
   final Song song;
@@ -35,6 +36,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   StreamSubscription<bool>? _playingSubscription;
   bool _isDragging = false;
   double _dragPosition = 0.0;
+  bool _showLyrics = false;
+  final GlobalKey<LyricsViewState> _lyricsKey = GlobalKey<LyricsViewState>();
 
   @override
   void initState() {
@@ -183,28 +186,52 @@ class _PlayerScreenState extends State<PlayerScreen>
             backgroundColor: Colors.transparent,
             elevation: 0,
             leading: IconButton(
-              icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 32),
+              icon: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 32,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
               onPressed: () => Navigator.pop(context),
             ),
             title: Text(
               'NOW PLAYING',
               style: GoogleFonts.outfit(
-                fontSize: 14,
+                fontSize: 13,
                 letterSpacing: 2,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white70 : Colors.black54,
               ),
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.queue_music_rounded),
+                icon: Icon(
+                  _showLyrics ? Icons.album_rounded : Icons.lyrics_rounded,
+                  color: _showLyrics
+                      ? theme.colorScheme.primary
+                      : (isDark ? Colors.white : Colors.black87),
+                ),
+                tooltip: _showLyrics ? 'Show Album Art' : 'Show Lyrics',
+                onPressed: () {
+                  setState(() {
+                    _showLyrics = !_showLyrics;
+                  });
+                },
+              ),
+              IconButton(
+                icon: Icon(
+                  Icons.queue_music_rounded,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
                 tooltip: 'Playback Queue',
                 onPressed: () {
                   QueueBottomSheet.show(context);
                 },
               ),
               IconButton(
-                icon: const Icon(Icons.more_vert),
+                icon: Icon(
+                  Icons.more_vert_rounded,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
                 onPressed: () {
                   double currentRate = 1.0;
                   if (state is PlayerPlaying) {
@@ -212,7 +239,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   } else if (state is PlayerPaused) {
                     currentRate = state.playbackRate;
                   }
-                  _showSpeedDialog(context, currentRate);
+                  _showPlayerMenu(context, currentRate, currentSong);
                 },
               ),
             ],
@@ -229,40 +256,56 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
               Column(
             children: [
-              const SizedBox(height: 20),
-              // Album Art with Vinyl Spinning Effect
+              SizedBox(height: _showLyrics ? 4 : 20),
+              // Album Art with Vinyl Spinning Effect or Synced Lyrics
               Expanded(
-                child: Center(
-                  child: RotationTransition(
-                    turns: _rotationController,
-                    child: Container(
-                      width: 280,
-                      height: 280,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: isDark
-                                ? Colors.black.withValues(alpha: 0.6)
-                                : theme.colorScheme.primary.withValues(alpha: 0.3),
-                            blurRadius: 30,
-                            spreadRadius: 5,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: _showLyrics
+                      ? Container(
+                          key: const ValueKey('lyrics_view'),
+                          child: LyricsView(key: _lyricsKey, song: currentSong),
+                        )
+                      : GestureDetector(
+                          key: const ValueKey('album_art_view'),
+                          onTap: () {
+                            setState(() {
+                              _showLyrics = true;
+                            });
+                          },
+                          child: Center(
+                            child: RotationTransition(
+                              turns: _rotationController,
+                              child: Container(
+                                width: 280,
+                                height: 280,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: isDark
+                                          ? Colors.black.withValues(alpha: 0.6)
+                                          : theme.colorScheme.primary.withValues(alpha: 0.3),
+                                      blurRadius: 30,
+                                      spreadRadius: 5,
+                                    ),
+                                  ],
+                                ),
+                                child: AlbumArtWidget(
+                                  albumArt: currentSong.albumArt,
+                                  width: 280,
+                                  height: 280,
+                                  isCircular: true,
+                                  fallbackIcon: Icons.music_note_rounded,
+                                  iconSize: 130,
+                                ),
+                              ),
+                            ),
                           ),
-                        ],
-                      ),
-                      child: AlbumArtWidget(
-                        albumArt: currentSong.albumArt,
-                        width: 280,
-                        height: 280,
-                        isCircular: true,
-                        fallbackIcon: Icons.disc_full_rounded,
-                        iconSize: 140,
-                      ),
-                    ),
-                  ),
+                        ),
                 ),
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 12),
               // Song Info with Heart (Favorite) Button
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -273,29 +316,33 @@ class _PlayerScreenState extends State<PlayerScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            currentSong.title,
+                            currentSong.title.isNotEmpty ? currentSong.title : 'Unknown Title',
                             style: GoogleFonts.outfit(
                               fontSize: 22,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.white : Colors.black87,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 3),
                           Text(
-                            '${currentSong.artist} • ${currentSong.album}',
+                            currentSong.album.isNotEmpty && currentSong.album != 'Unknown Album'
+                                ? '${currentSong.artist} • ${currentSong.album}'
+                                : currentSong.artist,
                             style: GoogleFonts.outfit(
                               fontSize: 14,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white70 : Colors.black54,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           // Source & quality badges
                           Padding(
-                            padding: const EdgeInsets.only(top: 6),
+                            padding: const EdgeInsets.only(top: 4),
                             child: Wrap(
-                              spacing: 6,
+                              spacing: 8,
                               children: [
                                 _SourceBadge(source: currentSong.effectiveSource),
                                 if (currentSong.effectiveAudioQuality != null)
@@ -320,7 +367,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                         return IconButton(
                           icon: Icon(
                             isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                            color: isFavorite ? Colors.redAccent : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                            color: isFavorite
+                                ? Colors.redAccent
+                                : (isDark ? Colors.white70 : Colors.black54),
                           ),
                           iconSize: 28,
                           onPressed: () {
@@ -343,7 +392,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
               // Progress Slider with Live Sine Wave Track & Timers
               StreamBuilder<Duration>(
                 stream: getIt<AudioPlayerService>().positionStream,
@@ -416,14 +465,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                                 formatDuration(currentPos),
                                 style: GoogleFonts.outfit(
                                   fontSize: 12,
-                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white70 : Colors.black54,
                                 ),
                               ),
                               Text(
                                 formatDuration(duration),
                                 style: GoogleFonts.outfit(
                                   fontSize: 12,
-                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white70 : Colors.black54,
                                 ),
                               ),
                             ],
@@ -434,10 +485,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                   );
                 },
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
               // Control Action Buttons
               Padding(
-                padding: const EdgeInsets.only(bottom: 40, left: 16, right: 16),
+                padding: const EdgeInsets.only(bottom: 22, left: 16, right: 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -445,8 +496,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       icon: Icon(
                         Icons.shuffle_rounded,
                         color: isShuffle
-                            ? theme.colorScheme.secondary
-                            : theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                            ? theme.colorScheme.primary
+                            : (isDark ? Colors.white54 : Colors.black38),
                       ),
                       iconSize: 26,
                       onPressed: () {
@@ -454,22 +505,25 @@ class _PlayerScreenState extends State<PlayerScreen>
                       },
                     ),
                     IconButton(
-                      icon: const Icon(Icons.skip_previous_rounded),
-                      iconSize: 42,
+                      icon: Icon(
+                        Icons.skip_previous_rounded,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                      iconSize: 38,
                       onPressed: () {
                         context.read<PlayerBloc>().add(const PreviousSongEvent());
                       },
                     ),
                     Container(
-                      width: 72,
-                      height: 72,
+                      width: 66,
+                      height: 66,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: theme.colorScheme.primary,
                         boxShadow: [
                           BoxShadow(
                             color: theme.colorScheme.primary.withValues(alpha: 0.4),
-                            blurRadius: 16,
+                            blurRadius: 14,
                             offset: const Offset(0, 4),
                           ),
                         ],
@@ -477,8 +531,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       child: isLoading
                           ? const Center(
                               child: SizedBox(
-                                width: 28,
-                                height: 28,
+                                width: 26,
+                                height: 26,
                                 child: CircularProgressIndicator(
                                   color: Colors.white,
                                   strokeWidth: 3,
@@ -492,7 +546,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     : Icons.play_arrow_rounded,
                                 color: Colors.white,
                               ),
-                              iconSize: 38,
+                              iconSize: 34,
                               onPressed: () {
                                 if (isPlaying) {
                                   context.read<PlayerBloc>().add(const PauseEvent());
@@ -503,8 +557,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                             ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.skip_next_rounded),
-                      iconSize: 42,
+                      icon: Icon(
+                        Icons.skip_next_rounded,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                      iconSize: 38,
                       onPressed: () {
                         context.read<PlayerBloc>().add(const NextSongEvent());
                       },
@@ -515,8 +572,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                             ? Icons.repeat_one_rounded
                             : Icons.repeat_rounded,
                         color: repeatMode != 'Off'
-                            ? theme.colorScheme.secondary
-                            : theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                            ? theme.colorScheme.primary
+                            : (isDark ? Colors.white54 : Colors.black38),
                       ),
                       tooltip: 'Repeat Mode: $repeatMode',
                       iconSize: 26,
@@ -536,53 +593,108 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  void _showSpeedDialog(BuildContext context, double currentRate) {
+  void _showPlayerMenu(BuildContext context, double currentRate, Song currentSong) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Playback Speed',
-                style: GoogleFonts.outfit(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 12,
-                children: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((rate) {
-                  final isSelected = (rate - currentRate).abs() < 0.01;
-                  return ChoiceChip(
-                    label: Text('${rate}x'),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      context
-                          .read<PlayerBloc>()
-                          .add(SetPlaybackRateEvent(rate));
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Playback Speed',
+                    style: GoogleFonts.outfit(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    children: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((rate) {
+                      final isSelected = (rate - currentRate).abs() < 0.01;
+                      return ChoiceChip(
+                        label: Text('${rate}x'),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          context
+                              .read<PlayerBloc>()
+                              .add(SetPlaybackRateEvent(rate));
+                          Navigator.pop(ctx);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const Divider(height: 28),
+
+                  // Lyrics Controls in Three-Dot Menu
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(_showLyrics ? Icons.album_rounded : Icons.lyrics_rounded),
+                    title: Text(
+                      _showLyrics ? 'Show Album Art' : 'Show Synced Lyrics',
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
                       Navigator.pop(ctx);
+                      setState(() => _showLyrics = !_showLyrics);
                     },
-                  );
-                }).toList(),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.search_rounded),
+                    title: Text('Search Lyrics', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      if (!_showLyrics) setState(() => _showLyrics = true);
+                      LyricsView.showSearchModal(context, currentSong);
+                    },
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.refresh_rounded),
+                    title: Text('Reload Lyrics', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      if (!_showLyrics) setState(() => _showLyrics = true);
+                      _lyricsKey.currentState?.reloadLyrics();
+                    },
+                  ),
+                  const Divider(height: 20),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.bedtime_rounded),
+                    title: Text('Sleep Timer', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      SleepTimerDialog.show(context);
+                    },
+                  ),
+                ],
               ),
-              const Divider(height: 32),
-              ListTile(
-                leading: const Icon(Icons.bedtime_rounded),
-                title: Text('Sleep Timer', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  SleepTimerDialog.show(context);
-                },
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -809,16 +921,16 @@ class _SourceBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color, icon) = switch (source.toLowerCase()) {
-      'youtube' => ('YouTube', const Color(0xFFCC0000), Icons.smart_display_rounded),
-      'jiosaavn' => ('JioSaavn', const Color(0xFF2BC5B4), Icons.music_note_rounded),
-      _ => ('Local', Colors.blueGrey, Icons.folder_rounded),
+      'youtube' => ('YouTube', const Color(0xFFFF5252), Icons.smart_display_rounded),
+      'jiosaavn' => ('JioSaavn', const Color(0xFF26C6DA), Icons.music_note_rounded),
+      _ => ('Local', const Color(0xFF90A4AE), Icons.folder_rounded),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.18),
-        border: Border.all(color: color.withValues(alpha: 0.55), width: 1),
-        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.6), width: 1),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -827,7 +939,11 @@ class _SourceBadge extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+            style: GoogleFonts.outfit(
+              fontSize: 10.5,
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -846,9 +962,9 @@ class _QualityBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.13),
-        border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
-        borderRadius: BorderRadius.circular(20),
+        color: color.withValues(alpha: 0.18),
+        border: Border.all(color: color.withValues(alpha: 0.6), width: 1),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -857,7 +973,11 @@ class _QualityBadge extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             quality,
-            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+            style: GoogleFonts.outfit(
+              fontSize: 10.5,
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),

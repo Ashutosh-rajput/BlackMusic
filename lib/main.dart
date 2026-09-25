@@ -18,9 +18,11 @@ import 'package:pixel_player/services/audio_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  GoogleFonts.config.allowRuntimeFetching = false;
 
   // Minimal setup needed to enqueue a download: DI + notifications + the
   // keep-alive shield. Checked before any audio/session setup so a

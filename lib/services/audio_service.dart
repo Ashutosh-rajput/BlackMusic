@@ -205,7 +205,16 @@ class AudioPlayerService {
 
   Future<void> stop() => player.stop();
 
-  Future<void> seek(Duration position) => player.seek(position);
+  Future<void> seek(Duration position) async {
+    try {
+      await player.seek(position);
+    } on PlayerInterruptedException {
+      // Seek interrupted by a subsequent seek - normal during scrubbing or fast tapping
+    } catch (e) {
+      if (e.toString().contains('Loading interrupted')) return;
+      _logger.w('Audio seek warning: $e');
+    }
+  }
 
   Future<void> setVolume(double volume) => player.setVolume(volume.clamp(0.0, 1.0));
 

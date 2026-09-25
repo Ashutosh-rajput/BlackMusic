@@ -632,7 +632,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   }
 
   Widget _buildFilterChips() {
-    final filters = ['All', '🎵 Songs', '💿 Albums', '📻 Playlists', '🕒 Last Played'];
+    final filters = ['All', 'Songs', 'Albums', 'Playlists', 'Last Played'];
 
     return SizedBox(
       height: 40,
@@ -644,6 +644,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         itemBuilder: (context, index) {
           final isSelected = _selectedFilter == index;
           return ChoiceChip(
+            showCheckmark: false,
             label: Text(
               filters[index],
               style: GoogleFonts.outfit(
@@ -688,7 +689,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         // 0. Last Played Stream History (if any)
         if (_lastPlayedStreamSongs.isNotEmpty) ...[
           _buildSectionHeader(
-            title: '🕒 Last Played',
+            title: 'Last Played',
             subtitle: 'Recently streamed songs',
             icon: Icons.history_rounded,
             actionLabel: _lastPlayedStreamSongs.length > 5 ? 'See All (${_lastPlayedStreamSongs.length})' : null,
@@ -709,7 +710,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         // 1. Trending Songs (Directly playable single songs)
         if (allSongs.isNotEmpty) ...[
           _buildSectionHeader(
-            title: '🔥 Trending Songs',
+            title: 'Trending Songs',
             subtitle: 'Tap to stream instant 320 kbps audio',
             icon: Icons.local_fire_department_rounded,
             actionLabel: allSongs.length > 5 ? 'See All (${allSongs.length})' : null,

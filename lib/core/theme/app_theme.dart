@@ -38,6 +38,8 @@ class AppTheme {
       primary: accent,
       secondary: accent,
       surface: bgColor,
+      onSurface: isDark ? Colors.white : const Color(0xFF1D1B20),
+      onSurfaceVariant: isDark ? const Color(0xFFE6E1E5) : const Color(0xFF49454F),
     );
 
     final rawTextTheme = isDark ? ThemeData.dark().textTheme : ThemeData.light().textTheme;
@@ -49,6 +51,14 @@ class AppTheme {
       colorScheme: baseScheme,
       scaffoldBackgroundColor: bgColor,
       textTheme: textTheme,
+      iconTheme: IconThemeData(
+        color: isDark ? Colors.white : Colors.black87,
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          foregroundColor: isDark ? Colors.white : Colors.black87,
+        ),
+      ),
       cardTheme: CardThemeData(
         color: cardColor,
         elevation: 4,

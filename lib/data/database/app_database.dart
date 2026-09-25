@@ -251,6 +251,39 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> deleteSongById(int songId) =>
       (delete(songs)..where((t) => t.id.equals(songId))).go();
+
+  // Lyrics helpers
+  Future<Lyric?> getLyricsBySongId(int songId) =>
+      (select(lyrics)..where((t) => t.songId.equals(songId))).getSingleOrNull();
+
+  Future<void> saveLyrics({
+    required int songId,
+    required String content,
+    required String format,
+  }) async {
+    final existing = await getLyricsBySongId(songId);
+    if (existing != null) {
+      await (update(lyrics)..where((t) => t.id.equals(existing.id))).write(
+        LyricsCompanion(
+          content: Value(content),
+          format: Value(format),
+          syncedAt: Value(DateTime.now()),
+        ),
+      );
+    } else {
+      await into(lyrics).insert(
+        LyricsCompanion.insert(
+          songId: songId,
+          content: content,
+          format: format,
+          syncedAt: DateTime.now(),
+        ),
+      );
+    }
+  }
+
+  Future<int> deleteLyricsBySongId(int songId) =>
+      (delete(lyrics)..where((t) => t.songId.equals(songId))).go();
 }
 
 
