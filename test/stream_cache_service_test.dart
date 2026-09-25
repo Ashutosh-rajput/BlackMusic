@@ -82,5 +82,10 @@ void main() {
       expect(service.cachedCount, equals(0));
       expect(service.entries.isEmpty, isTrue);
     });
+
+    test('cacheStreamSongs defaults to true when unset', () async {
+      // SharedPreferences defaults to true for setting_cache_stream_songs
+      expect(StreamCacheService.maxCacheEntries, equals(50));
+    });
   });
 }

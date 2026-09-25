@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -265,7 +266,16 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         isShuffle: _isShuffle,
         isRepeat: _isRepeat,
       ));
-      await _audioService.play(song.filePath, songInfo: song, queue: _queue);
+      Song songToPlay = song;
+      final isRemoteStream = song.filePath.startsWith('http://') || song.filePath.startsWith('https://');
+      if (isRemoteStream) {
+        final cachedPath = StreamCacheService.instance.getCachedFilePath(song.id);
+        if (cachedPath != null && File(cachedPath).existsSync()) {
+          songToPlay = song.copyWith(filePath: cachedPath);
+        }
+      }
+
+      await _audioService.play(songToPlay.filePath, songInfo: songToPlay, queue: _queue);
 
       final dur = _audioService.player.duration ?? song.duration;
       Song activeSong = song;
@@ -284,8 +294,14 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         queue: _queue,
       ));
       _repository?.recordSongPlay(activeSong);
-      if (activeSong.filePath.startsWith('http://') || activeSong.filePath.startsWith('https://')) {
-        unawaited(StreamCacheService.instance.cacheSong(activeSong));
+      if ((_settingsService?.cacheStreamSongs ?? true) &&
+          isRemoteStream &&
+          songToPlay.filePath == song.filePath) {
+        Future.delayed(const Duration(seconds: 4), () {
+          if (_currentSong?.id == activeSong.id) {
+            unawaited(StreamCacheService.instance.cacheSong(activeSong));
+          }
+        });
       }
       _consecutiveFailures = 0;
       _isChangingSong = false;

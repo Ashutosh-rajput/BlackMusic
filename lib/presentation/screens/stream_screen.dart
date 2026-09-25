@@ -69,11 +69,6 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       if (mounted) {
         setState(() => _lastPlayedStreamSongs = history);
       }
-      for (final song in history) {
-        if (!StreamCacheService.instance.isSongCached(song.id)) {
-          unawaited(StreamCacheService.instance.cacheSong(song));
-        }
-      }
     } catch (_) {}
   }
 
@@ -1115,26 +1110,16 @@ class _StreamSongTile extends StatelessWidget {
           ),
           if (isCached)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               margin: const EdgeInsets.only(right: 6),
               decoration: BoxDecoration(
                 color: Colors.green.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.offline_pin_rounded, size: 10, color: Colors.greenAccent),
-                  const SizedBox(width: 2),
-                  Text(
-                    'Cached',
-                    style: GoogleFonts.outfit(
-                      fontSize: 10,
-                      color: Colors.greenAccent,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+              child: const Icon(
+                Icons.offline_pin_rounded,
+                size: 11,
+                color: Colors.greenAccent,
               ),
             ),
           Expanded(

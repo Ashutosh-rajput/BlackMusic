@@ -4,7 +4,9 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pixel_player/core/di/injection_container.dart';
 import 'package:pixel_player/data/models/song_model.dart';
+import 'package:pixel_player/services/settings_service.dart';
 
 class StreamCacheEntry {
   final int songId;
@@ -170,13 +172,65 @@ class StreamCacheService {
 
   List<StreamCacheEntry> get entries => _entries.values.toList();
 
+  final List<_CacheQueueItem> _queue = [];
+  bool _isProcessingQueue = false;
+
   /// Asynchronously caches a stream song to disk, maintaining the max 50 entries limit.
+  /// Uses a sequential queue so at most one background download occurs at a time without network contention.
   Future<String?> cacheSong(Song song) async {
     final path = song.filePath.trim();
     if (!path.startsWith('http://') && !path.startsWith('https://')) {
       return null;
     }
 
+    try {
+      if (getIt.isRegistered<SettingsService>() && !getIt<SettingsService>().cacheStreamSongs) {
+        return null;
+      }
+    } catch (_) {}
+
+    if (isSongCached(song.id)) {
+      return getCachedFilePath(song.id);
+    }
+
+    if (_downloadingIds.contains(song.id)) {
+      return null;
+    }
+
+    if (_queue.any((item) => item.song.id == song.id)) {
+      return null;
+    }
+
+    final completer = Completer<String?>();
+    _queue.add(_CacheQueueItem(song, completer));
+    _processQueue();
+    return completer.future;
+  }
+
+  void _processQueue() async {
+    if (_isProcessingQueue) return;
+    _isProcessingQueue = true;
+    try {
+      while (_queue.isNotEmpty) {
+        final item = _queue.removeAt(0);
+        try {
+          final result = await _executeCacheSong(item.song);
+          if (!item.completer.isCompleted) {
+            item.completer.complete(result);
+          }
+        } catch (e) {
+          if (!item.completer.isCompleted) {
+            item.completer.complete(null);
+          }
+        }
+      }
+    } finally {
+      _isProcessingQueue = false;
+    }
+  }
+
+  Future<String?> _executeCacheSong(Song song) async {
+    final path = song.filePath.trim();
     if (isSongCached(song.id)) {
       return getCachedFilePath(song.id);
     }
@@ -205,6 +259,10 @@ class StreamCacheService {
           path,
           tempFilePath,
           options: Options(
+            headers: const {
+              'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
             receiveTimeout: const Duration(seconds: 45),
             sendTimeout: const Duration(seconds: 25),
           ),
@@ -289,6 +347,12 @@ class StreamCacheService {
   /// Deletes all cached stream songs and clears index.
   Future<void> clearAllCache() async {
     try {
+      for (final item in _queue) {
+        if (!item.completer.isCompleted) {
+          item.completer.complete(null);
+        }
+      }
+      _queue.clear();
       _downloadingIds.clear();
       _entries.clear();
       if (_cacheDir != null && await _cacheDir!.exists()) {
@@ -303,4 +367,10 @@ class StreamCacheService {
       debugPrint('StreamCache: Error clearing cache: $e');
     }
   }
+}
+
+class _CacheQueueItem {
+  final Song song;
+  final Completer<String?> completer;
+  _CacheQueueItem(this.song, this.completer);
 }

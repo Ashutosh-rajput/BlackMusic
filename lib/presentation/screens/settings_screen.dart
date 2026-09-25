@@ -69,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Streaming State
   late String _streamLanguage;
   late bool _autoDownloadStreamSongs;
+  late bool _cacheStreamSongs;
 
   // Storage Stats (Real File System Calculation)
   double _musicSizeMb = 0.0;
@@ -89,6 +90,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _loadSettingsFromStorage() {
     _streamLanguage = _settingsService.streamLanguage;
     _autoDownloadStreamSongs = _settingsService.autoDownloadStreamSongs;
+    _cacheStreamSongs = _settingsService.cacheStreamSongs;
     _autoPlayNext = _settingsService.autoPlayNext;
     _repeatMode = _settingsService.repeatMode;
     _shuffleByDefault = _settingsService.shuffleByDefault;
@@ -320,6 +322,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   setState(() => _autoDownloadStreamSongs = val);
                   _settingsService.setAutoDownloadStreamSongs(val);
+                },
+              ),
+              _divider(),
+              SwitchListTile(
+                title: _tileTitle('Cache Streamed Songs'),
+                subtitle: _tileSubtitle('Automatically cache the last 50 streamed songs for instant offline replay'),
+                value: _cacheStreamSongs,
+                activeThumbColor: _accentColor,
+                onChanged: (val) {
+                  setState(() => _cacheStreamSongs = val);
+                  _settingsService.setCacheStreamSongs(val);
                 },
               ),
             ],

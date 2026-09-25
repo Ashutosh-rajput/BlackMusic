@@ -69,6 +69,7 @@ class SettingsService {
   static const _keyPlayerBackgroundPattern = 'setting_player_bg_pattern';
   static const _keyStreamLanguage = 'setting_stream_language';
   static const _keyAutoDownloadStreamSongs = 'setting_auto_download_stream_songs';
+  static const _keyCacheStreamSongs = 'setting_cache_stream_songs';
 
   static const Map<String, String> supportedStreamLanguages = {
     'hindi': 'Hindi',
@@ -87,6 +88,7 @@ class SettingsService {
   // Getters
   String get streamLanguage => _prefs.getString(_keyStreamLanguage) ?? 'hindi';
   bool get autoDownloadStreamSongs => _prefs.getBool(_keyAutoDownloadStreamSongs) ?? false;
+  bool get cacheStreamSongs => _prefs.getBool(_keyCacheStreamSongs) ?? true;
   bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
   String get repeatMode => _prefs.getString(_keyRepeatMode) ?? 'Off';
   bool get shuffleByDefault => _prefs.getBool(_keyShuffleByDefault) ?? false;
@@ -160,6 +162,7 @@ class SettingsService {
   Future<void> setAutoAddSharedSongs(bool value) => _prefs.setBool(_keyAutoAddSharedSongs, value);
   Future<void> setStreamLanguage(String value) => _prefs.setString(_keyStreamLanguage, value);
   Future<void> setAutoDownloadStreamSongs(bool value) => _prefs.setBool(_keyAutoDownloadStreamSongs, value);
+  Future<void> setCacheStreamSongs(bool value) => _prefs.setBool(_keyCacheStreamSongs, value);
   Future<void> setLastPlayedSongId(int? id) async {
     if (id != null) {
       await _prefs.setInt(_keyLastPlayedSongId, id);
