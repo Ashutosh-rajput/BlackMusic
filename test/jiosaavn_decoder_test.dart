@@ -22,6 +22,40 @@ void main() {
       expect(JioSaavnDecoder.decryptMediaUrl('   '), isNull);
       expect(JioSaavnDecoder.decryptMediaUrl('not-valid-base64'), isNull);
     });
+
+    test('fetchSongSuggestions handles empty song ID safely', () async {
+      final suggestions = await JioSaavnDecoder.fetchSongSuggestions('');
+      expect(suggestions, isEmpty);
+
+      final whitespaceSuggestions = await JioSaavnDecoder.fetchSongSuggestions('   ');
+      expect(whitespaceSuggestions, isEmpty);
+    });
+
+    test('fetchSongSuggestions returns real suggestions for valid song ID', () async {
+      final suggestions = await JioSaavnDecoder.fetchSongSuggestions('xNVbUezC', limit: 5);
+      expect(suggestions.isNotEmpty, isTrue);
+      expect(suggestions.first.title.isNotEmpty, isTrue);
+    });
+
+    test('parseItem extracts subtitle from artistMap if subtitle is empty', () {
+      final item = JioSaavnDecoder.parseItem({
+        'id': 'test_song_1',
+        'title': 'Test Track',
+        'subtitle': '',
+        'more_info': {
+          'artistMap': {
+            'primary_artists': [
+              {'name': 'Pritam'},
+              {'name': 'Arijit Singh'},
+            ],
+          },
+        },
+      });
+
+      expect(item.id, equals('test_song_1'));
+      expect(item.title, equals('Test Track'));
+      expect(item.subtitle, equals('Pritam, Arijit Singh'));
+    });
   });
 }
 

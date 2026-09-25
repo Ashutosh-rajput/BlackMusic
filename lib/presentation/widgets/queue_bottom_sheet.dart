@@ -5,6 +5,7 @@ import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
+import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 
 class QueueBottomSheet extends StatelessWidget {
   const QueueBottomSheet({super.key});
@@ -148,26 +149,34 @@ class QueueBottomSheet extends StatelessWidget {
                                 ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
                                 : Colors.transparent,
                             child: ListTile(
-                              leading: Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: isCurrent
-                                      ? Icon(
-                                          Icons.graphic_eq_rounded,
-                                          color: theme.colorScheme.primary,
-                                        )
-                                      : Text(
-                                          '${index + 1}',
-                                          style: GoogleFonts.outfit(
-                                            fontWeight: FontWeight.bold,
-                                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      AlbumArtWidget(
+                                        albumArt: song.albumArt,
+                                        width: 44,
+                                        height: 44,
+                                        borderRadius: BorderRadius.circular(8),
+                                        fallbackIcon: Icons.music_note_rounded,
+                                      ),
+                                      if (isCurrent)
+                                        Container(
+                                          color: Colors.black.withValues(alpha: 0.45),
+                                          child: Center(
+                                            child: Icon(
+                                              Icons.graphic_eq_rounded,
+                                              color: theme.colorScheme.primary,
+                                              size: 22,
+                                            ),
                                           ),
                                         ),
+                                    ],
+                                  ),
                                 ),
                               ),
                               title: Text(

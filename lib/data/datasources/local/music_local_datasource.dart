@@ -46,6 +46,11 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
       final List<int> seedIdsToDelete = [];
 
       for (var row in rows) {
+        // Skip remote stream URLs from local library listing (stream-only tracks)
+        if (row.filePath.startsWith('http://') || row.filePath.startsWith('https://')) {
+          continue;
+        }
+
         String? resolvedSource = row.source;
         String? resolvedQuality = row.audioQuality;
 

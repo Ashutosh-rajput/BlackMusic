@@ -42,6 +42,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   Map<String, List<JioSaavnItem>> _homeModules = {};
   List<Song> _topPlayed = [];
   List<Song> _lastPlayedStreamSongs = [];
+  List<JioSaavnItem> _suggestedSongs = [];
 
   @override
   bool get wantKeepAlive => true;
@@ -91,10 +92,42 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         JioSaavnDecoder.fetchHomeFeed(lang: _currentLang),
       ]);
 
+      final newReleases = results[0] as List<JioSaavnItem>;
+      final homeModules = results[1] as Map<String, List<JioSaavnItem>>;
+
+      List<JioSaavnItem> suggestions = [];
+      String? seedId;
+
+      // Priority 1: From home modules
+      for (final list in homeModules.values) {
+        for (final item in list) {
+          if (item.isSong && item.id.isNotEmpty) {
+            seedId = item.id;
+            break;
+          }
+        }
+        if (seedId != null) break;
+      }
+      // Priority 2: From new releases
+      seedId ??= newReleases.where((i) => i.isSong && i.id.isNotEmpty).firstOrNull?.id;
+
+      // Priority 3: Search popular song for current language as fallback seed
+      if (seedId == null || seedId.isEmpty) {
+        try {
+          final popularSongs = await JioSaavnDecoder.searchSongs(_currentLang);
+          seedId = popularSongs.where((s) => s.id.isNotEmpty).firstOrNull?.id;
+        } catch (_) {}
+      }
+
+      if (seedId != null && seedId.isNotEmpty) {
+        suggestions = await JioSaavnDecoder.fetchSongSuggestions(seedId, limit: 10);
+      }
+
       if (!mounted) return;
       setState(() {
-        _newReleases = results[0] as List<JioSaavnItem>;
-        _homeModules = results[1] as Map<String, List<JioSaavnItem>>;
+        _newReleases = newReleases;
+        _homeModules = homeModules;
+        _suggestedSongs = suggestions;
         _isLoading = false;
       });
     } catch (e) {
@@ -150,6 +183,14 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
 
     // Next collect songs from new releases
     for (final item in _newReleases) {
+      if (item.isSong && !seen.contains(item.id)) {
+        seen.add(item.id);
+        list.add(item);
+      }
+    }
+
+    // Collect songs from suggestions
+    for (final item in _suggestedSongs) {
       if (item.isSong && !seen.contains(item.id)) {
         seen.add(item.id);
         list.add(item);
@@ -318,6 +359,18 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       getIt<MusicRepository>().recordSongPlay(song);
       _loadLastPlayedSongs();
 
+      if (item.id.isNotEmpty) {
+        JioSaavnDecoder.fetchSongSuggestions(item.id, limit: 10).then((suggestions) {
+          if (mounted && suggestions.isNotEmpty) {
+            setState(() => _suggestedSongs = suggestions);
+          }
+        }).catchError((_) {});
+      }
+
+      if (getIt<SettingsService>().autoDownloadStreamSongs) {
+        _downloadSong(item, overrideUrl: streamUrl);
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Streaming "${song.title}" from JioSaavn', style: GoogleFonts.outfit()),
@@ -341,9 +394,9 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     }
   }
 
-  Future<void> _downloadSong(JioSaavnItem track) async {
+  Future<void> _downloadSong(JioSaavnItem track, {String? overrideUrl}) async {
     final downloadService = getIt<DownloadService>();
-    var directUrl = track.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
+    var directUrl = overrideUrl ?? track.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
     if (directUrl == null || directUrl.isEmpty) {
       final details = await JioSaavnDecoder.fetchSongDetails(track.token);
       directUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
@@ -717,6 +770,22 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             onAction: () => setState(() => _selectedFilter = 1),
           ),
           ...allSongs.take(6).map((item) => _StreamSongTile(
+                item: item,
+                isLoading: _loadingSongId == item.id,
+                onPlay: () => _streamSingleSong(item),
+                onDownload: () => _downloadSong(item),
+              )),
+          const SizedBox(height: 16),
+        ],
+
+        // 1.5 Song Suggestions (GET /api/songs/[id]/suggestions?limit=10)
+        if (_suggestedSongs.isNotEmpty) ...[
+          _buildSectionHeader(
+            title: 'Song Suggestions',
+            subtitle: 'Recommended songs for you',
+            icon: Icons.recommend_rounded,
+          ),
+          ..._suggestedSongs.take(6).map((item) => _StreamSongTile(
                 item: item,
                 isLoading: _loadingSongId == item.id,
                 onPlay: () => _streamSingleSong(item),
@@ -1243,6 +1312,9 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+    if (getIt<SettingsService>().autoDownloadStreamSongs && index < _tracks.length) {
+      _downloadTrack(_tracks[index]);
+    }
   }
 
   void _downloadTrack(JioSaavnItem track) {

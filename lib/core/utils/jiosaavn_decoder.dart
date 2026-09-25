@@ -220,11 +220,29 @@ class JioSaavnDecoder {
     final id = item['id']?.toString() ?? '';
     final token = item['token']?.toString() ?? id;
     final title = item['title']?.toString() ?? '';
-    final subtitle = item['subtitle']?.toString() ?? '';
+    var subtitle = item['subtitle']?.toString() ?? '';
     final image = (item['image']?.toString() ?? '').replaceAll('150x150', '500x500');
     Map<String, dynamic>? moreInfo;
     if (item['more_info'] is Map) {
       moreInfo = Map<String, dynamic>.from(item['more_info'] as Map);
+    }
+    if (subtitle.isEmpty && moreInfo != null) {
+      final artistMap = moreInfo['artistMap'];
+      if (artistMap is Map && artistMap['primary_artists'] is List) {
+        final names = (artistMap['primary_artists'] as List)
+            .whereType<Map>()
+            .map((a) => a['name']?.toString() ?? '')
+            .where((n) => n.isNotEmpty)
+            .toList();
+        if (names.isNotEmpty) {
+          subtitle = names.join(', ');
+        }
+      }
+      if (subtitle.isEmpty && moreInfo['music'] != null) {
+        subtitle = moreInfo['music'].toString();
+      } else if (subtitle.isEmpty && moreInfo['album'] != null) {
+        subtitle = moreInfo['album'].toString();
+      }
     }
     final encUrl = item['encrypted_media_url']?.toString() ??
         moreInfo?['encrypted_media_url']?.toString();
@@ -445,6 +463,54 @@ class JioSaavnDecoder {
       dio.close();
     }
     return null;
+  }
+
+  /// Fetches song suggestions/recommendations based on a song ID
+  /// using JioSaavn's reco.getreco recommendation engine.
+  static Future<List<JioSaavnItem>> fetchSongSuggestions(String songId, {int limit = 10}) async {
+    if (songId.trim().isEmpty) return [];
+    final dio = Dio();
+    try {
+      final directResp = await dio.get(
+        'https://www.jiosaavn.com/api.php',
+        queryParameters: {
+          '__call': 'reco.getreco',
+          'api_version': '4',
+          '_format': 'json',
+          '_marker': '0',
+          'ctx': 'android',
+          'pid': songId.trim(),
+          'n': limit,
+        },
+        options: Options(receiveTimeout: const Duration(seconds: 8)),
+      );
+      final rawData = directResp.data;
+      final dynamic parsed = rawData is String ? jsonDecode(rawData) : rawData;
+      List rawList = [];
+      if (parsed is List) {
+        rawList = parsed;
+      } else if (parsed is Map) {
+        final val = parsed[songId.trim()];
+        if (val is List) {
+          rawList = val;
+        } else if (parsed.isNotEmpty && parsed.values.first is List) {
+          rawList = parsed.values.first as List;
+        }
+      }
+
+      if (rawList.isNotEmpty) {
+        return rawList
+            .whereType<Map>()
+            .map((e) => parseItem(Map<String, dynamic>.from(e)))
+            .where((item) => item.title.isNotEmpty)
+            .take(limit)
+            .toList();
+      }
+    } catch (_) {
+    } finally {
+      dio.close();
+    }
+    return [];
   }
 }
 
