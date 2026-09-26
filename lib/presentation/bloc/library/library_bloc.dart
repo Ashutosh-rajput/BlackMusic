@@ -11,6 +11,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'package:pixel_player/data/models/youtube_video_item.dart';
 import 'package:pixel_player/presentation/bloc/library/library_event.dart';
 import 'package:pixel_player/presentation/bloc/library/library_state.dart';
+import 'package:pixel_player/services/user_taste_service.dart';
 
 class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   final MusicRepository _repository;
@@ -330,8 +331,10 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         if (isFav) {
           await _repository.removeSongFromPlaylist(
               favPlaylist.id, event.song.id, notify: false);
+          UserTasteService.instance.onSongFavoriteToggled(event.song, false);
         } else {
           await _repository.addSongToPlaylist(favPlaylist.id, event.song, notify: false);
+          UserTasteService.instance.onSongFavoriteToggled(event.song, true);
         }
         final updatedPlaylists = await _repository.getPlaylists();
         emit(current.copyWith(playlists: updatedPlaylists));

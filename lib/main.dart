@@ -15,6 +15,8 @@ import 'package:pixel_player/services/download_background_service.dart';
 import 'package:pixel_player/services/download_notification_service.dart';
 import 'package:pixel_player/services/download_service.dart';
 import 'package:pixel_player/services/stream_cache_service.dart';
+import 'package:pixel_player/services/user_taste_service.dart';
+import 'package:pixel_player/services/stream_favorites_service.dart';
 import 'package:pixel_player/services/audio_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
@@ -43,6 +45,16 @@ void main() async {
     await getIt<StreamCacheService>().init();
   } catch (e) {
     debugPrint('StreamCacheService init error: $e');
+  }
+  try {
+    await getIt<UserTasteService>().init();
+  } catch (e) {
+    debugPrint('UserTasteService init error: $e');
+  }
+  try {
+    await getIt<StreamFavoritesService>().init();
+  } catch (e) {
+    debugPrint('StreamFavoritesService init error: $e');
   }
 
   final initialMedia = await ReceiveSharingIntent.instance.getInitialMedia();

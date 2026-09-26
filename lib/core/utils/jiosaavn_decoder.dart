@@ -259,6 +259,7 @@ class JioSaavnDecoder {
       imageUrl: image,
       language: item['language']?.toString(),
       year: item['year']?.toString(),
+      music: moreInfo?['music']?.toString(),
       encryptedMediaUrl: encUrl,
       directMediaUrl: direct,
       duration: duration,

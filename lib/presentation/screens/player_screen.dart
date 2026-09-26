@@ -18,6 +18,7 @@ import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/queue_bottom_sheet.dart';
 import 'package:pixel_player/presentation/widgets/sleep_timer_dialog.dart';
 import 'package:pixel_player/presentation/widgets/player_background_pattern.dart';
+import 'package:pixel_player/services/stream_favorites_service.dart';
 import 'package:pixel_player/presentation/widgets/lyrics_view.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -365,6 +366,40 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                     Builder(
                       builder: (context) {
+                        final isStream = currentSong.filePath.startsWith('http://') ||
+                            currentSong.filePath.startsWith('https://') ||
+                            currentSong.source == 'jiosaavn';
+
+                        if (isStream) {
+                          return StreamBuilder<List<Song>>(
+                            stream: StreamFavoritesService.instance.onFavoritesChanged,
+                            builder: (context, snapshot) {
+                              final isFav = StreamFavoritesService.instance.isFavorite(currentSong.id);
+                              return IconButton(
+                                icon: Icon(
+                                  isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                  color: isFav ? Colors.redAccent : (isDark ? Colors.white70 : Colors.black54),
+                                ),
+                                iconSize: 28,
+                                onPressed: () async {
+                                  final added = await StreamFavoritesService.instance.toggleFavorite(currentSong);
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        added ? 'Added to Stream Favorites' : 'Removed from Stream Favorites',
+                                        style: GoogleFonts.outfit(),
+                                      ),
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        }
+
                         final libState = context.watch<LibraryBloc>().state;
                         bool isFavorite = false;
                         if (libState is LibraryLoaded) {
@@ -384,12 +419,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                           iconSize: 28,
                           onPressed: () {
                             context.read<LibraryBloc>().add(ToggleFavoriteEvent(currentSong));
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
                                   isFavorite
-                                      ? 'Removed from Favorites'
-                                      : 'Added to Favorites',
+                                      ? 'Removed from Library Favorites'
+                                      : 'Added to Library Favorites',
                                   style: GoogleFonts.outfit(),
                                 ),
                                 duration: const Duration(seconds: 2),

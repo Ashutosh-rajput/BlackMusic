@@ -20,6 +20,8 @@ class JioSaavnItem extends Equatable {
   final String? duration;
   final String quality;
 
+  final String? music;
+
   // Album-specific
   final String? songCount;
 
@@ -32,6 +34,7 @@ class JioSaavnItem extends Equatable {
     required this.imageUrl,
     this.language,
     this.year,
+    this.music,
     this.encryptedMediaUrl,
     this.directMediaUrl,
     this.duration,
@@ -51,7 +54,8 @@ class JioSaavnItem extends Equatable {
         JioSaavnDecoder.decryptMediaUrl(encryptedMediaUrl) ??
         '';
     final durSecs = int.tryParse(duration ?? '0') ?? 0;
-    final idHash = (id.isNotEmpty ? id : token).hashCode.abs();
+    final parsedId = int.tryParse(id);
+    final idHash = parsedId ?? (id.isNotEmpty ? id : token).hashCode.abs();
     return Song(
       id: idHash != 0 ? idHash : DateTime.now().millisecondsSinceEpoch,
       title: title.isNotEmpty ? title : 'Track',
@@ -83,6 +87,7 @@ class JioSaavnItem extends Equatable {
       imageUrl: (json['image']?.toString() ?? '').replaceAll('150x150', '500x500'),
       language: json['language']?.toString(),
       year: json['year']?.toString(),
+      music: moreInfo['music']?.toString(),
       encryptedMediaUrl: encUrl,
       directMediaUrl: direct,
       duration: moreInfo['duration']?.toString(),
@@ -139,6 +144,6 @@ class JioSaavnItem extends Equatable {
 
   @override
   List<Object?> get props =>
-      [type, id, token, title, subtitle, imageUrl, language, year, encryptedMediaUrl, directMediaUrl, duration, quality, songCount];
+      [type, id, token, title, subtitle, imageUrl, language, year, music, encryptedMediaUrl, directMediaUrl, duration, quality, songCount];
 }
 

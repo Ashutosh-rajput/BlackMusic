@@ -12,8 +12,8 @@ import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
-import 'package:pixel_player/data/models/jiosaavn_item.dart';
 import 'package:pixel_player/services/stream_cache_service.dart';
+import 'package:pixel_player/services/user_taste_service.dart';
 
 class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   final AudioPlayerService _audioService;
@@ -141,6 +141,22 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       final procState = playerState.processingState;
       final isPlaying = playerState.playing;
 
+      if (procState == ProcessingState.completed) {
+        _isChangingSong = false;
+        if (_currentSong != null) {
+          UserTasteService.instance.onSongCompleted(_currentSong!);
+        }
+        if (_repeatMode == 'One' && _currentSong != null) {
+          add(PlaySongEvent(_currentSong!));
+        } else if (_autoPlayNext || _repeatMode == 'All') {
+          add(const NextSongEvent());
+        } else {
+          add(const PauseEvent());
+          await _audioService.seek(Duration.zero);
+        }
+        return;
+      }
+
       if (!isPlaying) {
         _isChangingSong = false;
         if (state is PlayerPlaying || state is PlayerLoading) {
@@ -155,20 +171,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
       if (_isChangingSong) return;
 
-      if (procState == ProcessingState.completed) {
-        _isChangingSong = true;
-        if ((_repeatMode == 'One' || _isRepeat) && _currentSong != null) {
-          add(PlaySongEvent(_currentSong!));
-        } else if (_autoPlayNext) {
-          add(const NextSongEvent());
-        } else {
-          add(const PauseEvent());
-          await _audioService.seek(Duration.zero);
-          _isChangingSong = false;
-        }
-        return;
-      }
-
       if (isPlaying && (state is PlayerPaused || state is PlayerStopped)) {
         add(const ResumeEvent());
       }
@@ -181,6 +183,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _currentSong = current.song;
       _settingsService?.setLastPlayedSongId(current.song.id);
       _settingsService?.setLastPlayedPositionMs(event.position.inMilliseconds);
+      UserTasteService.instance.onPlaybackProgress(current.song, event.position, current.duration);
 
       if (!_audioService.isPlaying) {
         emit(PlayerPaused(
@@ -267,11 +270,23 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         isRepeat: _isRepeat,
       ));
       Song songToPlay = song;
-      final isRemoteStream = song.filePath.startsWith('http://') || song.filePath.startsWith('https://');
+      if (songToPlay.filePath.isEmpty && songToPlay.source == 'jiosaavn') {
+        try {
+          final details = await JioSaavnDecoder.fetchSongDetails(songToPlay.id.toString());
+          final streamUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
+          if (streamUrl != null && streamUrl.isNotEmpty) {
+            songToPlay = songToPlay.copyWith(filePath: streamUrl);
+            final qIndex = _queue.indexWhere((s) => s.id == songToPlay.id);
+            if (qIndex != -1) _queue[qIndex] = songToPlay;
+          }
+        } catch (_) {}
+      }
+
+      final isRemoteStream = songToPlay.filePath.startsWith('http://') || songToPlay.filePath.startsWith('https://');
       if (isRemoteStream) {
-        final cachedPath = StreamCacheService.instance.getCachedFilePath(song.id);
+        final cachedPath = StreamCacheService.instance.getCachedFilePath(songToPlay.id);
         if (cachedPath != null && File(cachedPath).existsSync()) {
-          songToPlay = song.copyWith(filePath: cachedPath);
+          songToPlay = songToPlay.copyWith(filePath: cachedPath);
         }
       }
 
@@ -294,6 +309,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         queue: _queue,
       ));
       _repository?.recordSongPlay(activeSong);
+      UserTasteService.instance.onSongStarted(activeSong);
       if ((_settingsService?.cacheStreamSongs ?? true) &&
           isRemoteStream &&
           songToPlay.filePath == song.filePath) {
@@ -355,8 +371,8 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     final currentIndex = validQueue.indexWhere((s) => s.id == current.id);
     if (currentIndex != -1 && currentIndex < validQueue.length - 1) {
       return validQueue[currentIndex + 1];
-    } else if (validQueue.isNotEmpty) {
-      return validQueue.first; // Wrap around
+    } else if (validQueue.isNotEmpty && (_repeatMode == 'All' || _isRepeat)) {
+      return validQueue.first; // Wrap around if repeating all
     }
     return null;
   }
@@ -485,39 +501,23 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _showToast('Starting radio for "${currentSong.title}"...');
 
     try {
-      String? jioSaavnId;
+      List<Song> radioSongs = await UserTasteService.instance.getSmartAutoplayRecommendations(
+        currentSong,
+        limit: 25,
+      );
 
-      // 1. Search JioSaavn to find this track's authentic ID
-      final searchQuery = '${currentSong.title} ${currentSong.artist}'.trim();
-      final searchResults = await JioSaavnDecoder.searchSongs(searchQuery);
-
-      if (searchResults.isNotEmpty) {
-        final match = searchResults.firstWhere(
-          (s) => s.id.isNotEmpty,
-          orElse: () => searchResults.first,
-        );
-        jioSaavnId = match.id.isNotEmpty ? match.id : match.token;
-      }
-
-      List<JioSaavnItem> suggestions = [];
-      if (jioSaavnId != null && jioSaavnId.isNotEmpty) {
-        suggestions = await JioSaavnDecoder.fetchSongSuggestions(jioSaavnId, limit: 20);
-      }
-
-      // 2. Fallback to artist search if recommendations are empty
-      if (suggestions.isEmpty && currentSong.artist.trim().isNotEmpty && currentSong.artist != 'Unknown') {
+      // Fallback to artist search if recommendations are empty
+      if (radioSongs.isEmpty && currentSong.artist.trim().isNotEmpty && currentSong.artist != 'Unknown') {
         final artistResults = await JioSaavnDecoder.searchSongs(currentSong.artist.trim());
-        suggestions = artistResults.where((item) => item.isSong).take(20).toList();
+        radioSongs = artistResults
+            .where((item) => item.isSong && item.title.trim().isNotEmpty)
+            .map((item) => item.toSong())
+            .where((s) =>
+                s.filePath.trim().isNotEmpty &&
+                s.title.trim().toLowerCase() != currentSong.title.trim().toLowerCase())
+            .take(20)
+            .toList();
       }
-
-      // Convert recommendations to Song instances with playable stream URLs
-      final radioSongs = suggestions
-          .where((item) => item.title.trim().isNotEmpty)
-          .map((item) => item.toSong())
-          .where((s) =>
-              s.filePath.trim().isNotEmpty &&
-              s.title.trim().toLowerCase() != currentSong.title.trim().toLowerCase())
-          .toList();
 
       if (radioSongs.isEmpty) {
         _showToast('Could not find radio tracks for "${currentSong.title}".');
@@ -705,10 +705,29 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   Future<void> _onNextSong(NextSongEvent event, Emitter<PlayerState> emit) async {
     if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
+    if (event.isManualSkip && _currentSong != null) {
+      UserTasteService.instance.onSongSkipped(_currentSong!);
+    }
     _consecutiveFailures = 0;
     final nextSong = _getNextSong(_currentSong!);
     if (nextSong != null) {
       await _playSongInternal(nextSong, emit);
+    } else if (_autoPlayNext && _currentSong != null) {
+      try {
+        final recs = await UserTasteService.instance.getSmartAutoplayRecommendations(_currentSong!, limit: 10);
+        if (recs.isNotEmpty) {
+          _queue.addAll(recs);
+          _originalQueue.addAll(recs);
+          _emitUpdatedQueueState(emit);
+          await _playSongInternal(recs.first, emit);
+          return;
+        }
+      } catch (_) {}
+      add(const PauseEvent());
+      await _audioService.seek(Duration.zero);
+    } else {
+      add(const PauseEvent());
+      await _audioService.seek(Duration.zero);
     }
   }
 
@@ -760,10 +779,16 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   Future<void> _onTrackChanged(TrackChangedEvent event, Emitter<PlayerState> emit) async {
     if (_currentSong?.id == event.song.id && state is PlayerPlaying) return;
+    final previousSong = _currentSong;
+    if (previousSong != null && previousSong.id != event.song.id) {
+      UserTasteService.instance.onSongCompleted(previousSong);
+    }
     _currentSong = event.song;
     _settingsService?.setLastPlayedSongId(event.song.id);
     _settingsService?.setLastPlayedPositionMs(0);
     _repository?.updateSong(event.song, notify: false);
+    _repository?.recordSongPlay(event.song);
+    UserTasteService.instance.onSongStarted(event.song);
 
     final dur = event.song.duration;
     if (state is PlayerPlaying) {

@@ -111,7 +111,11 @@ class SetPlaybackRateEvent extends PlayerEvent {
 }
 
 class NextSongEvent extends PlayerEvent {
-  const NextSongEvent();
+  final bool isManualSkip;
+  const NextSongEvent({this.isManualSkip = false});
+
+  @override
+  List<Object?> get props => [isManualSkip];
 }
 
 class PreviousSongEvent extends PlayerEvent {

@@ -13,6 +13,8 @@ import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/services/download_service.dart';
 import 'package:pixel_player/services/lyrics_service.dart';
 import 'package:pixel_player/services/stream_cache_service.dart';
+import 'package:pixel_player/services/user_taste_service.dart';
+import 'package:pixel_player/services/stream_favorites_service.dart';
 
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 
@@ -61,6 +63,12 @@ Future<void> getItSetup() async {
   );
   getIt.registerLazySingleton<StreamCacheService>(
     () => StreamCacheService(),
+  );
+  getIt.registerLazySingleton<UserTasteService>(
+    () => UserTasteService(),
+  );
+  getIt.registerLazySingleton<StreamFavoritesService>(
+    () => StreamFavoritesService(),
   );
 
   // BLoCs & Cubits

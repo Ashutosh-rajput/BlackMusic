@@ -19,6 +19,8 @@ class MockAudioPlayerService implements AudioPlayerService {
   @override
   AudioPlayer get player => _player ??= AudioPlayer();
 
+  void emitPlayerState(PlayerState state) => _playerStateController.add(state);
+
   @override
   Stream<PlayerState> get playerStateStream => _playerStateController.stream;
 

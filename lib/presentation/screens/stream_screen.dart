@@ -14,6 +14,8 @@ import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
 import 'package:pixel_player/services/download_service.dart';
 import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/services/stream_cache_service.dart';
+import 'package:pixel_player/services/user_taste_service.dart';
+import 'package:pixel_player/services/stream_favorites_service.dart';
 
 class StreamScreen extends StatefulWidget {
   const StreamScreen({super.key});
@@ -27,7 +29,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   bool _isLoading = true;
   String? _errorMessage;
   String? _loadingSongId;
-  int _selectedFilter = 0; // 0: All, 1: Songs, 2: Albums, 3: Playlists
+  int _selectedFilter = 0; // 0: All, 1: Songs, 2: Albums, 3: Playlists, 4: Favorites, 5: Last Played
 
   // Search state
   bool _isSearching = false;
@@ -87,41 +89,39 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       // 2. Fetch related albums using top played songs
       _relatedAlbums = await _fetchRelatedAlbumsForTopSongs(_topPlayed);
 
-      // 3. Fetch new releases and home feed in parallel
+      // 3. Fetch new releases, home feed, and PulseIQ personalized suggestions in parallel
       final results = await Future.wait([
         JioSaavnDecoder.fetchNewReleases(lang: _currentLang),
         JioSaavnDecoder.fetchHomeFeed(lang: _currentLang),
+        UserTasteService.instance.getPersonalizedSuggestions(
+          topPlayed: _topPlayed,
+          streamHistory: _lastPlayedStreamSongs,
+          favorites: StreamFavoritesService.instance.favorites,
+          lang: _currentLang,
+          limit: 15,
+        ),
       ]);
 
       final newReleases = results[0] as List<JioSaavnItem>;
       final homeModules = results[1] as Map<String, List<JioSaavnItem>>;
+      List<JioSaavnItem> suggestions = results[2] as List<JioSaavnItem>;
 
-      List<JioSaavnItem> suggestions = [];
-      String? seedId;
-
-      // Priority 1: From home modules
-      for (final list in homeModules.values) {
-        for (final item in list) {
-          if (item.isSong && item.id.isNotEmpty) {
-            seedId = item.id;
-            break;
+      // Fallback seed if suggestions are empty (e.g., initial start or offline network glitch)
+      if (suggestions.isEmpty) {
+        String? seedId;
+        for (final list in homeModules.values) {
+          for (final item in list) {
+            if (item.isSong && item.id.isNotEmpty) {
+              seedId = item.id;
+              break;
+            }
           }
+          if (seedId != null) break;
         }
-        if (seedId != null) break;
-      }
-      // Priority 2: From new releases
-      seedId ??= newReleases.where((i) => i.isSong && i.id.isNotEmpty).firstOrNull?.id;
-
-      // Priority 3: Search popular song for current language as fallback seed
-      if (seedId == null || seedId.isEmpty) {
-        try {
-          final popularSongs = await JioSaavnDecoder.searchSongs(_currentLang);
-          seedId = popularSongs.where((s) => s.id.isNotEmpty).firstOrNull?.id;
-        } catch (_) {}
-      }
-
-      if (seedId != null && seedId.isNotEmpty) {
-        suggestions = await JioSaavnDecoder.fetchSongSuggestions(seedId, limit: 10);
+        seedId ??= newReleases.where((i) => i.isSong && i.id.isNotEmpty).firstOrNull?.id;
+        if (seedId != null && seedId.isNotEmpty) {
+          suggestions = await JioSaavnDecoder.fetchSongSuggestions(seedId, limit: 10);
+        }
       }
 
       if (!mounted) return;
@@ -330,7 +330,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     );
   }
 
-  Future<void> _streamSingleSong(JioSaavnItem item) async {
+  Future<void> _streamSingleSong(
+    JioSaavnItem item, {
+    List<JioSaavnItem>? contextList,
+    List<Song>? songList,
+    bool isFromSearch = false,
+  }) async {
     if (_loadingSongId != null) return;
     setState(() => _loadingSongId = item.id);
 
@@ -356,9 +361,47 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       final song = item.toSong(overrideStreamUrl: streamUrl);
       if (!mounted) return;
 
-      context.read<PlayerBloc>().add(PlaySongEvent(song));
+      List<Song>? queue;
+      if (isFromSearch) {
+        // When played from search, play ONLY this song without filling search results into the queue
+        queue = [song];
+      } else {
+        if (songList != null && songList.isNotEmpty) {
+          queue = List<Song>.from(songList);
+          final idx = queue.indexWhere((s) => s.id == song.id);
+          if (idx != -1) {
+            queue[idx] = song;
+          } else {
+            queue.insert(0, song);
+          }
+        } else if (contextList != null && contextList.isNotEmpty) {
+          queue = contextList.where((i) => i.isSong).map((i) {
+            if (i.id == item.id) return song;
+            return i.toSong();
+          }).where((s) => s.filePath.trim().isNotEmpty).toList();
+
+          if (!queue.any((s) => s.id == song.id)) {
+            queue.insert(0, song);
+          }
+        } else {
+          queue = [song];
+        }
+      }
+
+      context.read<PlayerBloc>().add(PlaySongEvent(song, queue: queue));
       getIt<MusicRepository>().recordSongPlay(song);
       _loadLastPlayedSongs();
+
+      // If played from stream (not search) and the queue only had 1 song, auto-fill queue with smart recommendations
+      if (!isFromSearch && queue.length <= 1 && item.id.isNotEmpty) {
+        UserTasteService.instance.getSmartAutoplayRecommendations(song, limit: 10).then((recs) {
+          if (recs.isNotEmpty && mounted) {
+            for (final rec in recs) {
+              context.read<PlayerBloc>().add(AddToQueueEvent(rec));
+            }
+          }
+        }).catchError((_) {});
+      }
 
       if (item.id.isNotEmpty) {
         JioSaavnDecoder.fetchSongSuggestions(item.id, limit: 10).then((suggestions) {
@@ -542,7 +585,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           ..._searchSongs.map((song) => _StreamSongTile(
                 item: song,
                 isLoading: _loadingSongId == song.id,
-                onPlay: () => _streamSingleSong(song),
+                onPlay: () => _streamSingleSong(song, isFromSearch: true),
                 onDownload: () => _downloadSong(song),
               )),
           const SizedBox(height: 16),
@@ -686,7 +729,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   }
 
   Widget _buildFilterChips() {
-    final filters = ['All', 'Songs', 'Albums', 'Playlists', 'Last Played'];
+    final filters = ['All', 'Songs', 'Albums', 'Playlists', 'Favorites', 'Last Played'];
 
     return SizedBox(
       height: 40,
@@ -732,6 +775,9 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       // PLAYLISTS ONLY VIEW
       return _buildPlaylistsOnlyGrid();
     } else if (_selectedFilter == 4) {
+      // FAVORITES VIEW
+      return _buildFavoritesView();
+    } else if (_selectedFilter == 5) {
       // LAST PLAYED (HISTORY) VIEW
       return _buildLastPlayedView();
     }
@@ -747,19 +793,51 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             subtitle: 'Recently streamed songs',
             icon: Icons.history_rounded,
             actionLabel: _lastPlayedStreamSongs.length > 5 ? 'See All (${_lastPlayedStreamSongs.length})' : null,
-            onAction: () => setState(() => _selectedFilter = 4),
+            onAction: () => setState(() => _selectedFilter = 5),
           ),
           ..._lastPlayedStreamSongs.take(5).map((song) {
             final item = song.toJioSaavnItem();
             return _StreamSongTile(
               item: item,
               isLoading: _loadingSongId == item.id,
-              onPlay: () => _streamSingleSong(item),
+              onPlay: () => _streamSingleSong(item, songList: _lastPlayedStreamSongs.take(5).toList()),
               onDownload: () => _downloadSong(item),
             );
           }),
           const SizedBox(height: 16),
         ],
+
+        // 0.5 Stream Favorites (if any)
+        StreamBuilder<List<Song>>(
+          stream: StreamFavoritesService.instance.onFavoritesChanged,
+          initialData: StreamFavoritesService.instance.favorites,
+          builder: (context, snapshot) {
+            final favs = snapshot.data ?? StreamFavoritesService.instance.favorites;
+            if (favs.isEmpty) return const SizedBox.shrink();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  title: 'Stream Favorites',
+                  subtitle: 'Your favorite online tracks',
+                  icon: Icons.favorite_rounded,
+                  actionLabel: favs.length > 5 ? 'See All (${favs.length})' : null,
+                  onAction: () => setState(() => _selectedFilter = 4),
+                ),
+                ...favs.take(5).map((song) {
+                  final item = song.toJioSaavnItem();
+                  return _StreamSongTile(
+                    item: item,
+                    isLoading: _loadingSongId == item.id,
+                    onPlay: () => _streamSingleSong(item, songList: favs.take(5).toList()),
+                    onDownload: () => _downloadSong(item),
+                  );
+                }),
+                const SizedBox(height: 16),
+              ],
+            );
+          },
+        ),
 
         // 1. Trending Songs (Directly playable single songs)
         if (allSongs.isNotEmpty) ...[
@@ -773,23 +851,25 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           ...allSongs.take(6).map((item) => _StreamSongTile(
                 item: item,
                 isLoading: _loadingSongId == item.id,
-                onPlay: () => _streamSingleSong(item),
+                onPlay: () => _streamSingleSong(item, contextList: allSongs.take(6).toList()),
                 onDownload: () => _downloadSong(item),
               )),
           const SizedBox(height: 16),
         ],
 
-        // 1.5 Song Suggestions (GET /api/songs/[id]/suggestions?limit=10)
+        // 1.5 Song Suggestions (PulseIQ Multi-Seed & Composer Radar)
         if (_suggestedSongs.isNotEmpty) ...[
           _buildSectionHeader(
             title: 'Song Suggestions',
-            subtitle: 'Recommended songs for you',
+            subtitle: (_topPlayed.isNotEmpty || StreamFavoritesService.instance.favorites.isNotEmpty)
+                ? 'Curated from your favorite artists & composers'
+                : 'Recommended songs for you',
             icon: Icons.recommend_rounded,
           ),
-          ..._suggestedSongs.take(6).map((item) => _StreamSongTile(
+          ..._suggestedSongs.take(8).map((item) => _StreamSongTile(
                 item: item,
                 isLoading: _loadingSongId == item.id,
-                onPlay: () => _streamSingleSong(item),
+                onPlay: () => _streamSingleSong(item, contextList: _suggestedSongs.take(8).toList()),
                 onDownload: () => _downloadSong(item),
               )),
           const SizedBox(height: 16),
@@ -885,8 +965,64 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         return _StreamSongTile(
           item: item,
           isLoading: _loadingSongId == item.id,
-          onPlay: () => _streamSingleSong(item),
+          onPlay: () => _streamSingleSong(item, songList: _lastPlayedStreamSongs),
           onDownload: () => _downloadSong(item),
+        );
+      },
+    );
+  }
+
+  Widget _buildFavoritesView() {
+    return StreamBuilder<List<Song>>(
+      stream: StreamFavoritesService.instance.onFavoritesChanged,
+      initialData: StreamFavoritesService.instance.favorites,
+      builder: (context, snapshot) {
+        final favorites = snapshot.data ?? StreamFavoritesService.instance.favorites;
+        if (favorites.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.favorite_border_rounded,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No stream favorites yet',
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Tap the heart icon on any streamed song to add it here',
+                  style: GoogleFonts.outfit(
+                    fontSize: 14,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.only(top: 8, bottom: 120),
+          itemCount: favorites.length,
+          separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+          itemBuilder: (ctx, index) {
+            final song = favorites[index];
+            final item = song.toJioSaavnItem();
+            return _StreamSongTile(
+              item: item,
+              isLoading: _loadingSongId == item.id,
+              onPlay: () => _streamSingleSong(item, songList: favorites),
+              onDownload: () => _downloadSong(item),
+            );
+          },
         );
       },
     );
@@ -908,7 +1044,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         return _StreamSongTile(
           item: item,
           isLoading: _loadingSongId == item.id,
-          onPlay: () => _streamSingleSong(item),
+          onPlay: () => _streamSingleSong(item, contextList: songs),
           onDownload: () => _downloadSong(item),
         );
       },
@@ -1041,7 +1177,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             item: item,
             onTap: () {
               if (item.isSong) {
-                _streamSingleSong(item);
+                _streamSingleSong(item, contextList: items.where((i) => i.isSong).toList());
               } else {
                 _openAlbumDetails(item);
               }
