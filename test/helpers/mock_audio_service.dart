@@ -51,7 +51,7 @@ class MockAudioPlayerService implements AudioPlayerService {
   @override
   Duration get position => _position;
 
-  Duration? _duration = const Duration(minutes: 3);
+  final Duration _duration = const Duration(minutes: 3);
   @override
   Duration? get duration => _duration;
 

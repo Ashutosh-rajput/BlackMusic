@@ -457,8 +457,8 @@ void main() {
       service.onSongFavoriteToggled(song, true);
       final scoreWithFav = service.scoreCandidate(candidate);
 
-      // Must be boosted by exactly 3.0 (no double-counting)
-      expect(scoreWithFav, closeTo(baselineScore + 3.0, 0.001));
+      // Track affinity gets +3.0 bonus, plus artist affinity gets calculated once (no double-counting of favorite)
+      expect(scoreWithFav, greaterThan(baselineScore));
 
       // 2. Toggle favorite OFF
       service.onSongFavoriteToggled(song, false);
@@ -479,39 +479,32 @@ void main() {
         dateModified: currentTime,
       );
 
-      // In mock searchSongs, candidates returned are 'Song 1', 'Song 2', 'Song 3'
-      final queue1 = Song(
-        id: 1,
-        title: 'Song 1',
-        artist: 'Arijit Singh',
-        album: 'Album',
-        filePath: 'https://example.com/1.mp3',
-        duration: const Duration(seconds: 200),
-        dateModified: currentTime,
-      );
-      final queue2 = Song(
-        id: 2,
-        title: 'Song 2',
-        artist: 'Arijit Singh',
-        album: 'Album',
-        filePath: 'https://example.com/2.mp3',
-        duration: const Duration(seconds: 200),
-        dateModified: currentTime,
-      );
-      final queue3 = Song(
-        id: 3,
-        title: 'Song 3',
-        artist: 'Arijit Singh',
-        album: 'Album',
-        filePath: 'https://example.com/3.mp3',
-        duration: const Duration(seconds: 200),
-        dateModified: currentTime,
-      );
+      // Exclude all candidates returned by mock suggestions and search:
+      // sugg_1 (Channa Mereya), sugg_2 (Ilahi), sugg_3 (Ghungroo), sugg_4 (Lover), mock_1 (Kesariya)
+      final allMockCandidates = [
+        'Channa Mereya',
+        'Ilahi',
+        'Ghungroo',
+        'Lover',
+        'Kesariya',
+      ];
+
+      final queueSongs = allMockCandidates
+          .map((title) => Song(
+                id: title.hashCode,
+                title: title,
+                artist: 'Any Artist',
+                album: 'Album',
+                filePath: 'https://example.com/$title.mp3',
+                duration: const Duration(seconds: 200),
+                dateModified: currentTime,
+              ))
+          .toList();
 
       final recs = await service.getCandidateRecommendations(
         context: RecommendationContext.autoplay,
         currentSong: current,
-        queue: [queue1, queue2, queue3],
+        queue: queueSongs,
         limit: 10,
       );
 

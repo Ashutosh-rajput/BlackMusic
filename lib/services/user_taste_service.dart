@@ -554,8 +554,8 @@ class UserTasteService {
     final remaining = List<JioSaavnItem>.from(candidates);
 
     // Reserve exploration slots so MMR does not saturate all slots before exploration runs (Finding 4)
-    final totalExplorationSlots = (explorationRate > 0 && candidates.length > 1)
-        ? (maxResults * explorationRate).round().clamp(1, max(1, maxResults ~/ 2))
+    final int totalExplorationSlots = (explorationRate > 0 && candidates.length > 1)
+        ? (maxResults * explorationRate).round().clamp(1, max(1, maxResults ~/ 2)).toInt()
         : 0;
     final targetMMRSlots = max(1, maxResults - totalExplorationSlots);
 
@@ -629,7 +629,9 @@ class UserTasteService {
           break;
         }
       }
-      fallbackCandidate ??= remaining.first;
+      if (fallbackCandidate == null) {
+        break; // Quota saturated for all remaining candidates; preserve artist diversity limits
+      }
 
       selected.add(fallbackCandidate);
       remaining.remove(fallbackCandidate);
