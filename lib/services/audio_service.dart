@@ -147,7 +147,7 @@ class AudioPlayerService {
       }
 
       final validQueue = queue?.where((s) => s.filePath.trim().isNotEmpty).toList();
-      if (validQueue != null && validQueue.length > 1) {
+      if (validQueue != null && validQueue.isNotEmpty) {
         final activeSong = songInfo ?? validQueue.firstWhere(
           (s) => s.filePath == path,
           orElse: () => validQueue.first,
@@ -207,6 +207,25 @@ class AudioPlayerService {
       if (e.toString().contains('Loading interrupted')) return;
       _logger.e('Error playing audio queue: $e');
       rethrow;
+    }
+  }
+
+  /// Appends songs dynamically to the running ConcatenatingAudioSource.
+  Future<void> addSongsToQueue(List<Song> songs) async {
+    final validSongs = songs.where((s) => s.filePath.trim().isNotEmpty).toList();
+    if (validSongs.isEmpty) return;
+    try {
+      final source = _audioPlayer?.audioSource;
+      // ignore: deprecated_member_use
+      if (source is ConcatenatingAudioSource) {
+        final newSources = validSongs.map(_buildAudioSource).toList();
+        await source.addAll(newSources);
+        _logger.i('AudioPlayerService: Added ${newSources.length} songs to ConcatenatingAudioSource.');
+      } else {
+        _logger.w('AudioPlayerService: Current audioSource is not ConcatenatingAudioSource ($source).');
+      }
+    } catch (e) {
+      _logger.w('AudioPlayerService: Error adding songs to queue: $e');
     }
   }
 

@@ -205,3 +205,7 @@ class StartRadioEvent extends PlayerEvent {
   List<Object?> get props => [song];
 }
 
+class AutoExpandQueueEvent extends PlayerEvent {
+  const AutoExpandQueueEvent();
+}
+

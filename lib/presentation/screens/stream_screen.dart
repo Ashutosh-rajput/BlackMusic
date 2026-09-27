@@ -416,20 +416,6 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         if (mounted) _loadLastPlayedSongs();
       });
 
-      if (!fromSearch && queueToPlay.length <= 2) {
-        UserTasteService.instance.getRecommendations(
-          context: RecommendationContext.autoplay,
-          currentSong: song,
-          queue: queueToPlay,
-          recentHistory: _lastPlayedStreamSongs,
-          lang: _currentLang,
-          limit: 15,
-        ).then((suggestions) {
-          if (mounted && suggestions.isNotEmpty) {
-            context.read<PlayerBloc>().add(AddSongsToQueueEvent(suggestions));
-          }
-        }).catchError((_) {});
-      }
 
       UserTasteService.instance.getCandidateRecommendations(
         context: RecommendationContext.home,

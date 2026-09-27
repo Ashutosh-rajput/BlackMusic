@@ -41,6 +41,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   bool _isChangingSong = false;
   int _consecutiveFailures = 0;
   int _playGeneration = 0;
+  bool _isExpandingQueue = false;
 
   void _showToast(String message) {
     try {
@@ -91,6 +92,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<DurationChangedEvent>(_onDurationChanged);
     on<TrackChangedEvent>(_onTrackChanged);
     on<StartRadioEvent>(_onStartRadio);
+    on<AutoExpandQueueEvent>(_onAutoExpandQueue);
 
     _listenToStreams();
     add(const RestoreLastPlayedEvent());
@@ -419,6 +421,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
     _consecutiveFailures = 0;
     await _playSongInternal(event.song, emit);
+    add(const AutoExpandQueueEvent());
   }
 
   Future<void> _onPlayQueue(PlayQueueEvent event, Emitter<PlayerState> emit) async {
@@ -439,12 +442,14 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _consecutiveFailures = 0;
     _currentSong = null;
     await _playSongInternal(targetSong, emit);
+    add(const AutoExpandQueueEvent());
   }
 
   Future<void> _onPlaySongAtIndex(PlaySongAtIndexEvent event, Emitter<PlayerState> emit) async {
     if (event.index < 0 || event.index >= _queue.length) return;
     _consecutiveFailures = 0;
     await _playSongInternal(_queue[event.index], emit);
+    add(const AutoExpandQueueEvent());
   }
 
   Future<void> _onInsertNext(InsertNextEvent event, Emitter<PlayerState> emit) async {
@@ -766,29 +771,19 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       UserTasteService.instance.onSongSkipped(_currentSong!, isManual: true);
     }
     _consecutiveFailures = 0;
-    final nextSong = _getNextSong(_currentSong!);
+    var nextSong = _getNextSong(_currentSong!);
     if (nextSong != null) {
       await _playSongInternal(nextSong, emit);
+      add(const AutoExpandQueueEvent());
     } else if (_autoPlayNext && _currentSong != null) {
-      try {
-        final recent = _repository != null
-            ? await _repository.getLastPlayedStreamSongs(limit: 20)
-            : <Song>[];
-        final recs = await UserTasteService.instance.getRecommendations(
-          context: RecommendationContext.autoplay,
-          currentSong: _currentSong,
-          queue: _queue,
-          recentHistory: recent,
-          limit: 10,
-        );
-        if (recs.isNotEmpty) {
-          _queue.addAll(recs);
-          _originalQueue.addAll(recs);
-          _emitUpdatedQueueState(emit);
-          await _playSongInternal(recs.first, emit);
-          return;
-        }
-      } catch (_) {}
+      // Reached the end of the queue: fetch more songs immediately and continue playback
+      await _expandQueueInternal(emit);
+      nextSong = _getNextSong(_currentSong!);
+      if (nextSong != null) {
+        await _playSongInternal(nextSong, emit);
+        add(const AutoExpandQueueEvent());
+        return;
+      }
       add(const PauseEvent());
       await _audioService.seek(Duration.zero);
     } else {
@@ -851,6 +846,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _repository?.updateSong(event.song, notify: false);
     _repository?.recordSongPlay(event.song);
     UserTasteService.instance.onSongStarted(event.song);
+    add(const AutoExpandQueueEvent());
 
     final dur = event.song.duration;
     if (state is PlayerPlaying) {
@@ -924,6 +920,94 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   void _onSetAutoPlayNext(SetAutoPlayNextEvent event, Emitter<PlayerState> emit) {
     _autoPlayNext = event.autoPlayNext;
+  }
+
+  Future<void> _onAutoExpandQueue(
+    AutoExpandQueueEvent event,
+    Emitter<PlayerState> emit,
+  ) async {
+    await _expandQueueInternal(emit);
+  }
+
+  Future<void> _expandQueueInternal(Emitter<PlayerState> emit) async {
+    if (!_autoPlayNext || _repeatMode == 'One' || _isExpandingQueue) return;
+    if (_queue.isEmpty) return;
+
+    final currentId = _currentSong?.id;
+    final currentIndex = currentId != null
+        ? _queue.indexWhere((s) => s.id == currentId)
+        : -1;
+
+    // Expand whenever we are within 3 tracks of the end of the queue
+    final remaining = currentIndex != -1 ? (_queue.length - 1 - currentIndex) : 0;
+    if (remaining > 3) return;
+
+    _isExpandingQueue = true;
+    try {
+      final seedSong = _queue.isNotEmpty ? _queue.last : _currentSong;
+      if (seedSong == null) return;
+
+      final recent = _repository != null
+          ? await _repository.getLastPlayedStreamSongs(limit: 20)
+          : <Song>[];
+
+      List<Song> recs = await UserTasteService.instance.getRecommendations(
+        context: RecommendationContext.autoplay,
+        currentSong: seedSong,
+        queue: _queue,
+        recentHistory: recent,
+        limit: 15,
+      );
+
+      // Fallback 1: Stream cache
+      if (recs.isEmpty) {
+        final cached = StreamCacheService.instance.getCachedSongs();
+        if (cached.isNotEmpty) {
+          final existingIds = _queue.map((s) => s.id).toSet();
+          recs = cached.where((s) => !existingIds.contains(s.id)).take(15).toList();
+        }
+      }
+
+      // Fallback 2: Local library songs
+      if (recs.isEmpty && _repository != null) {
+        final localSongs = await _repository.getAllSongs();
+        if (localSongs.isNotEmpty) {
+          final existingIds = _queue.map((s) => s.id).toSet();
+          final available = localSongs.where((s) => !existingIds.contains(s.id)).toList();
+          if (available.isNotEmpty) {
+            available.shuffle();
+            recs = available.take(15).toList();
+          }
+        }
+      }
+
+      if (recs.isNotEmpty) {
+        final existingIds = _queue.map((s) => s.id).toSet();
+        final existingKeys = _queue.map((s) => s.canonicalKey).toSet();
+        final existingTitles = _queue.map((s) => s.title.trim().toLowerCase()).toSet();
+
+        final newTracks = recs.where((s) {
+          if (existingIds.contains(s.id)) return false;
+          if (existingKeys.contains(s.canonicalKey)) return false;
+          final normTitle = s.title.trim().toLowerCase();
+          if (normTitle.isNotEmpty && existingTitles.contains(normTitle)) return false;
+          return s.filePath.trim().isNotEmpty || s.source == 'jiosaavn';
+        }).toList();
+
+        if (newTracks.isNotEmpty) {
+          _queue.addAll(newTracks);
+          _originalQueue.addAll(newTracks);
+
+          await _audioService.addSongsToQueue(newTracks);
+          _emitUpdatedQueueState(emit);
+          debugPrint('PulseIQ: Auto-expanded queue with ${newTracks.length} tracks (Total: ${_queue.length})');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error expanding playback queue: $e');
+    } finally {
+      _isExpandingQueue = false;
+    }
   }
 
   @override

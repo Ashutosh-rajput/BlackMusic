@@ -93,6 +93,11 @@ class MockAudioPlayerService implements AudioPlayerService {
   }
 
   @override
+  Future<void> addSongsToQueue(List<Song> songs) async {
+    _queue.addAll(songs);
+  }
+
+  @override
   Future<void> pause() async {
     _isPlaying = false;
     _playingController.add(false);
