@@ -1,7 +1,6 @@
-import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
-import 'package:sqlite3_flutter_libs/sqlite3_flutter_libs.dart';
+import 'package:pixel_player/data/database/platform_workaround/platform_workaround.dart';
 
 part 'app_database.g.dart';
 
@@ -326,9 +325,7 @@ class AppDatabase extends _$AppDatabase {
 
 
 QueryExecutor _openConnection() {
-  if (Platform.isAndroid) {
-    applyWorkaroundToOpenSqlite3OnOldAndroidVersions();
-  }
+  applyPlatformWorkarounds();
   return driftDatabase(
     name: 'pixel_player_db',
     web: DriftWebOptions(
