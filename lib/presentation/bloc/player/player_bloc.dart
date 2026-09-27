@@ -69,6 +69,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<PlaySongAtIndexEvent>(_onPlaySongAtIndex, transformer: restartable());
     on<InsertNextEvent>(_onInsertNext);
     on<AddToQueueEvent>(_onAddToQueue);
+    on<AddSongsToQueueEvent>(_onAddSongsToQueue);
     on<RemoveFromQueueEvent>(_onRemoveFromQueue);
     on<ReorderQueueEvent>(_onReorderQueue);
     on<ClearQueueEvent>(_onClearQueue);
@@ -281,7 +282,10 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       Song songToPlay = song;
       if (songToPlay.filePath.isEmpty && songToPlay.source == 'jiosaavn') {
         try {
-          final details = await JioSaavnDecoder.fetchSongDetails(songToPlay.id.toString());
+          final lookupKey = (songToPlay.mediaId != null && songToPlay.mediaId!.isNotEmpty)
+              ? songToPlay.mediaId!
+              : songToPlay.id.toString();
+          final details = await JioSaavnDecoder.fetchSongDetails(lookupKey);
           if (generation != _playGeneration) return;
           final streamUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
           if (streamUrl != null && streamUrl.isNotEmpty) {
@@ -399,12 +403,12 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Future<void> _onPlaySong(PlaySongEvent event, Emitter<PlayerState> emit) async {
-    if (event.song.filePath.trim().isEmpty) {
+    if (event.song.filePath.trim().isEmpty && event.song.source != 'jiosaavn') {
       _showToast('Invalid audio stream URL.');
       return;
     }
     if (event.queue != null && event.queue!.isNotEmpty) {
-      final valid = event.queue!.where((s) => s.filePath.trim().isNotEmpty).toList();
+      final valid = event.queue!.where((s) => s.filePath.trim().isNotEmpty || s.source == 'jiosaavn').toList();
       if (valid.isNotEmpty) {
         _queue = List.from(valid);
         _originalQueue = List.from(valid);
@@ -418,7 +422,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Future<void> _onPlayQueue(PlayQueueEvent event, Emitter<PlayerState> emit) async {
-    final validSongs = event.queue.where((s) => s.filePath.trim().isNotEmpty).toList();
+    final validSongs = event.queue.where((s) => s.filePath.trim().isNotEmpty || s.source == 'jiosaavn').toList();
     if (validSongs.isEmpty) return;
     _queue = List.from(validSongs);
     _originalQueue = List.from(validSongs);
@@ -475,6 +479,26 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
 
     _emitUpdatedQueueState(emit);
+  }
+
+  Future<void> _onAddSongsToQueue(AddSongsToQueueEvent event, Emitter<PlayerState> emit) async {
+    final validSongs = event.songs.where((s) => s.filePath.trim().isNotEmpty || s.source == 'jiosaavn').toList();
+    if (validSongs.isEmpty) return;
+
+    if (_queue.isEmpty) {
+      _queue = List.from(validSongs);
+      _originalQueue = List.from(validSongs);
+      await _playSongInternal(validSongs.first, emit);
+      return;
+    }
+
+    final existingIds = _queue.map((s) => s.id).toSet();
+    final toAdd = validSongs.where((s) => !existingIds.contains(s.id)).toList();
+    if (toAdd.isNotEmpty) {
+      _queue.addAll(toAdd);
+      _originalQueue.addAll(toAdd);
+      _emitUpdatedQueueState(emit);
+    }
   }
 
   Future<void> _onRemoveFromQueue(RemoveFromQueueEvent event, Emitter<PlayerState> emit) async {

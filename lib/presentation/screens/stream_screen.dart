@@ -330,7 +330,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     );
   }
 
-  Future<void> _streamSingleSong(JioSaavnItem item) async {
+  Future<void> _streamSingleSong(
+    JioSaavnItem item, {
+    List<JioSaavnItem>? contextQueue,
+    List<Song>? contextSongQueue,
+    bool fromSearch = false,
+  }) async {
     if (_loadingSongId != null) return;
     setState(() => _loadingSongId = item.id);
 
@@ -356,10 +361,42 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       final song = item.toSong(overrideStreamUrl: streamUrl);
       if (!mounted) return;
 
-      context.read<PlayerBloc>().add(PlaySongEvent(song));
+      List<Song> queueToPlay;
+      if (fromSearch) {
+        queueToPlay = [song];
+      } else if (contextSongQueue != null && contextSongQueue.isNotEmpty) {
+        queueToPlay = contextSongQueue.map((s) => s.id == song.id ? song : s).toList();
+        if (!queueToPlay.any((s) => s.id == song.id)) {
+          queueToPlay.insert(0, song);
+        }
+      } else if (contextQueue != null && contextQueue.isNotEmpty) {
+        queueToPlay = contextQueue.map((it) => it.id == item.id ? song : it.toSong()).toList();
+        if (!queueToPlay.any((s) => s.id == song.id)) {
+          queueToPlay.insert(0, song);
+        }
+      } else {
+        queueToPlay = [song];
+      }
+
+      context.read<PlayerBloc>().add(PlaySongEvent(song, queue: queueToPlay));
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) _loadLastPlayedSongs();
       });
+
+      if (!fromSearch && queueToPlay.length <= 2) {
+        UserTasteService.instance.getRecommendations(
+          context: RecommendationContext.autoplay,
+          currentSong: song,
+          queue: queueToPlay,
+          recentHistory: _lastPlayedStreamSongs,
+          lang: _currentLang,
+          limit: 15,
+        ).then((suggestions) {
+          if (mounted && suggestions.isNotEmpty) {
+            context.read<PlayerBloc>().add(AddSongsToQueueEvent(suggestions));
+          }
+        }).catchError((_) {});
+      }
 
       UserTasteService.instance.getCandidateRecommendations(
         context: RecommendationContext.home,
@@ -426,6 +463,18 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         ),
       );
     }
+  }
+
+  void _addSongToQueue(JioSaavnItem item) {
+    final song = item.toSong();
+    context.read<PlayerBloc>().add(AddToQueueEvent(song));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Added "${item.title}" to queue', style: GoogleFonts.outfit()),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   void _onSearchChanged(String query) {
@@ -547,8 +596,9 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           ..._searchSongs.map((song) => _StreamSongTile(
                 item: song,
                 isLoading: _loadingSongId == song.id,
-                onPlay: () => _streamSingleSong(song),
+                onPlay: () => _streamSingleSong(song, fromSearch: true),
                 onDownload: () => _downloadSong(song),
+                onAddToQueue: () => _addSongToQueue(song),
               )),
           const SizedBox(height: 16),
         ],
@@ -762,8 +812,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             return _StreamSongTile(
               item: item,
               isLoading: _loadingSongId == item.id,
-              onPlay: () => _streamSingleSong(item),
+              onPlay: () => _streamSingleSong(
+                item,
+                contextSongQueue: _lastPlayedStreamSongs,
+              ),
               onDownload: () => _downloadSong(item),
+              onAddToQueue: () => _addSongToQueue(item),
             );
           }),
           const SizedBox(height: 16),
@@ -791,8 +845,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                   return _StreamSongTile(
                     item: item,
                     isLoading: _loadingSongId == item.id,
-                    onPlay: () => _streamSingleSong(item),
+                    onPlay: () => _streamSingleSong(
+                      item,
+                      contextSongQueue: favs,
+                    ),
                     onDownload: () => _downloadSong(item),
+                    onAddToQueue: () => _addSongToQueue(item),
                   );
                 }),
                 const SizedBox(height: 16),
@@ -813,8 +871,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           ...allSongs.take(6).map((item) => _StreamSongTile(
                 item: item,
                 isLoading: _loadingSongId == item.id,
-                onPlay: () => _streamSingleSong(item),
+                onPlay: () => _streamSingleSong(
+                  item,
+                  contextQueue: allSongs,
+                ),
                 onDownload: () => _downloadSong(item),
+                onAddToQueue: () => _addSongToQueue(item),
               )),
           const SizedBox(height: 16),
         ],
@@ -831,8 +893,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           ..._suggestedSongs.take(8).map((item) => _StreamSongTile(
                 item: item,
                 isLoading: _loadingSongId == item.id,
-                onPlay: () => _streamSingleSong(item),
+                onPlay: () => _streamSingleSong(
+                  item,
+                  contextQueue: _suggestedSongs,
+                ),
                 onDownload: () => _downloadSong(item),
+                onAddToQueue: () => _addSongToQueue(item),
               )),
           const SizedBox(height: 16),
         ],
@@ -927,8 +993,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         return _StreamSongTile(
           item: item,
           isLoading: _loadingSongId == item.id,
-          onPlay: () => _streamSingleSong(item),
+          onPlay: () => _streamSingleSong(
+            item,
+            contextSongQueue: _lastPlayedStreamSongs,
+          ),
           onDownload: () => _downloadSong(item),
+          onAddToQueue: () => _addSongToQueue(item),
         );
       },
     );
@@ -981,8 +1051,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             return _StreamSongTile(
               item: item,
               isLoading: _loadingSongId == item.id,
-              onPlay: () => _streamSingleSong(item),
+              onPlay: () => _streamSingleSong(
+                item,
+                contextSongQueue: favorites,
+              ),
               onDownload: () => _downloadSong(item),
+              onAddToQueue: () => _addSongToQueue(item),
             );
           },
         );
@@ -1006,8 +1080,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         return _StreamSongTile(
           item: item,
           isLoading: _loadingSongId == item.id,
-          onPlay: () => _streamSingleSong(item),
+          onPlay: () => _streamSingleSong(
+            item,
+            contextQueue: songs,
+          ),
           onDownload: () => _downloadSong(item),
+          onAddToQueue: () => _addSongToQueue(item),
         );
       },
     );
@@ -1139,7 +1217,11 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             item: item,
             onTap: () {
               if (item.isSong) {
-                _streamSingleSong(item);
+                final songItems = items.where((i) => i.isSong).toList();
+                _streamSingleSong(
+                  item,
+                  contextQueue: songItems,
+                );
               } else {
                 _openAlbumDetails(item);
               }
@@ -1157,12 +1239,14 @@ class _StreamSongTile extends StatelessWidget {
   final bool isLoading;
   final VoidCallback onPlay;
   final VoidCallback onDownload;
+  final VoidCallback? onAddToQueue;
 
   const _StreamSongTile({
     required this.item,
     this.isLoading = false,
     required this.onPlay,
     required this.onDownload,
+    this.onAddToQueue,
   });
 
   @override
@@ -1236,14 +1320,22 @@ class _StreamSongTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (onAddToQueue != null)
+            IconButton(
+              icon: const Icon(Icons.playlist_add_rounded, size: 22),
+              tooltip: 'Add to queue',
+              visualDensity: VisualDensity.compact,
+              onPressed: onAddToQueue,
+            ),
           IconButton(
             icon: const Icon(Icons.download_rounded, size: 20),
             tooltip: 'Download',
+            visualDensity: VisualDensity.compact,
             onPressed: isLoading ? null : onDownload,
           ),
           isLoading
               ? const Padding(
-                  padding: EdgeInsets.all(12),
+                  padding: EdgeInsets.all(8),
                   child: SizedBox(
                     width: 20,
                     height: 20,
@@ -1256,6 +1348,7 @@ class _StreamSongTile extends StatelessWidget {
               : IconButton(
                   icon: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF2BC5B4), size: 28),
                   tooltip: 'Stream',
+                  visualDensity: VisualDensity.compact,
                   onPressed: onPlay,
                 ),
         ],
@@ -1432,6 +1525,18 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
     }
   }
 
+  void _addTrackToQueue(JioSaavnItem track) {
+    final song = track.toSong(albumName: widget.item.title);
+    context.read<PlayerBloc>().add(AddToQueueEvent(song));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Added "${track.title}" to queue', style: GoogleFonts.outfit()),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   void _downloadTrack(JioSaavnItem track) {
     final downloadService = getIt<DownloadService>();
     final directUrl = track.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
@@ -1585,14 +1690,22 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   IconButton(
+                                    icon: const Icon(Icons.playlist_add_rounded, size: 22),
+                                    tooltip: 'Add to queue',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => _addTrackToQueue(track),
+                                  ),
+                                  IconButton(
                                     icon: const Icon(Icons.download_rounded, size: 20),
                                     tooltip: 'Download',
+                                    visualDensity: VisualDensity.compact,
                                     onPressed: () => _downloadTrack(track),
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.play_circle_fill_rounded,
                                         color: Color(0xFF2BC5B4), size: 28),
                                     tooltip: 'Stream',
+                                    visualDensity: VisualDensity.compact,
                                     onPressed: () => _streamTrack(index),
                                   ),
                                 ],

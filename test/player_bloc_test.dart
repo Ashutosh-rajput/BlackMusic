@@ -129,5 +129,67 @@ void main() {
       expect(state.queue.length, equals(35));
       expect(state.queue[30].id, equals(130));
     });
+
+    test('AddSongsToQueueEvent appends songs to queue', () async {
+      final states = <PlayerState>[];
+      final sub = playerBloc.stream.listen(states.add);
+
+      playerBloc.add(PlaySongEvent(testSong, queue: [testSong]));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      final extraSongs = [
+        Song(
+          id: 501,
+          title: 'Extra 1',
+          artist: 'Artist',
+          album: 'Album',
+          filePath: 'https://stream.saavn.com/501.mp4',
+          duration: const Duration(minutes: 3),
+          dateModified: DateTime.now(),
+          source: 'jiosaavn',
+        ),
+        Song(
+          id: 502,
+          title: 'Extra 2',
+          artist: 'Artist',
+          album: 'Album',
+          filePath: 'https://stream.saavn.com/502.mp4',
+          duration: const Duration(minutes: 3),
+          dateModified: DateTime.now(),
+          source: 'jiosaavn',
+        ),
+      ];
+
+      playerBloc.add(AddSongsToQueueEvent(extraSongs));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      final state = playerBloc.state as PlayerPlaying;
+      expect(state.queue.length, equals(3));
+      expect(state.queue[1].id, equals(501));
+      expect(state.queue[2].id, equals(502));
+      await sub.cancel();
+    });
+
+    test('playing a searched song sets queue to only that song without auto-filling', () async {
+      final searchSong = Song(
+        id: 999,
+        title: 'Searched Hit',
+        artist: 'Search Artist',
+        album: 'Album',
+        filePath: 'https://stream.saavn.com/999.mp4',
+        duration: const Duration(minutes: 3),
+        dateModified: DateTime.now(),
+        source: 'jiosaavn',
+      );
+
+      playerBloc.add(PlaySongEvent(searchSong, queue: [searchSong]));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      final state = playerBloc.state as PlayerPlaying;
+      expect(state.queue.length, equals(1));
+      expect(state.queue.first.id, equals(999));
+    });
   });
 }

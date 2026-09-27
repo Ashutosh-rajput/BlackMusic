@@ -52,6 +52,14 @@ class AddToQueueEvent extends PlayerEvent {
   List<Object?> get props => [song];
 }
 
+class AddSongsToQueueEvent extends PlayerEvent {
+  final List<Song> songs;
+  const AddSongsToQueueEvent(this.songs);
+
+  @override
+  List<Object?> get props => [songs];
+}
+
 class RemoveFromQueueEvent extends PlayerEvent {
   final int index;
   const RemoveFromQueueEvent(this.index);
