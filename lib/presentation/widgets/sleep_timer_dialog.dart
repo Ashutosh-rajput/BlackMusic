@@ -57,7 +57,9 @@ class SleepTimerDialog extends StatelessWidget {
               if (timerService.isActive) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Timer active: ${_formatRemaining(timerService.remainingTime)}',
+                  timerService.mode == SleepTimerMode.endOfSong
+                      ? 'Timer active: At end of current song'
+                      : 'Timer active: ${_formatRemaining(timerService.remainingTime)}',
                   style: GoogleFonts.outfit(
                     color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w600,

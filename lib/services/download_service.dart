@@ -17,7 +17,7 @@ import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
 
 final _logger = Logger();
 
-enum DownloadStatus { queued, downloading, completed, failed, cancelled }
+enum DownloadStatus { queued, downloading, completed, failed, cancelled, paused }
 
 class ActiveDownload {
   final String id;
@@ -68,6 +68,7 @@ class ActiveDownload {
   bool get isDownloading => status == DownloadStatus.downloading;
   bool get isQueued => status == DownloadStatus.queued;
   bool get isFailed => status == DownloadStatus.failed;
+  bool get isPaused => status == DownloadStatus.paused;
 
   ActiveDownload copyWith({
     String? id,
@@ -117,7 +118,77 @@ class DownloadService {
   /// download id also makes the worker safe if the queue becomes concurrent.
   final Map<String, CancelToken> _cancelTokens = {};
   final Map<String, DateTime> _lastProgressUpdate = {};
-  bool _isProcessingQueue = false;
+  bool _isDispatchingQueue = false;
+  final Set<String> _activeWorkerIds = {};
+
+  bool get isProcessingQueue => _activeWorkerIds.isNotEmpty;
+
+  Duration get _downloadTimeout => Duration(
+        seconds: _settingsService?.downloadTimeoutSeconds ?? 60,
+      );
+
+  void _syncDioTimeouts() {
+    final timeout = _downloadTimeout;
+    _dio.options.connectTimeout = timeout;
+    _dio.options.receiveTimeout = timeout;
+    _dio.options.sendTimeout = timeout;
+  }
+
+  Future<bool> _isWifiOrEthernetAvailable() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        includeLoopback: false,
+        type: InternetAddressType.any,
+      );
+      if (interfaces.isEmpty) return false;
+      final names = interfaces.map((i) => i.name.toLowerCase()).toList();
+      final hasWifiOrEthernet = names.any((name) =>
+          name.contains('wlan') ||
+          name.contains('wifi') ||
+          name.contains('eth') ||
+          name.contains('en') ||
+          name.contains('wi-fi') ||
+          name.contains('ethernet') ||
+          name.contains('wlp') ||
+          name.contains('wlo'));
+      if (hasWifiOrEthernet) return true;
+
+      final hasCellular = names.any((name) =>
+          name.contains('rmnet') ||
+          name.contains('ccmni') ||
+          name.contains('pdp') ||
+          name.contains('cellular') ||
+          name.contains('mobile') ||
+          name.contains('radio') ||
+          name.contains('wwan'));
+      if (hasCellular) return false;
+
+      return true;
+    } catch (e) {
+      _logger.w('Failed to inspect network interfaces: $e');
+      return true;
+    }
+  }
+
+  Future<Song?> _findExistingSongInLibrary(String title, {String? artist}) async {
+    try {
+      final songs = await _repository.getAllSongs();
+      final cleanT = title.trim().toLowerCase();
+      final cleanA = artist?.trim().toLowerCase();
+      for (final s in songs) {
+        if (s.title.trim().toLowerCase() == cleanT) {
+          if (cleanA == null || cleanA.isEmpty || s.artist.trim().toLowerCase() == cleanA) {
+            if (File(s.filePath).existsSync()) {
+              return s;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      _logger.w('Error checking library for existing song: $e');
+    }
+    return null;
+  }
 
   final ValueNotifier<List<ActiveDownload>> downloadQueueNotifier =
       ValueNotifier([]);
@@ -413,164 +484,242 @@ class DownloadService {
   }
 
   Future<void> _processQueue() async {
-    if (_isProcessingQueue) return;
-    _isProcessingQueue = true;
-    unawaited(startDownloadKeepAlive());
+    if (_isDispatchingQueue) return;
+    _isDispatchingQueue = true;
 
     try {
-      while (true) {
-        try {
+      if (_settingsService?.downloadOnlyOnWifi == true) {
+        final isWifi = await _isWifiOrEthernetAvailable();
+        if (!isWifi) {
+          _logger.w('Download Wi-Fi only policy active and Wi-Fi is unavailable.');
           final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
-          final nextIndex =
-              list.indexWhere((d) => d.status == DownloadStatus.queued);
-          if (nextIndex == -1) break;
+          bool changed = false;
+          for (int i = 0; i < list.length; i++) {
+            if (list[i].status == DownloadStatus.queued) {
+              list[i] = list[i].copyWith(
+                status: DownloadStatus.paused,
+                statusMessage: 'Paused: Waiting for Wi-Fi',
+              );
+              changed = true;
+            }
+          }
+          if (changed) {
+            downloadQueueNotifier.value = list;
+          }
+          if (_activeWorkerIds.isEmpty) {
+            unawaited(stopDownloadKeepAlive());
+          }
+          return;
+        }
+      }
 
-          final target = list[nextIndex];
-          list[nextIndex] = target.copyWith(
-            status: DownloadStatus.downloading,
-            statusMessage: 'Starting download...',
-          );
-          _cancelTokens[target.id] = CancelToken();
-          downloadQueueNotifier.value = List.from(list);
+      final maxConcurrent =
+          (_settingsService?.maxSimultaneousDownloads ?? 2).clamp(1, 3);
 
-          final autoAddToLibrary = !target.fromShare ||
-              (_settingsService?.autoAddSharedSongs ?? true);
+      while (_activeWorkerIds.length < maxConcurrent) {
+        final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
+        final nextIndex = list.indexWhere(
+          (d) =>
+              d.status == DownloadStatus.queued &&
+              !_activeWorkerIds.contains(d.id),
+        );
+        if (nextIndex == -1) break;
 
-          try {
-            final result = await downloadFromUrl(
-              url: target.url,
-              downloadId: target.id,
-              addToLibrary: autoAddToLibrary,
-              onProgress: (progress, statusMsg) {
-                final now = DateTime.now();
-                final last = _lastProgressUpdate[target.id];
-                if (progress < 1.0 &&
-                    last != null &&
-                    now.difference(last) < const Duration(milliseconds: 100)) {
-                  return;
-                }
-                _lastProgressUpdate[target.id] = now;
-                final currentList =
-                    List<ActiveDownload>.from(downloadQueueNotifier.value);
-                final idx = currentList.indexWhere((d) => d.id == target.id);
-                if (idx != -1 && !currentList[idx].isCancelled) {
-                  final updated = currentList[idx].copyWith(
-                    progress: progress,
-                    statusMessage: statusMsg,
-                    status: progress >= 1.0
-                        ? DownloadStatus.completed
-                        : DownloadStatus.downloading,
-                  );
-                  currentList[idx] = updated;
-                  downloadQueueNotifier.value = currentList;
-                }
-              },
+        final target = list[nextIndex];
+        _activeWorkerIds.add(target.id);
+        unawaited(startDownloadKeepAlive());
+
+        list[nextIndex] = target.copyWith(
+          status: DownloadStatus.downloading,
+          statusMessage: 'Starting download...',
+        );
+        _cancelTokens[target.id] = CancelToken();
+        downloadQueueNotifier.value = List.from(list);
+
+        unawaited(_runQueueWorker(target));
+      }
+
+      if (_activeWorkerIds.isEmpty) {
+        unawaited(stopDownloadKeepAlive());
+      }
+    } finally {
+      _isDispatchingQueue = false;
+    }
+  }
+
+  Future<void> _runQueueWorker(ActiveDownload target) async {
+    final autoAddToLibrary = !target.fromShare ||
+        (_settingsService?.autoAddSharedSongs ?? true);
+
+    try {
+      final result = await downloadFromUrl(
+        url: target.url,
+        downloadId: target.id,
+        addToLibrary: autoAddToLibrary,
+        onProgress: (progress, statusMsg) {
+          final now = DateTime.now();
+          final last = _lastProgressUpdate[target.id];
+          if (progress < 1.0 &&
+              last != null &&
+              now.difference(last) < const Duration(milliseconds: 100)) {
+            return;
+          }
+          _lastProgressUpdate[target.id] = now;
+          final currentList =
+              List<ActiveDownload>.from(downloadQueueNotifier.value);
+          final idx = currentList.indexWhere((d) => d.id == target.id);
+          if (idx != -1 && !currentList[idx].isCancelled) {
+            final updated = currentList[idx].copyWith(
+              progress: progress,
+              statusMessage: statusMsg,
+              status: progress >= 1.0
+                  ? DownloadStatus.completed
+                  : DownloadStatus.downloading,
             );
+            currentList[idx] = updated;
+            downloadQueueNotifier.value = currentList;
+          }
+        },
+      );
 
+      final endList = List<ActiveDownload>.from(downloadQueueNotifier.value);
+      final endIdx = endList.indexWhere((d) => d.id == target.id);
+      if (endIdx != -1) {
+        if (endList[endIdx].isCancelled || result == null) {
+          endList[endIdx] = endList[endIdx].copyWith(
+            status: DownloadStatus.cancelled,
+            statusMessage: 'Cancelled',
+          );
+        } else {
+          endList[endIdx] = await _finalizeCompletedDownload(
+            endList[endIdx],
+            result,
+            autoAddToLibrary,
+          );
+        }
+        downloadQueueNotifier.value = endList;
+      }
+    } catch (e) {
+      final shouldRetry = (_settingsService?.retryFailedDownloads ?? false) &&
+          !_isCancelled(target.id);
+      bool retriedSuccess = false;
+      if (shouldRetry) {
+        _logger.i('Retrying failed download for ${target.title}...');
+        try {
+          final resultRetry = await downloadFromUrl(
+            url: target.url,
+            downloadId: target.id,
+            addToLibrary: autoAddToLibrary,
+            onProgress: (progress, statusMsg) {},
+          );
+          if (resultRetry != null) {
+            retriedSuccess = true;
             final endList =
                 List<ActiveDownload>.from(downloadQueueNotifier.value);
             final endIdx = endList.indexWhere((d) => d.id == target.id);
             if (endIdx != -1) {
-              if (endList[endIdx].isCancelled || result == null) {
-                endList[endIdx] = endList[endIdx].copyWith(
-                  status: DownloadStatus.cancelled,
-                  statusMessage: 'Cancelled',
-                );
-              } else {
-                endList[endIdx] = await _finalizeCompletedDownload(
-                  endList[endIdx],
-                  result,
-                  autoAddToLibrary,
-                );
-              }
+              endList[endIdx] = await _finalizeCompletedDownload(
+                endList[endIdx],
+                resultRetry,
+                autoAddToLibrary,
+              );
               downloadQueueNotifier.value = endList;
             }
-          } catch (e) {
-            final shouldRetry = (_settingsService?.retryFailedDownloads ?? false) &&
-                !_isCancelled(target.id);
-            bool retriedSuccess = false;
-            if (shouldRetry) {
-              _logger.i('Retrying failed download for ${target.title}...');
-              try {
-                final resultRetry = await downloadFromUrl(
-                  url: target.url,
-                  downloadId: target.id,
-                  addToLibrary: autoAddToLibrary,
-                  onProgress: (progress, statusMsg) {},
-                );
-                if (resultRetry != null) {
-                  retriedSuccess = true;
-                  final endList = List<ActiveDownload>.from(downloadQueueNotifier.value);
-                  final endIdx = endList.indexWhere((d) => d.id == target.id);
-                  if (endIdx != -1) {
-                    endList[endIdx] = await _finalizeCompletedDownload(
-                      endList[endIdx],
-                      resultRetry,
-                      autoAddToLibrary,
-                    );
-                    downloadQueueNotifier.value = endList;
-                  }
-                }
-              } catch (_) {}
-            }
-
-            if (!retriedSuccess) {
-              final errList =
-                  List<ActiveDownload>.from(downloadQueueNotifier.value);
-              final errIdx = errList.indexWhere((d) => d.id == target.id);
-              if (errIdx != -1) {
-                if (errList[errIdx].isCancelled) {
-                  errList[errIdx] = errList[errIdx].copyWith(
-                    status: DownloadStatus.cancelled,
-                    statusMessage: 'Cancelled',
-                  );
-                } else {
-                  errList[errIdx] = errList[errIdx].copyWith(
-                    status: DownloadStatus.failed,
-                    statusMessage:
-                        'Failed: ${e.toString().replaceAll("Exception: ", "")}',
-                    errorMessage: e.toString(),
-                  );
-                }
-                downloadQueueNotifier.value = errList;
-              }
-            }
-          } finally {
-            _cancelTokens.remove(target.id);
-            _lastProgressUpdate.remove(target.id);
           }
-        } catch (e, st) {
-          // A bookkeeping/UI failure must not strand later queued downloads.
-          _logger.e('Unexpected queue worker error', error: e, stackTrace: st);
+        } catch (_) {}
+      }
+
+      if (!retriedSuccess) {
+        final errList = List<ActiveDownload>.from(downloadQueueNotifier.value);
+        final errIdx = errList.indexWhere((d) => d.id == target.id);
+        if (errIdx != -1) {
+          if (errList[errIdx].isCancelled) {
+            errList[errIdx] = errList[errIdx].copyWith(
+              status: DownloadStatus.cancelled,
+              statusMessage: 'Cancelled',
+            );
+          } else {
+            errList[errIdx] = errList[errIdx].copyWith(
+              status: DownloadStatus.failed,
+              statusMessage:
+                  'Failed: ${e.toString().replaceAll("Exception: ", "")}',
+              errorMessage: e.toString(),
+            );
+          }
+          downloadQueueNotifier.value = errList;
         }
       }
     } finally {
-      _isProcessingQueue = false;
-      unawaited(stopDownloadKeepAlive());
+      _cancelTokens.remove(target.id);
+      _lastProgressUpdate.remove(target.id);
+      _activeWorkerIds.remove(target.id);
+      unawaited(_processQueue());
     }
   }
 
   /// Cancel active download operation
   void cancelCurrentDownload() {
-    final current = activeDownload;
-    if (current != null) {
-      cancelDownloadByUrl(current.url);
+    for (final id in _activeWorkerIds.toList()) {
+      _cancelTokens[id]?.cancel('User cancelled download');
     }
+    final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
+    for (int i = 0; i < list.length; i++) {
+      if (list[i].status == DownloadStatus.downloading) {
+        list[i] = list[i].copyWith(
+          status: DownloadStatus.cancelled,
+          statusMessage: 'Cancelled',
+        );
+      }
+    }
+    downloadQueueNotifier.value = list;
   }
 
   void cancelDownloadByUrl(String url) {
     final clean = _downloadId(url);
+    _cancelTokens[clean]?.cancel('User cancelled download');
+    _activeWorkerIds.remove(clean);
     final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
     final idx = list.indexWhere((d) => d.id == clean);
     if (idx != -1) {
-      if (list[idx].status == DownloadStatus.downloading) {
-        _cancelTokens[clean]?.cancel('User cancelled download');
-      }
       list[idx] = list[idx].copyWith(
         status: DownloadStatus.cancelled,
         statusMessage: 'Cancelled',
       );
       downloadQueueNotifier.value = list;
+    }
+    unawaited(_processQueue());
+  }
+
+  void retryDownload(String downloadId) {
+    final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
+    final idx = list.indexWhere((d) => d.id == downloadId);
+    if (idx != -1) {
+      list[idx] = list[idx].copyWith(
+        status: DownloadStatus.queued,
+        progress: 0.0,
+        statusMessage: 'Queued...',
+        errorMessage: null,
+      );
+      downloadQueueNotifier.value = list;
+      unawaited(_processQueue());
+    }
+  }
+
+  void resumePausedDownloads() {
+    final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
+    bool changed = false;
+    for (int i = 0; i < list.length; i++) {
+      if (list[i].status == DownloadStatus.paused) {
+        list[i] = list[i].copyWith(
+          status: DownloadStatus.queued,
+          statusMessage: 'Queued...',
+        );
+        changed = true;
+      }
+    }
+    if (changed) {
+      downloadQueueNotifier.value = list;
+      unawaited(_processQueue());
     }
   }
 
@@ -669,8 +818,13 @@ class DownloadService {
       throw Exception('Invalid or empty URL provided.');
     }
 
+    _syncDioTimeouts();
+
     if (_settingsService?.downloadOnlyOnWifi == true) {
-      _logger.i('Download Wi-Fi only policy active.');
+      final isWifi = await _isWifiOrEthernetAvailable();
+      if (!isWifi) {
+        throw Exception('Download blocked: Wi-Fi only policy is active, but Wi-Fi/Ethernet is unavailable.');
+      }
     }
 
     final id = downloadId ?? _downloadId(cleanUrl);
@@ -782,13 +936,25 @@ class DownloadService {
         return null;
       }
 
-      final video = await yt.videos.get(videoId);
+      final video = await yt.videos.get(videoId).timeout(_downloadTimeout);
       final title = _sanitizeFileName(video.title);
       final artist = video.author.isNotEmpty ? video.author : 'YouTube';
       final duration = video.duration ?? Duration.zero;
       final albumArt = video.thumbnails.highResUrl;
 
       _updateQueuedTitle(url, video.title);
+
+      if (_settingsService?.skipAlreadyDownloaded ?? true) {
+        final existingInDb =
+            await _findExistingSongInLibrary(video.title, artist: artist);
+        if (existingInDb != null) {
+          _logger.i(
+              '[YT_DOWNLOAD skipped] "${video.title}" already exists in library, skipping re-download.');
+          onProgress(1.0, 'Already in library, skipped re-download');
+          yt.close();
+          return existingInDb;
+        }
+      }
 
       if (_isCancelled(downloadId) || (cancelToken?.isCancelled ?? false)) {
         yt.close();
@@ -810,8 +976,12 @@ class DownloadService {
         if (_isCancelled(downloadId) || (cancelToken?.isCancelled ?? false)) break;
         try {
           manifest = clients.isEmpty
-              ? await yt.videos.streamsClient.getManifest(videoId, requireWatchPage: false)
-              : await yt.videos.streamsClient.getManifest(videoId, ytClients: clients, requireWatchPage: false);
+              ? await yt.videos.streamsClient
+                  .getManifest(videoId, requireWatchPage: false)
+                  .timeout(_downloadTimeout)
+              : await yt.videos.streamsClient
+                  .getManifest(videoId, ytClients: clients, requireWatchPage: false)
+                  .timeout(_downloadTimeout);
           if (manifest.audioOnly.isNotEmpty || manifest.muxed.isNotEmpty) {
             _logger.i('[YT_DOWNLOAD] Manifest retrieved with clients: ${clients.isEmpty ? "default" : clients.map((c) => c.payload["context"]?["client"]?["clientName"] ?? "client").toList()}');
             break;
@@ -823,7 +993,9 @@ class DownloadService {
 
       if (manifest == null || (manifest.audioOnly.isEmpty && manifest.muxed.isEmpty)) {
         try {
-          manifest = await yt.videos.streamsClient.getManifest(videoId);
+          manifest = await yt.videos.streamsClient
+              .getManifest(videoId)
+              .timeout(_downloadTimeout);
         } catch (e) {
           _logger.e('[YT_DOWNLOAD] Ultimate manifest fallback failed: $e');
         }
@@ -925,7 +1097,7 @@ class DownloadService {
         _logger.i(
             '[YT_DOWNLOAD exists] Local file already exists at $savePath, creating Song model directly.');
         onProgress(1.0, 'Track already exists locally!');
-        return Song(
+        final song = Song(
           id: generateStableId(savePath),
           title: video.title,
           artist: artist,
@@ -940,16 +1112,36 @@ class DownloadService {
           source: 'youtube',
           audioQuality: '${(selectedStream.bitrate.kiloBitsPerSecond).round()} kbps',
         );
+
+        if (addToLibrary) {
+          await _repository.addSong(song);
+        }
+        if (_settingsService?.downloadNotifications ?? true) {
+          unawaited(_notificationService.cancelNotification(notifId));
+          unawaited(_notificationService.showDownloadCompleted(
+            id: notifId,
+            title: video.title,
+            subTitle: addToLibrary
+                ? '${video.title} downloaded successfully'
+                : '${video.title} downloaded — open BlackMusic to add it to your library',
+          ));
+        } else {
+          unawaited(_notificationService.cancelNotification(notifId));
+        }
+        yt.close();
+        return song;
       }
 
       final initialStatus = 'Downloading...';
       onProgress(0.30, initialStatus);
-      unawaited(_notificationService.showDownloadProgress(
-        id: notifId,
-        title: video.title,
-        statusText: initialStatus,
-        progress: 30,
-      ));
+      if (_settingsService?.downloadNotifications ?? true) {
+        unawaited(_notificationService.showDownloadProgress(
+          id: notifId,
+          title: video.title,
+          statusText: initialStatus,
+          progress: 30,
+        ));
+      }
 
       // Primary Downloader Engine: YoutubeExplode streamsClient.get()
       StreamInfo downloadedStream = selectedStream;
@@ -1028,8 +1220,8 @@ class DownloadService {
                 'Origin': 'https://www.youtube.com',
                 'Accept': '*/*',
               },
-              receiveTimeout: const Duration(seconds: 120),
-              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: _downloadTimeout,
+              connectTimeout: _downloadTimeout,
             ),
             onReceiveProgress: (received, total) {
               if (_isCancelled(downloadId) ||
@@ -1045,14 +1237,16 @@ class DownloadService {
                 final totMb = (effectiveTotal / 1024 / 1024).toStringAsFixed(1);
                 onProgress(p.clamp(0.0, 0.95), 'Downloading... ($progressInt%)');
 
-                unawaited(_notificationService
-                    .showDownloadProgress(
-                      id: notifId,
-                      title: video.title,
-                      statusText: '$recMb MB / $totMb MB ($progressInt%)',
-                      progress: progressInt,
-                    )
-                    .catchError((_) {}));
+                if (_settingsService?.downloadNotifications ?? true) {
+                  unawaited(_notificationService
+                      .showDownloadProgress(
+                        id: notifId,
+                        title: video.title,
+                        statusText: '$recMb MB / $totMb MB ($progressInt%)',
+                        progress: progressInt,
+                      )
+                      .catchError((_) {}));
+                }
               }
             },
           );
@@ -1109,13 +1303,15 @@ class DownloadService {
       }
       onProgress(1.0, 'Download complete!');
       unawaited(_notificationService.cancelNotification(notifId));
-      unawaited(_notificationService.showDownloadCompleted(
-        id: notifId,
-        title: video.title,
-        subTitle: addToLibrary
-            ? '${video.title} downloaded successfully'
-            : '${video.title} downloaded — open BlackMusic to add it to your library',
-      ));
+      if (_settingsService?.downloadNotifications ?? true) {
+        unawaited(_notificationService.showDownloadCompleted(
+          id: notifId,
+          title: video.title,
+          subTitle: addToLibrary
+              ? '${video.title} downloaded successfully'
+              : '${video.title} downloaded — open BlackMusic to add it to your library',
+        ));
+      }
       return song;
     } catch (e) {
       if (_isCancelled(downloadId) || (cancelToken?.isCancelled ?? false)) {
@@ -1195,20 +1391,26 @@ class DownloadService {
     String? playlistTitle;
 
     try {
-      onProgress(0, 1, 0.0, 'Fetching playlist details...');
-      try {
-        final playlistId = PlaylistId(url).value;
-        final playlist = await yt.playlists.get(playlistId);
-        if (playlist.title.trim().isNotEmpty) {
-          playlistTitle = playlist.title.trim();
-        }
+      final fetchMetadata =
+          _settingsService?.autoDownloadPlaylistMetadata ?? true;
+      if (fetchMetadata) {
+        onProgress(0, 1, 0.0, 'Fetching playlist details...');
+        try {
+          final playlistId = PlaylistId(url).value;
+          final playlist =
+              await yt.playlists.get(playlistId).timeout(_downloadTimeout);
+          if (playlist.title.trim().isNotEmpty) {
+            playlistTitle = playlist.title.trim();
+          }
 
-        onProgress(0, 1, 0.05, 'Loading playlist tracks...');
-        await for (final video in yt.playlists.getVideos(playlist.id)) {
-          trackUrls.add(video.url);
+          onProgress(0, 1, 0.05, 'Loading playlist tracks...');
+          await for (final video in yt.playlists.getVideos(playlist.id)) {
+            trackUrls.add(video.url);
+          }
+        } catch (e) {
+          _logger.w(
+              '[PLAYLIST_DOWNLOAD] YoutubeExplode playlist stream notice: $e');
         }
-      } catch (e) {
-        _logger.w('[PLAYLIST_DOWNLOAD] YoutubeExplode playlist stream notice: $e');
       }
 
       // HTML Fallback via Dio regex if YoutubeExplode yielded 0 videos or failed
@@ -1326,8 +1528,77 @@ class DownloadService {
       final sanitizedFileName =
           _sanitizeFileName(displayFileName.isEmpty ? 'audio_track.$actualExt' : displayFileName);
       final savePath = '$musicDir/$sanitizedFileName';
+      final notifId = generateStableId(savePath);
+      final titleWithoutExt =
+          itemTitle ?? sanitizedFileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+
+      if (_settingsService?.skipAlreadyDownloaded ?? true) {
+        final existingInDb = await _findExistingSongInLibrary(
+          titleWithoutExt,
+          artist: itemArtist,
+        );
+        if (existingInDb != null) {
+          _logger.i('[DIRECT_DOWNLOAD skipped] "${existingInDb.title}" already exists in library, skipping re-download.');
+          onProgress(1.0, 'Already in library, skipped re-download');
+          return existingInDb;
+        }
+      }
+
+      final existingFile = File(savePath);
+      if (await existingFile.exists() && await existingFile.length() > 0) {
+        _logger.i('[DIRECT_DOWNLOAD exists] Local file already exists at $savePath, creating Song model directly.');
+        final isJioSaavn = source == 'jiosaavn' ||
+            url.contains('saavncdn.com') ||
+            url.contains('jiosaavn') ||
+            (active?.album == 'JioSaavn');
+
+        final finalSource = isJioSaavn ? 'jiosaavn' : (source ?? 'direct');
+        final finalQuality = isJioSaavn ? '320 kbps' : audioQuality;
+
+        final song = Song(
+          id: generateStableId(savePath),
+          title: titleWithoutExt,
+          artist: itemArtist ?? 'Unknown Artist',
+          album: itemAlbum ?? (isJioSaavn ? 'JioSaavn' : 'Downloads'),
+          filePath: savePath,
+          duration: itemDuration ?? const Duration(minutes: 3),
+          fileSize: await existingFile.length(),
+          dateModified: await existingFile.lastModified(),
+          genre: 'Downloaded',
+          albumArtist: itemArtist ?? 'Unknown Artist',
+          albumArt: itemAlbumArt,
+          source: finalSource,
+          audioQuality: finalQuality,
+        );
+
+        if (addToLibrary) {
+          await _repository.addSong(song);
+        }
+        if (_settingsService?.downloadNotifications ?? true) {
+          unawaited(_notificationService.cancelNotification(notifId));
+          unawaited(_notificationService.showDownloadCompleted(
+            id: notifId,
+            title: song.title,
+            subTitle: addToLibrary
+                ? '${song.title} downloaded successfully'
+                : '${song.title} downloaded — open BlackMusic to add it to your library',
+          ));
+        } else {
+          unawaited(_notificationService.cancelNotification(notifId));
+        }
+        onProgress(1.0, 'Track already exists locally!');
+        return song;
+      }
 
       onProgress(0.20, 'Downloading audio file...');
+      if (_settingsService?.downloadNotifications ?? true) {
+        unawaited(_notificationService.showDownloadProgress(
+          id: notifId,
+          title: displayFileName,
+          statusText: 'Downloading $displayFileName...',
+          progress: 20,
+        ));
+      }
 
       await _dio.download(
         url,
@@ -1340,6 +1611,17 @@ class DownloadService {
               p,
               'Downloading $displayFileName... (${(p * 100).toInt()}%)',
             );
+            if (_settingsService?.downloadNotifications ?? true) {
+              final progressInt = (p * 100).toInt();
+              final recMb = (received / 1024 / 1024).toStringAsFixed(1);
+              final totMb = (total / 1024 / 1024).toStringAsFixed(1);
+              unawaited(_notificationService.showDownloadProgress(
+                id: notifId,
+                title: displayFileName,
+                statusText: '$recMb MB / $totMb MB ($progressInt%)',
+                progress: progressInt,
+              ).catchError((_) {}));
+            }
           } else {
             onProgress(0.50, 'Downloading $displayFileName...');
           }
@@ -1348,8 +1630,6 @@ class DownloadService {
 
       final file = File(savePath);
       final length = await file.length();
-      final titleWithoutExt =
-          itemTitle ?? sanitizedFileName.replaceAll(RegExp(r'\.[^.]+$'), '');
 
       // Download thumbnail artwork alongside audio file so it's fully accessible offline
       String? localArtPath;
@@ -1395,6 +1675,16 @@ class DownloadService {
         await _repository.addSong(song);
       }
       onProgress(1.0, 'Download complete!');
+      unawaited(_notificationService.cancelNotification(notifId));
+      if (_settingsService?.downloadNotifications ?? true) {
+        unawaited(_notificationService.showDownloadCompleted(
+          id: notifId,
+          title: song.title,
+          subTitle: addToLibrary
+              ? '${song.title} downloaded successfully'
+              : '${song.title} downloaded — open BlackMusic to add it to your library',
+        ));
+      }
       return song;
     } catch (e) {
       _logger.e('Direct download error: $e');
@@ -1437,14 +1727,16 @@ class DownloadService {
           final totMb = (totalBytes / 1024 / 1024).toStringAsFixed(1);
           onProgress(p.clamp(0.0, 0.95), 'Downloading... ($progressInt%)');
 
-          unawaited(_notificationService
-              .showDownloadProgress(
-                id: notifId,
-                title: videoTitle,
-                statusText: '$recMb MB / $totMb MB ($progressInt%)',
-                progress: progressInt,
-              )
-              .catchError((_) {}));
+          if (_settingsService?.downloadNotifications ?? true) {
+            unawaited(_notificationService
+                .showDownloadProgress(
+                  id: notifId,
+                  title: videoTitle,
+                  statusText: '$recMb MB / $totMb MB ($progressInt%)',
+                  progress: progressInt,
+                )
+                .catchError((_) {}));
+          }
         }
       }
       await sink.flush();

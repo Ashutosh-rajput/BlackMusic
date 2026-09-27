@@ -173,6 +173,7 @@ class StreamCacheService {
   List<StreamCacheEntry> get entries => _entries.values.toList();
 
   final List<_CacheQueueItem> _queue = [];
+  final Map<int, CancelToken> _activeCancelTokens = {};
   bool _isProcessingQueue = false;
 
   /// Asynchronously caches a stream song to disk, maintaining the max 50 entries limit.
@@ -239,6 +240,8 @@ class StreamCacheService {
       return null;
     }
 
+    final cancelToken = CancelToken();
+    _activeCancelTokens[song.id] = cancelToken;
     _downloadingIds.add(song.id);
 
     try {
@@ -253,11 +256,14 @@ class StreamCacheService {
         } catch (_) {}
       }
 
+      if (cancelToken.isCancelled) return null;
+
       final dio = Dio();
       try {
         await dio.download(
           path,
           tempFilePath,
+          cancelToken: cancelToken,
           options: Options(
             headers: const {
               'User-Agent':
@@ -269,6 +275,15 @@ class StreamCacheService {
         );
       } finally {
         dio.close();
+      }
+
+      if (cancelToken.isCancelled) {
+        if (await tempFile.exists()) {
+          try {
+            await tempFile.delete();
+          } catch (_) {}
+        }
+        return null;
       }
 
       if (await tempFile.exists() && await tempFile.length() > 0) {
@@ -295,8 +310,13 @@ class StreamCacheService {
         return targetFilePath;
       }
     } catch (e) {
-      debugPrint('StreamCache: Error caching song ${song.title}: $e');
+      if (e is DioException && CancelToken.isCancel(e)) {
+        debugPrint('StreamCache: Download cancelled for "${song.title}"');
+      } else {
+        debugPrint('StreamCache: Error caching song ${song.title}: $e');
+      }
     } finally {
+      _activeCancelTokens.remove(song.id);
       _downloadingIds.remove(song.id);
     }
     return null;
@@ -347,6 +367,15 @@ class StreamCacheService {
   /// Deletes all cached stream songs and clears index.
   Future<void> clearAllCache() async {
     try {
+      // 1. Cancel in-flight active downloads
+      for (final cancelToken in _activeCancelTokens.values) {
+        if (!cancelToken.isCancelled) {
+          cancelToken.cancel('Cache cleared');
+        }
+      }
+      _activeCancelTokens.clear();
+
+      // 2. Clear queued items and resolve completers
       for (final item in _queue) {
         if (!item.completer.isCompleted) {
           item.completer.complete(null);

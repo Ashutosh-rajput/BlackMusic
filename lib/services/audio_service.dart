@@ -263,6 +263,12 @@ class AudioPlayerService {
 
   Stream<Duration?> get durationStream => player.durationStream;
 
+  int? get currentIndex => _audioPlayer?.currentIndex;
+
+  Duration get position => _audioPlayer?.position ?? Duration.zero;
+
+  Duration? get duration => _audioPlayer?.duration;
+
   bool get isPlaying => _audioPlayer?.playing ?? false;
 
   void dispose() {

@@ -330,12 +330,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     );
   }
 
-  Future<void> _streamSingleSong(
-    JioSaavnItem item, {
-    List<JioSaavnItem>? contextList,
-    List<Song>? songList,
-    bool isFromSearch = false,
-  }) async {
+  Future<void> _streamSingleSong(JioSaavnItem item) async {
     if (_loadingSongId != null) return;
     setState(() => _loadingSongId = item.id);
 
@@ -361,47 +356,10 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       final song = item.toSong(overrideStreamUrl: streamUrl);
       if (!mounted) return;
 
-      List<Song>? queue;
-      if (isFromSearch) {
-        // When played from search, play ONLY this song without filling search results into the queue
-        queue = [song];
-      } else {
-        if (songList != null && songList.isNotEmpty) {
-          queue = List<Song>.from(songList);
-          final idx = queue.indexWhere((s) => s.id == song.id);
-          if (idx != -1) {
-            queue[idx] = song;
-          } else {
-            queue.insert(0, song);
-          }
-        } else if (contextList != null && contextList.isNotEmpty) {
-          queue = contextList.where((i) => i.isSong).map((i) {
-            if (i.id == item.id) return song;
-            return i.toSong();
-          }).where((s) => s.filePath.trim().isNotEmpty).toList();
-
-          if (!queue.any((s) => s.id == song.id)) {
-            queue.insert(0, song);
-          }
-        } else {
-          queue = [song];
-        }
-      }
-
-      context.read<PlayerBloc>().add(PlaySongEvent(song, queue: queue));
-      getIt<MusicRepository>().recordSongPlay(song);
-      _loadLastPlayedSongs();
-
-      // If played from stream (not search) and the queue only had 1 song, auto-fill queue with smart recommendations
-      if (!isFromSearch && queue.length <= 1 && item.id.isNotEmpty) {
-        UserTasteService.instance.getSmartAutoplayRecommendations(song, limit: 10).then((recs) {
-          if (recs.isNotEmpty && mounted) {
-            for (final rec in recs) {
-              context.read<PlayerBloc>().add(AddToQueueEvent(rec));
-            }
-          }
-        }).catchError((_) {});
-      }
+      context.read<PlayerBloc>().add(PlaySongEvent(song));
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) _loadLastPlayedSongs();
+      });
 
       if (item.id.isNotEmpty) {
         JioSaavnDecoder.fetchSongSuggestions(item.id, limit: 10).then((suggestions) {
@@ -585,7 +543,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           ..._searchSongs.map((song) => _StreamSongTile(
                 item: song,
                 isLoading: _loadingSongId == song.id,
-                onPlay: () => _streamSingleSong(song, isFromSearch: true),
+                onPlay: () => _streamSingleSong(song),
                 onDownload: () => _downloadSong(song),
               )),
           const SizedBox(height: 16),
@@ -800,7 +758,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             return _StreamSongTile(
               item: item,
               isLoading: _loadingSongId == item.id,
-              onPlay: () => _streamSingleSong(item, songList: _lastPlayedStreamSongs.take(5).toList()),
+              onPlay: () => _streamSingleSong(item),
               onDownload: () => _downloadSong(item),
             );
           }),
@@ -829,7 +787,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                   return _StreamSongTile(
                     item: item,
                     isLoading: _loadingSongId == item.id,
-                    onPlay: () => _streamSingleSong(item, songList: favs.take(5).toList()),
+                    onPlay: () => _streamSingleSong(item),
                     onDownload: () => _downloadSong(item),
                   );
                 }),
@@ -851,7 +809,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           ...allSongs.take(6).map((item) => _StreamSongTile(
                 item: item,
                 isLoading: _loadingSongId == item.id,
-                onPlay: () => _streamSingleSong(item, contextList: allSongs.take(6).toList()),
+                onPlay: () => _streamSingleSong(item),
                 onDownload: () => _downloadSong(item),
               )),
           const SizedBox(height: 16),
@@ -869,7 +827,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           ..._suggestedSongs.take(8).map((item) => _StreamSongTile(
                 item: item,
                 isLoading: _loadingSongId == item.id,
-                onPlay: () => _streamSingleSong(item, contextList: _suggestedSongs.take(8).toList()),
+                onPlay: () => _streamSingleSong(item),
                 onDownload: () => _downloadSong(item),
               )),
           const SizedBox(height: 16),
@@ -965,7 +923,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         return _StreamSongTile(
           item: item,
           isLoading: _loadingSongId == item.id,
-          onPlay: () => _streamSingleSong(item, songList: _lastPlayedStreamSongs),
+          onPlay: () => _streamSingleSong(item),
           onDownload: () => _downloadSong(item),
         );
       },
@@ -1019,7 +977,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             return _StreamSongTile(
               item: item,
               isLoading: _loadingSongId == item.id,
-              onPlay: () => _streamSingleSong(item, songList: favorites),
+              onPlay: () => _streamSingleSong(item),
               onDownload: () => _downloadSong(item),
             );
           },
@@ -1044,7 +1002,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         return _StreamSongTile(
           item: item,
           isLoading: _loadingSongId == item.id,
-          onPlay: () => _streamSingleSong(item, contextList: songs),
+          onPlay: () => _streamSingleSong(item),
           onDownload: () => _downloadSong(item),
         );
       },
@@ -1177,7 +1135,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             item: item,
             onTap: () {
               if (item.isSong) {
-                _streamSingleSong(item, contextList: items.where((i) => i.isSong).toList());
+                _streamSingleSong(item);
               } else {
                 _openAlbumDetails(item);
               }

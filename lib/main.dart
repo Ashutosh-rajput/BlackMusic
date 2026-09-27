@@ -17,7 +17,6 @@ import 'package:pixel_player/services/download_service.dart';
 import 'package:pixel_player/services/stream_cache_service.dart';
 import 'package:pixel_player/services/user_taste_service.dart';
 import 'package:pixel_player/services/stream_favorites_service.dart';
-import 'package:pixel_player/services/audio_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -139,13 +138,14 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> with WidgetsBindingObse
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.detached) {
-      try {
-        getIt<AudioPlayerService>().stop();
-      } catch (e) {
-        debugPrint('Error stopping player on app detach: $e');
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      if (getIt.isRegistered<UserTasteService>()) {
+        getIt<UserTasteService>().flush();
       }
     }
+    debugPrint('App lifecycle state changed: $state');
   }
 
   void _initShareIntentListener() {
@@ -165,6 +165,9 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> with WidgetsBindingObse
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _intentDataStreamSubscription?.cancel();
+    if (getIt.isRegistered<UserTasteService>()) {
+      getIt<UserTasteService>().dispose();
+    }
     super.dispose();
   }
 

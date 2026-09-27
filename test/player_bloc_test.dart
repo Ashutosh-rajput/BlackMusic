@@ -86,5 +86,48 @@ void main() {
         emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == testSong2.id)),
       );
     });
+
+    test('rapid play requests cancel superseded request and emit only the latest song', () async {
+      final states = <PlayerState>[];
+      final sub = playerBloc.stream.listen(states.add);
+
+      playerBloc.add(PlaySongEvent(testSong));
+      playerBloc.add(PlaySongEvent(testSong2));
+
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      final playing = playerBloc.state as PlayerPlaying;
+      expect(playing.song.id, equals(testSong2.id));
+
+      final playingStates = states.whereType<PlayerPlaying>().toList();
+      expect(playingStates.last.song.id, equals(testSong2.id));
+      await sub.cancel();
+    });
+
+    test('queues over 25 songs retain full queue without 25-song truncation', () async {
+      final largeQueue = List.generate(
+        35,
+        (i) => Song(
+          id: 100 + i,
+          title: 'Track $i',
+          artist: 'Artist',
+          album: 'Album',
+          filePath: '/music/track$i.mp3',
+          duration: const Duration(minutes: 3),
+          dateModified: DateTime.now(),
+        ),
+      );
+
+      playerBloc.add(PlaySongEvent(largeQueue.first, queue: largeQueue));
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.queue.length == 35)),
+      );
+
+      final state = playerBloc.state as PlayerPlaying;
+      expect(state.queue.length, equals(35));
+      expect(state.queue[30].id, equals(130));
+    });
   });
 }

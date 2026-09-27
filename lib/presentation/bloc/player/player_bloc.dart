@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerEvent, PlayerState;
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/services/audio_service.dart';
@@ -14,6 +15,11 @@ import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
 import 'package:pixel_player/services/stream_cache_service.dart';
 import 'package:pixel_player/services/user_taste_service.dart';
+
+/// Restartable event transformer using RxDart's switchMap to drop superseded play events.
+EventTransformer<E> restartable<E>() {
+  return (events, mapper) => events.switchMap(mapper);
+}
 
 class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   final AudioPlayerService _audioService;
@@ -34,6 +40,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   String _repeatMode = 'Off';
   bool _isChangingSong = false;
   int _consecutiveFailures = 0;
+  int _playGeneration = 0;
 
   void _showToast(String message) {
     try {
@@ -57,9 +64,9 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _repeatMode = settingsService?.repeatMode ?? 'Off';
     _isRepeat = _repeatMode != 'Off';
 
-    on<PlaySongEvent>(_onPlaySong);
-    on<PlayQueueEvent>(_onPlayQueue);
-    on<PlaySongAtIndexEvent>(_onPlaySongAtIndex);
+    on<PlaySongEvent>(_onPlaySong, transformer: restartable());
+    on<PlayQueueEvent>(_onPlayQueue, transformer: restartable());
+    on<PlaySongAtIndexEvent>(_onPlaySongAtIndex, transformer: restartable());
     on<InsertNextEvent>(_onInsertNext);
     on<AddToQueueEvent>(_onAddToQueue);
     on<RemoveFromQueueEvent>(_onRemoveFromQueue);
@@ -71,8 +78,8 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<SeekEvent>(_onSeek);
     on<SetVolumeEvent>(_onSetVolume);
     on<SetPlaybackRateEvent>(_onSetPlaybackRate);
-    on<NextSongEvent>(_onNextSong);
-    on<PreviousSongEvent>(_onPreviousSong);
+    on<NextSongEvent>(_onNextSong, transformer: restartable());
+    on<PreviousSongEvent>(_onPreviousSong, transformer: restartable());
     on<ToggleShuffleEvent>(_onToggleShuffle);
     on<SetShuffleEvent>(_onSetShuffle);
     on<ToggleRepeatEvent>(_onToggleRepeat);
@@ -251,6 +258,8 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   /// Shared internal play method
   Future<void> _playSongInternal(Song song, Emitter<PlayerState> emit) async {
+    final generation = ++_playGeneration;
+
     if (_currentSong?.id == song.id &&
         state is PlayerPlaying &&
         _audioService.player.playing &&
@@ -273,6 +282,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       if (songToPlay.filePath.isEmpty && songToPlay.source == 'jiosaavn') {
         try {
           final details = await JioSaavnDecoder.fetchSongDetails(songToPlay.id.toString());
+          if (generation != _playGeneration) return;
           final streamUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
           if (streamUrl != null && streamUrl.isNotEmpty) {
             songToPlay = songToPlay.copyWith(filePath: streamUrl);
@@ -281,6 +291,8 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
           }
         } catch (_) {}
       }
+
+      if (generation != _playGeneration) return;
 
       final isRemoteStream = songToPlay.filePath.startsWith('http://') || songToPlay.filePath.startsWith('https://');
       if (isRemoteStream) {
@@ -291,6 +303,10 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       }
 
       await _audioService.play(songToPlay.filePath, songInfo: songToPlay, queue: _queue);
+      if (generation != _playGeneration) return;
+
+      await _updateAudioPlayerRepeatMode();
+      if (generation != _playGeneration) return;
 
       final dur = _audioService.player.duration ?? song.duration;
       Song activeSong = song;
@@ -306,6 +322,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         duration: dur,
         isShuffle: _isShuffle,
         isRepeat: _isRepeat,
+        repeatMode: _repeatMode,
         queue: _queue,
       ));
       _repository?.recordSongPlay(activeSong);
@@ -323,7 +340,9 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _isChangingSong = false;
     } catch (e) {
       _isChangingSong = false;
-      if (e.toString().contains('Loading interrupted')) {
+      if (generation != _playGeneration ||
+          e is PlayerInterruptedException ||
+          e.toString().contains('Loading interrupted')) {
         return;
       }
       _consecutiveFailures++;
@@ -336,6 +355,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         final nextSong = _getNextSong(song);
         if (nextSong != null && nextSong.id != song.id && nextSong.filePath.trim().isNotEmpty) {
           await Future.delayed(const Duration(milliseconds: 300));
+          if (generation != _playGeneration) return;
           await _playSongInternal(nextSong, emit);
           return;
         }
@@ -353,6 +373,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         duration: song.duration,
         isShuffle: _isShuffle,
         isRepeat: _isRepeat,
+        repeatMode: _repeatMode,
         queue: _queue,
       ));
     }
@@ -560,6 +581,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Future<void> _onPause(PauseEvent event, Emitter<PlayerState> emit) async {
+    _playGeneration++;
     final song = (state is PlayerPlaying)
         ? (state as PlayerPlaying).song
         : ((state is PlayerLoading) ? (state as PlayerLoading).song : _currentSong);
@@ -614,6 +636,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Future<void> _onStop(StopEvent event, Emitter<PlayerState> emit) async {
+    _playGeneration++;
     try {
       await _audioService.stop();
       emit(const PlayerStopped());
@@ -814,12 +837,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         queue: List.from(_queue),
       ));
     }
-
-    if (_queue.length > 25 && event.sequenceLength > 0) {
-      if (event.sequenceIndex <= 3 || event.sequenceIndex >= event.sequenceLength - 4) {
-        await _playSongInternal(event.song, emit);
-      }
-    }
   }
 
   Future<void> _onToggleRepeat(ToggleRepeatEvent event, Emitter<PlayerState> emit) async {
@@ -858,7 +875,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     try {
       if (_repeatMode == 'One') {
         await _audioService.setLoopMode(LoopMode.one);
-      } else if (_queue.length > 1) {
+      } else if (_repeatMode == 'All') {
         await _audioService.setLoopMode(LoopMode.all);
       } else {
         await _audioService.setLoopMode(LoopMode.off);

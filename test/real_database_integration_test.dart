@@ -112,6 +112,33 @@ void main() {
       fetchedPlaylists = await repository.getPlaylists();
       expect(fetchedPlaylists.isEmpty, isTrue);
     });
+
+    test('Deleting song cascades and cleans up playlist_songs, lyrics, and play_history', () async {
+      await repository.addSong(song1);
+      final playlist = await repository.createPlaylist('Favorites', null);
+      await repository.addSongToPlaylist(playlist.id, song1);
+      await db.saveLyrics(songId: song1.id, content: 'Some lyrics', format: 'plain');
+      await repository.recordSongPlay(song1);
+
+      // Verify records exist
+      expect(await db.getSongIdsForPlaylist(playlist.id), contains(song1.id));
+      expect(await db.getLyricsBySongId(song1.id), isNotNull);
+      final historyBefore = await db.getPlayHistory();
+      expect(historyBefore.any((h) => h.songId == song1.id), isTrue);
+
+      // Delete the song
+      await repository.deleteSong(song1.id);
+
+      // Verify song is deleted from songs table
+      final allSongs = await repository.getAllSongs();
+      expect(allSongs.any((s) => s.id == song1.id), isFalse);
+
+      // Verify cascade deleted from playlistSongs, lyrics, and playHistory
+      expect(await db.getSongIdsForPlaylist(playlist.id), isEmpty);
+      expect(await db.getLyricsBySongId(song1.id), isNull);
+      final historyAfter = await db.getPlayHistory();
+      expect(historyAfter.any((h) => h.songId == song1.id), isFalse);
+    });
   });
 }
 

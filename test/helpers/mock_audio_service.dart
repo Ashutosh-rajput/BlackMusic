@@ -20,6 +20,14 @@ class MockAudioPlayerService implements AudioPlayerService {
   AudioPlayer get player => _player ??= AudioPlayer();
 
   void emitPlayerState(PlayerState state) => _playerStateController.add(state);
+  void emitCurrentIndex(int? index) {
+    if (index != null) _currentIndex = index;
+    _currentIndexController.add(index);
+  }
+  void emitPosition(Duration position) {
+    _position = position;
+    _positionController.add(position);
+  }
 
   @override
   Stream<PlayerState> get playerStateStream => _playerStateController.stream;
@@ -35,6 +43,17 @@ class MockAudioPlayerService implements AudioPlayerService {
 
   @override
   Stream<int?> get currentIndexStream => _currentIndexController.stream;
+
+  @override
+  int? get currentIndex => _currentIndex;
+
+  Duration _position = Duration.zero;
+  @override
+  Duration get position => _position;
+
+  Duration? _duration = const Duration(minutes: 3);
+  @override
+  Duration? get duration => _duration;
 
   bool _isPlaying = false;
 

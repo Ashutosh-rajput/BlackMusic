@@ -92,10 +92,42 @@ class AppDatabase extends _$AppDatabase {
   // DAO helper methods
   Future<List<Song>> getAllSongs() => select(songs).get();
 
-  Future<int> insertSong(SongsCompanion song) => into(songs).insert(
-        song,
-        mode: InsertMode.insertOrReplace,
+  Future<int> insertSong(SongsCompanion song) async {
+    Song? existing;
+    if (song.id.present) {
+      existing = await (select(songs)..where((t) => t.id.equals(song.id.value))).getSingleOrNull();
+    }
+    if (existing == null && song.filePath.present) {
+      existing = await (select(songs)..where((t) => t.filePath.equals(song.filePath.value))).getSingleOrNull();
+    }
+
+    final existingSong = existing;
+    if (existingSong != null) {
+      final existingId = existingSong.id;
+      final incomingPlayCount = song.playCount.present ? song.playCount.value : 0;
+      final effectivePlayCount = incomingPlayCount > existingSong.playCount
+          ? incomingPlayCount
+          : existingSong.playCount;
+
+      final effectiveLastPlayedAt = (song.lastPlayedAt.present && song.lastPlayedAt.value != null)
+          ? song.lastPlayedAt.value
+          : existingSong.lastPlayedAt;
+
+      final updated = song.copyWith(
+        id: Value(existingId),
+        playCount: Value(effectivePlayCount),
+        lastPlayedAt: Value(effectiveLastPlayedAt),
       );
+
+      await (update(songs)..where((t) => t.id.equals(existingId))).write(updated);
+      return existingId;
+    }
+
+    return into(songs).insert(
+      song,
+      mode: InsertMode.insertOrReplace,
+    );
+  }
 
   Future<void> insertSongsBatch(List<SongsCompanion> songCompanions) {
     return batch((b) {

@@ -136,6 +136,8 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           albumArt: Value(song.albumArt),
           source: Value(song.source),
           audioQuality: Value(song.audioQuality),
+          playCount: song.playCount > 0 ? Value(song.playCount) : const Value.absent(),
+          lastPlayedAt: song.lastPlayedAt != null ? Value(song.lastPlayedAt) : const Value.absent(),
         ),
       );
     } catch (e) {
@@ -162,6 +164,8 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           albumArt: Value(song.albumArt),
           source: Value(song.source),
           audioQuality: Value(song.audioQuality),
+          playCount: song.playCount > 0 ? Value(song.playCount) : const Value.absent(),
+          lastPlayedAt: song.lastPlayedAt != null ? Value(song.lastPlayedAt) : const Value.absent(),
         ),
       );
     } catch (e) {

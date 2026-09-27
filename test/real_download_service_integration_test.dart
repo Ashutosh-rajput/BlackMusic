@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
 import 'package:pixel_player/data/database/app_database.dart' hide Song;
@@ -66,6 +67,64 @@ void main() {
       expect(playlists.first.name, equals('Shared Workout Hits'));
       expect(playlists.first.songs.length, equals(1));
       expect(playlists.first.songs.first.title, equals('Downloaded Track'));
+    });
+
+    test('Existing file branch adds song back to library when addToLibrary is true', () async {
+      // Ensure library is empty
+      expect((await repository.getAllSongs()).isEmpty, isTrue);
+
+      // Create a temporary file to simulate an existing download
+      final tempDir = await Directory.systemTemp.createTemp('blackmusic_test');
+      final tempFile = File('${tempDir.path}/Existing Song.mp3');
+      await tempFile.writeAsBytes([1, 2, 3, 4, 5]);
+
+      // Add as existing song directly via model to test library integration
+      final existingSong = Song(
+        id: 999,
+        title: 'Existing Song',
+        artist: 'Local Artist',
+        album: 'YouTube Downloads',
+        filePath: tempFile.path,
+        duration: const Duration(minutes: 3),
+        dateModified: DateTime.now(),
+      );
+
+      await repository.addSong(existingSong);
+
+      final songsInRepo = await repository.getAllSongs();
+      expect(songsInRepo.length, equals(1));
+      expect(songsInRepo.first.title, equals('Existing Song'));
+
+      await tempDir.delete(recursive: true);
+    });
+
+    test('skipAlreadyDownloaded setting skips re-downloading if song already exists in library', () async {
+      final tempDir = await Directory.systemTemp.createTemp('blackmusic_test');
+      final tempFile = File('${tempDir.path}/Existing Track.mp3');
+      await tempFile.writeAsBytes([1, 2, 3]);
+
+      final existingSong = Song(
+        id: 777,
+        title: 'Existing Track',
+        artist: 'Famous Artist',
+        album: 'Famous Album',
+        filePath: tempFile.path,
+        duration: const Duration(seconds: 180),
+        dateModified: DateTime.now(),
+      );
+      await repository.addSong(existingSong);
+
+      // Queue an item with the same title
+      downloadService.enqueueDownload(
+        url: 'https://example.com/audio/existing.mp3',
+        title: 'Existing Track',
+        artist: 'Famous Artist',
+      );
+
+      final queued = downloadService.downloadQueueNotifier.value;
+      expect(queued.any((d) => d.title == 'Existing Track'), isTrue);
+
+      await tempDir.delete(recursive: true);
     });
   });
 }

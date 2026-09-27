@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:pixel_player/services/audio_service.dart';
 
 enum SleepTimerMode {
@@ -17,6 +18,9 @@ class SleepTimerService extends ChangeNotifier {
   SleepTimerService._internal();
 
   Timer? _timer;
+  StreamSubscription? _endOfSongSubscription;
+  StreamSubscription? _completedSubscription;
+  StreamSubscription? _positionSubscription;
   Duration _remainingTime = Duration.zero;
   SleepTimerMode _mode = SleepTimerMode.off;
 
@@ -34,8 +38,43 @@ class SleepTimerService extends ChangeNotifier {
     }
 
     if (mode == SleepTimerMode.endOfSong) {
+      int? initialIndex = audioService.player.currentIndex;
+      Duration lastPosition = audioService.player.position;
+
+      void onSongEnded() {
+        cancelTimer();
+        audioService.pause();
+      }
+
+      _endOfSongSubscription = audioService.currentIndexStream.listen((index) {
+        if (index == null) return;
+        if (initialIndex == null) {
+          initialIndex = index;
+        } else if (index != initialIndex) {
+          onSongEnded();
+        }
+      });
+
+      _completedSubscription = audioService.playerStateStream.listen((state) {
+        if (state.processingState == ProcessingState.completed) {
+          onSongEnded();
+        }
+      });
+
+      _positionSubscription = audioService.positionStream.listen((pos) {
+        final dur = audioService.player.duration;
+        if (dur != null && dur > Duration.zero) {
+          // Detect loop repeat in LoopMode.one
+          if (lastPosition > Duration.zero &&
+              lastPosition >= dur - const Duration(seconds: 1) &&
+              pos < const Duration(seconds: 1)) {
+            onSongEnded();
+          }
+        }
+        lastPosition = pos;
+      });
+
       notifyListeners();
-      // End of song is handled by checking playback state completion listener
       return;
     }
 
@@ -77,6 +116,12 @@ class SleepTimerService extends ChangeNotifier {
   void cancelTimer() {
     _timer?.cancel();
     _timer = null;
+    _endOfSongSubscription?.cancel();
+    _endOfSongSubscription = null;
+    _completedSubscription?.cancel();
+    _completedSubscription = null;
+    _positionSubscription?.cancel();
+    _positionSubscription = null;
     _remainingTime = Duration.zero;
     _mode = SleepTimerMode.off;
     notifyListeners();
