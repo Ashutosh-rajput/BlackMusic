@@ -219,9 +219,14 @@ class JioSaavnDecoder {
     final type = item['type']?.toString().toLowerCase() ?? 'album';
     final id = item['id']?.toString() ?? '';
     final token = item['token']?.toString() ?? id;
-    final title = item['title']?.toString() ?? '';
+    final title = (item['title'] ?? item['name'])?.toString() ?? '';
     var subtitle = item['subtitle']?.toString() ?? '';
-    final image = (item['image']?.toString() ?? '').replaceAll('150x150', '500x500');
+    if (subtitle.isEmpty && type == 'artist') {
+      subtitle = 'Artist';
+    }
+    final image = (item['image']?.toString() ?? '')
+        .replaceAll('50x50', '500x500')
+        .replaceAll('150x150', '500x500');
     Map<String, dynamic>? moreInfo;
     if (item['more_info'] is Map) {
       moreInfo = Map<String, dynamic>.from(item['more_info'] as Map);
@@ -445,6 +450,58 @@ class JioSaavnDecoder {
       dio.close();
     }
     return [];
+  }
+
+  /// Search artists by query
+  static Future<List<JioSaavnItem>> searchArtists(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) return [];
+    final dio = Dio();
+    try {
+      final resp = await dio.get(
+        '$apiBase/api/artists',
+        queryParameters: {'q': q},
+        options: Options(receiveTimeout: const Duration(seconds: 8)),
+      );
+      final data = resp.data;
+      if (data is Map && data['results'] is List) {
+        return (data['results'] as List)
+            .whereType<Map>()
+            .map((e) => parseItem(Map<String, dynamic>.from(e)))
+            .where((it) => it.title.isNotEmpty)
+            .toList();
+      }
+    } catch (_) {} finally {
+      dio.close();
+    }
+    return [];
+  }
+
+  /// Fetches top tracks/releases for an artist
+  static Future<List<JioSaavnItem>> fetchArtistSongs(String tokenOrName) async {
+    final t = tokenOrName.trim();
+    if (t.isEmpty) return [];
+    final dio = Dio();
+    try {
+      final resp = await dio.get(
+        '$apiBase/api/artist',
+        queryParameters: {'token': t},
+        options: Options(receiveTimeout: const Duration(seconds: 8)),
+      );
+      final data = resp.data;
+      if (data is Map && data['topSongs'] is List) {
+        final list = (data['topSongs'] as List)
+            .whereType<Map>()
+            .map((e) => parseItem(Map<String, dynamic>.from(e)))
+            .where((it) => it.title.isNotEmpty)
+            .toList();
+        if (list.isNotEmpty) return list;
+      }
+    } catch (_) {} finally {
+      dio.close();
+    }
+    // Fallback: search songs by artist name
+    return searchSongs(t);
   }
 
   /// Fetches complete details and direct stream URL for a single song

@@ -91,7 +91,7 @@ class _TasteProfileScreenState extends State<TasteProfileScreen> with SingleTick
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final accentColor = const Color(0xFF2BC5B4);
+    final accentColor = theme.colorScheme.primary;
 
     final songs = UserTasteService.instance.getTrackedSongs(query: _songQuery);
     final artists = UserTasteService.instance.getTrackedArtists(query: _artistQuery);

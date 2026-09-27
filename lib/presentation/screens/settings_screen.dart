@@ -585,8 +585,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     _tileTitle('Accent Color'),
                     const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 10,
                       children: List.generate(_accentColors.length, (idx) {
                         final color = _accentColors[idx];
                         final isSelected = idx == _accentColorIndex;

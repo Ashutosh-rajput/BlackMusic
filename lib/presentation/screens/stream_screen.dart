@@ -42,6 +42,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   bool _isSearchLoading = false;
   List<JioSaavnItem> _searchSongs = [];
   List<JioSaavnItem> _searchAlbums = [];
+  List<JioSaavnItem> _searchArtists = [];
 
   List<JioSaavnItem> _relatedAlbums = [];
   List<JioSaavnItem> _newReleases = [];
@@ -256,12 +257,11 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
 
   void _showLanguageSelector() {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final langs = SettingsService.supportedStreamLanguages;
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? const Color(0xFF1E1E28) : Colors.white,
+      backgroundColor: theme.scaffoldBackgroundColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -274,7 +274,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 child: Row(
                   children: [
-                    const Icon(Icons.language_rounded, color: Color(0xFF2BC5B4), size: 22),
+                    Icon(Icons.language_rounded, color: theme.colorScheme.primary, size: 22),
                     const SizedBox(width: 10),
                     Text(
                       'Select Streaming Language',
@@ -296,11 +296,11 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                         entry.value,
                         style: GoogleFonts.outfit(
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          color: isSelected ? const Color(0xFF2BC5B4) : null,
+                          color: isSelected ? theme.colorScheme.primary : null,
                         ),
                       ),
                       trailing: isSelected
-                          ? const Icon(Icons.check_circle_rounded, color: Color(0xFF2BC5B4))
+                          ? Icon(Icons.check_circle_rounded, color: theme.colorScheme.primary)
                           : null,
                       onTap: () async {
                         Navigator.pop(ctx);
@@ -326,9 +326,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).brightness == Brightness.dark
-          ? const Color(0xFF181824)
-          : Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -343,9 +341,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).brightness == Brightness.dark
-          ? const Color(0xFF181824)
-          : Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -379,7 +375,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               content: Text('Stream proxy could not load "${item.title}". You can download it from YouTube in Library.', style: GoogleFonts.outfit()),
               action: SnackBarAction(
                 label: 'YouTube',
-                textColor: const Color(0xFF2BC5B4),
+                textColor: Theme.of(context).colorScheme.primary,
                 onPressed: () => HomeScreen.switchToTab(0),
               ),
               duration: const Duration(seconds: 5),
@@ -447,7 +443,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             content: Text('Stream proxy error: $e. You can search & download this from YouTube in Library.', style: GoogleFonts.outfit()),
             action: SnackBarAction(
               label: 'Library',
-              textColor: const Color(0xFF2BC5B4),
+              textColor: Theme.of(context).colorScheme.primary,
               onPressed: () => HomeScreen.switchToTab(0),
             ),
             duration: const Duration(seconds: 5),
@@ -508,6 +504,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       setState(() {
         _searchSongs = [];
         _searchAlbums = [];
+        _searchArtists = [];
         _isSearchLoading = false;
       });
       return;
@@ -527,12 +524,14 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       final results = await Future.wait([
         JioSaavnDecoder.searchSongs(q),
         JioSaavnDecoder.searchAlbums(q),
+        JioSaavnDecoder.searchArtists(q),
       ]);
 
       if (!mounted) return;
       setState(() {
         _searchSongs = results[0];
         _searchAlbums = results[1];
+        _searchArtists = results[2];
         _isSearchLoading = false;
       });
     } catch (_) {
@@ -549,19 +548,20 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       _isSearching = false;
       _searchSongs = [];
       _searchAlbums = [];
+      _searchArtists = [];
       _isSearchLoading = false;
     });
   }
 
   Widget _buildSearchResults() {
     if (_isSearchLoading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(color: Color(0xFF2BC5B4)),
-            SizedBox(height: 16),
-            Text('Searching JioSaavn...'),
+            CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 16),
+            const Text('Searching JioSaavn...'),
           ],
         ),
       );
@@ -579,7 +579,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             ),
             const SizedBox(height: 12),
             Text(
-              'Search songs and albums on JioSaavn',
+              'Search songs, albums, and artists on JioSaavn',
               style: GoogleFonts.outfit(
                 fontSize: 16,
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
@@ -590,7 +590,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       );
     }
 
-    if (_searchSongs.isEmpty && _searchAlbums.isEmpty) {
+    if (_searchSongs.isEmpty && _searchAlbums.isEmpty && _searchArtists.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -627,6 +627,14 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               )),
           const SizedBox(height: 16),
         ],
+        if (_searchArtists.isNotEmpty) ...[
+          _buildSectionHeader(
+            title: 'Artists (${_searchArtists.length})',
+            icon: Icons.person_rounded,
+          ),
+          _buildHorizontalCardList(_searchArtists),
+          const SizedBox(height: 16),
+        ],
         if (_searchAlbums.isNotEmpty) ...[
           _buildSectionHeader(
             title: 'Albums (${_searchAlbums.length})',
@@ -644,6 +652,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     super.build(context);
     final langName = SettingsService.supportedStreamLanguages[_currentLang] ?? _currentLang;
     final allSongs = _allSongs;
+    final theme = Theme.of(context);
 
     if (_isSearching) {
       return Scaffold(
@@ -660,9 +669,9 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             style: GoogleFonts.outfit(fontSize: 16),
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
-              hintText: 'Search songs, albums on JioSaavn...',
+              hintText: 'Search songs, albums, and artists on JioSaavn...',
               hintStyle: GoogleFonts.outfit(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
               ),
               border: InputBorder.none,
               suffixIcon: _searchController.text.isNotEmpty
@@ -687,7 +696,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       appBar: AppBar(
         title: Row(
           children: [
-            const Icon(Icons.podcasts_rounded, color: Color(0xFF2BC5B4), size: 24),
+            Icon(Icons.podcasts_rounded, color: theme.colorScheme.primary, size: 24),
             const SizedBox(width: 8),
             Text(
               'Stream',
@@ -705,17 +714,17 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: ActionChip(
-              avatar: const Icon(Icons.language_rounded, size: 16, color: Color(0xFF2BC5B4)),
+              avatar: Icon(Icons.language_rounded, size: 16, color: theme.colorScheme.primary),
               label: Text(
                 langName,
                 style: GoogleFonts.outfit(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: const Color(0xFF2BC5B4),
+                  color: theme.colorScheme.primary,
                 ),
               ),
-              backgroundColor: const Color(0xFF2BC5B4).withValues(alpha: 0.15),
-              side: const BorderSide(color: Color(0xFF2BC5B4), width: 0.8),
+              backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.15),
+              side: BorderSide(color: theme.colorScheme.primary, width: 0.8),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               onPressed: _showLanguageSelector,
             ),
@@ -727,20 +736,20 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         ),
       ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(color: Color(0xFF2BC5B4)),
-                  SizedBox(height: 16),
-                  Text('Loading recommendations...'),
+                  CircularProgressIndicator(color: theme.colorScheme.primary),
+                  const SizedBox(height: 16),
+                  const Text('Loading recommendations...'),
                 ],
               ),
             )
           : _errorMessage != null
               ? _buildStreamFailureView()
               : RefreshIndicator(
-                  color: const Color(0xFF2BC5B4),
+                  color: theme.colorScheme.primary,
                   onRefresh: _loadStreamData,
                   child: _buildBodyContent(langName, allSongs),
                 ),
@@ -775,11 +784,11 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               style: GoogleFonts.outfit(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected ? Colors.black : null,
+                color: isSelected ? Theme.of(context).colorScheme.onPrimary : null,
               ),
             ),
             selected: isSelected,
-            selectedColor: const Color(0xFF2BC5B4),
+            selectedColor: Theme.of(context).colorScheme.primary,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onSelected: (val) {
               if (val) {
@@ -1065,19 +1074,19 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           gradient: LinearGradient(
             colors: isDark
                 ? [
-                    const Color(0xFF1E2A38),
-                    const Color(0xFF18202A),
+                    theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                    theme.colorScheme.surface.withValues(alpha: 0.8),
                   ]
                 : [
-                    const Color(0xFFE8F4FD),
-                    const Color(0xFFF0F8FF),
+                    theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    theme.colorScheme.surface.withValues(alpha: 0.7),
                   ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: const Color(0xFF2BC5B4).withValues(alpha: 0.35),
+            color: theme.colorScheme.primary.withValues(alpha: 0.35),
             width: 1,
           ),
           boxShadow: [
@@ -1098,12 +1107,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2BC5B4).withValues(alpha: 0.18),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.star_rounded,
-                    color: Color(0xFF2BC5B4),
+                    color: theme.colorScheme.primary,
                     size: 24,
                   ),
                 ),
@@ -1126,7 +1135,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF2BC5B4).withValues(alpha: 0.2),
+                              color: theme.colorScheme.primary.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -1134,7 +1143,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                               style: GoogleFonts.outfit(
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
-                                color: const Color(0xFF2BC5B4),
+                                color: theme.colorScheme.primary,
                               ),
                             ),
                           ),
@@ -1170,8 +1179,8 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               children: [
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF2BC5B4),
-                    foregroundColor: Colors.black,
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     shape: RoundedRectangleBorder(
@@ -1188,6 +1197,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                 const SizedBox(width: 8),
                 TextButton.icon(
                   style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.primary,
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   ),
@@ -1232,6 +1242,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   Widget _buildCachedSongsView() {
     final cachedItems = StreamCacheService.instance.getCachedItems();
     final cachedSongs = StreamCacheService.instance.getCachedSongs();
+    final theme = Theme.of(context);
 
     if (cachedItems.isEmpty) {
       return Center(
@@ -1255,19 +1266,19 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               ),
               const SizedBox(height: 8),
               Text(
-                'Songs you stream are automatically saved here (up to 50 songs) for instant offline playback without proxy APIs.\n\nYou can also search and download any song from YouTube via the Library tab.',
+                'Songs you stream are automatically saved here (up to 50 songs) for instant offline playback.\n\nYou can also search and download any song from YouTube via the Library tab.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.outfit(
                   fontSize: 13,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                   height: 1.4,
                 ),
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF2BC5B4),
-                  foregroundColor: Colors.black,
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
                 ),
                 icon: const Icon(Icons.library_music_rounded, size: 18),
                 label: const Text('Go to Library & YouTube'),
@@ -1291,13 +1302,13 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  const Color(0xFF2BC5B4).withValues(alpha: 0.15),
+                  theme.colorScheme.primary.withValues(alpha: 0.15),
                   Colors.green.withValues(alpha: 0.08),
                 ],
               ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: const Color(0xFF2BC5B4).withValues(alpha: 0.3),
+                color: theme.colorScheme.primary.withValues(alpha: 0.3),
               ),
             ),
             child: Row(
@@ -1305,10 +1316,10 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2BC5B4).withValues(alpha: 0.2),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.offline_pin_rounded, color: Color(0xFF2BC5B4), size: 28),
+                  child: Icon(Icons.offline_pin_rounded, color: theme.colorScheme.primary, size: 28),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -1321,10 +1332,10 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Saved locally • Plays 100% offline without proxy API',
+                        'Saved locally • Plays 100% offline',
                         style: GoogleFonts.outfit(
                           fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                         ),
                       ),
                     ],
@@ -1332,8 +1343,8 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                 ),
                 IconButton.filled(
                   style: IconButton.styleFrom(
-                    backgroundColor: const Color(0xFF2BC5B4),
-                    foregroundColor: Colors.black,
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
                   ),
                   icon: const Icon(Icons.play_arrow_rounded, size: 26),
                   tooltip: 'Play All Cached Songs',
@@ -1466,7 +1477,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         if (cachedItems.isNotEmpty) ...[
           _buildSectionHeader(
             title: 'Offline Stream Cache (${cachedItems.length})',
-            subtitle: 'Saved on your device • Plays without proxy API',
+            subtitle: 'Saved on your device • Plays 100% offline',
             icon: Icons.offline_pin_rounded,
             actionLabel: 'Play All',
             onAction: () {
@@ -1615,7 +1626,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               children: [
                 Row(
                   children: [
-                    Icon(icon, size: 20, color: const Color(0xFF2BC5B4)),
+                    Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1646,7 +1657,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               onPressed: onAction,
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
-                foregroundColor: const Color(0xFF2BC5B4),
+                foregroundColor: Theme.of(context).colorScheme.primary,
               ),
               child: Text(actionLabel, style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
             ),
@@ -1730,14 +1741,14 @@ class _StreamSongTile extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
             margin: const EdgeInsets.only(right: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF2BC5B4).withValues(alpha: 0.15),
+              color: theme.colorScheme.primary.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
               '320k',
               style: GoogleFonts.outfit(
                 fontSize: 10,
-                color: const Color(0xFF2BC5B4),
+                color: theme.colorScheme.primary,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -1773,14 +1784,14 @@ class _StreamSongTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (isLoading)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
               child: SizedBox(
                 width: 18,
                 height: 18,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Color(0xFF2BC5B4),
+                  color: theme.colorScheme.primary,
                 ),
               ),
             ),
@@ -1815,10 +1826,16 @@ class _StreamCard extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    final badgeText = item.isSong ? 'SONG' : (item.isAlbum ? 'ALBUM' : 'PLAYLIST');
+    final badgeText = item.isSong
+        ? 'SONG'
+        : (item.isArtist
+            ? 'ARTIST'
+            : (item.isAlbum ? 'ALBUM' : 'PLAYLIST'));
     final badgeColor = item.isSong
-        ? const Color(0xFF2BC5B4)
-        : (item.isAlbum ? Colors.indigoAccent : Colors.amber.shade800);
+        ? theme.colorScheme.primary
+        : (item.isArtist
+            ? Colors.deepPurpleAccent
+            : (item.isAlbum ? Colors.indigoAccent : Colors.amber.shade800));
 
     return InkWell(
       onTap: onTap,
@@ -1832,18 +1849,18 @@ class _StreamCard extends StatelessWidget {
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(item.isArtist ? 70 : 14),
                   child: Container(
                     width: 140,
                     height: 140,
-                    color: isDark ? const Color(0xFF242432) : Colors.grey[200],
+                    color: isDark ? theme.colorScheme.surfaceContainerHighest : Colors.grey[200],
                     child: AlbumArtWidget(
                       albumArt: item.imageUrl,
                       width: 140,
                       height: 140,
                       fallbackIcon: item.isSong
                           ? Icons.music_note_rounded
-                          : Icons.album_rounded,
+                          : (item.isArtist ? Icons.person_rounded : Icons.album_rounded),
                     ),
                   ),
                 ),
@@ -1853,7 +1870,7 @@ class _StreamCard extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2BC5B4),
+                      color: theme.colorScheme.primary,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
@@ -1862,14 +1879,14 @@ class _StreamCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.play_arrow_rounded,
                       size: 18,
-                      color: Colors.black,
+                      color: theme.colorScheme.onPrimary,
                     ),
                   ),
                 ),
-                // Item Type Badge (SONG / ALBUM / PLAYLIST)
+                // Item Type Badge (SONG / ARTIST / ALBUM / PLAYLIST)
                 Positioned(
                   top: 6,
                   left: 6,
@@ -1890,7 +1907,7 @@ class _StreamCard extends StatelessWidget {
                       style: GoogleFonts.outfit(
                         fontSize: 9,
                         fontWeight: FontWeight.bold,
-                        color: item.isSong ? Colors.black : Colors.white,
+                        color: (item.isSong || item.isArtist) ? theme.colorScheme.onPrimary : Colors.white,
                       ),
                     ),
                   ),
@@ -2028,12 +2045,12 @@ class _SuggestedSongsSheet extends StatelessWidget {
                     width: 56,
                     height: 56,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2BC5B4).withValues(alpha: 0.15),
+                      color: theme.colorScheme.primary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.recommend_rounded,
-                      color: Color(0xFF2BC5B4),
+                      color: theme.colorScheme.primary,
                       size: 32,
                     ),
                   ),
@@ -2064,13 +2081,13 @@ class _SuggestedSongsSheet extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        const Row(
+                        Row(
                           children: [
-                            Icon(Icons.auto_awesome_rounded, size: 14, color: Color(0xFF2BC5B4)),
-                            SizedBox(width: 4),
+                            Icon(Icons.auto_awesome_rounded, size: 14, color: theme.colorScheme.primary),
+                            const SizedBox(width: 4),
                             Text(
                               'PulseIQ Recommendation Engine',
-                              style: TextStyle(fontSize: 11, color: Color(0xFF2BC5B4), fontWeight: FontWeight.w600),
+                              style: TextStyle(fontSize: 11, color: theme.colorScheme.primary, fontWeight: FontWeight.w600),
                             ),
                           ],
                         ),
@@ -2080,8 +2097,8 @@ class _SuggestedSongsSheet extends StatelessWidget {
                   if (songs.isNotEmpty)
                     IconButton.filled(
                       style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFF2BC5B4),
-                        foregroundColor: Colors.black,
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: theme.colorScheme.onPrimary,
                       ),
                       icon: const Icon(Icons.play_arrow_rounded, size: 28),
                       tooltip: 'Play All',
@@ -2175,9 +2192,16 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
   }
 
   Future<void> _loadTracks() async {
-    final list = widget.item.isAlbum
-        ? await JioSaavnDecoder.fetchAlbumSongs(widget.item.token)
-        : await JioSaavnDecoder.fetchPlaylistSongs(widget.item.token);
+    final List<JioSaavnItem> list;
+    if (widget.item.isArtist) {
+      list = await JioSaavnDecoder.fetchArtistSongs(
+        widget.item.token.isNotEmpty ? widget.item.token : widget.item.title,
+      );
+    } else if (widget.item.isAlbum) {
+      list = await JioSaavnDecoder.fetchAlbumSongs(widget.item.token);
+    } else {
+      list = await JioSaavnDecoder.fetchPlaylistSongs(widget.item.token);
+    }
 
     if (!mounted) return;
     setState(() {
@@ -2284,11 +2308,12 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
               child: Row(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(widget.item.isArtist ? 30 : 10),
                     child: AlbumArtWidget(
                       albumArt: widget.item.imageUrl,
                       width: 60,
                       height: 60,
+                      fallbackIcon: widget.item.isArtist ? Icons.person_rounded : Icons.album_rounded,
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -2307,7 +2332,9 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          widget.item.subtitle,
+                          widget.item.isArtist && (widget.item.subtitle.isEmpty || widget.item.subtitle == 'Artist')
+                              ? 'Top Tracks & Releases'
+                              : widget.item.subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.outfit(
@@ -2316,13 +2343,13 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        const Row(
+                        Row(
                           children: [
-                            Icon(Icons.high_quality_rounded, size: 14, color: Color(0xFF2BC5B4)),
-                            SizedBox(width: 4),
+                            Icon(widget.item.isArtist ? Icons.person_rounded : Icons.high_quality_rounded, size: 14, color: theme.colorScheme.primary),
+                            const SizedBox(width: 4),
                             Text(
-                              '320 kbps Stream • JioSaavn',
-                              style: TextStyle(fontSize: 11, color: Color(0xFF2BC5B4), fontWeight: FontWeight.w600),
+                              widget.item.isArtist ? 'Artist Top Tracks • JioSaavn' : '320 kbps Stream • JioSaavn',
+                              style: TextStyle(fontSize: 11, color: theme.colorScheme.primary, fontWeight: FontWeight.w600),
                             ),
                           ],
                         ),
@@ -2332,8 +2359,8 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
                   if (_tracks.isNotEmpty)
                     IconButton.filled(
                       style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFF2BC5B4),
-                        foregroundColor: Colors.black,
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: theme.colorScheme.onPrimary,
                       ),
                       icon: const Icon(Icons.play_arrow_rounded, size: 28),
                       tooltip: 'Play All',
@@ -2346,7 +2373,7 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
             // Tracks List
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF2BC5B4)))
+                  ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
                   : _tracks.isEmpty
                       ? const Center(child: Text('No playable tracks found.'))
                       : ListView.separated(

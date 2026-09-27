@@ -19,7 +19,7 @@ class DownloadNotificationService {
   Future<void> init() async {
     if (_isInitialized) return;
     try {
-      const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const androidInit = AndroidInitializationSettings('@drawable/ic_stat_music');
       const initSettings = InitializationSettings(android: androidInit);
       await _notifications.initialize(
         settings: initSettings,

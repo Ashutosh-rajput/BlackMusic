@@ -218,9 +218,18 @@ class AudioPlayerService {
       final source = _audioPlayer?.audioSource;
       // ignore: deprecated_member_use
       if (source is ConcatenatingAudioSource) {
-        final newSources = validSongs.map(_buildAudioSource).toList();
-        await source.addAll(newSources);
-        _logger.i('AudioPlayerService: Added ${newSources.length} songs to ConcatenatingAudioSource.');
+        final existingSequence = player.sequence;
+        final existingIds = existingSequence.map((s) {
+          final tag = s.tag;
+          return tag is MediaItem ? tag.id : null;
+        }).whereType<String>().toSet();
+
+        final toAdd = validSongs.where((s) => !existingIds.contains(s.id.toString())).toList();
+        if (toAdd.isNotEmpty) {
+          final newSources = toAdd.map(_buildAudioSource).toList();
+          await source.addAll(newSources);
+          _logger.i('AudioPlayerService: Added ${newSources.length} songs to ConcatenatingAudioSource.');
+        }
       } else {
         _logger.w('AudioPlayerService: Current audioSource is not ConcatenatingAudioSource ($source).');
       }

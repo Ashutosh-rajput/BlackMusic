@@ -162,5 +162,48 @@ void main() {
       expect(existingCount, equals(1));
       expect(state.queue.any((s) => s.title == 'Brand New Song'), isTrue);
     });
+
+    test('Queue from stream list advances through jiosaavn tracks with empty initial filePath and expands at end', () async {
+      // Simulate stream screen queue where first song has URL, and remaining songs have empty initial filePath
+      final song1 = createSong(1, 'List Song 1').copyWith(filePath: 'https://example.com/1.mp3');
+      final song2 = createSong(2, 'List Song 2').copyWith(filePath: '');
+      final song3 = createSong(3, 'List Song 3').copyWith(filePath: '');
+
+      playerBloc.add(PlaySongEvent(song1, queue: [song1, song2, song3]));
+
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == 1)),
+      );
+
+      // Advance to song2 (whose initial filePath was empty)
+      playerBloc.add(const NextSongEvent());
+
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == 2)),
+      );
+
+      // Advance to song3
+      playerBloc.add(const NextSongEvent());
+
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == 3)),
+      );
+
+      // Advance past end of queue -> must expand infinitely with new tracks!
+      playerBloc.add(const NextSongEvent());
+
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>(
+          (s) => s is PlayerPlaying && s.song.title.contains('Infinite Track'),
+        )),
+      );
+
+      final state = playerBloc.state as PlayerPlaying;
+      expect(state.queue.length, greaterThan(3));
+    });
   });
 }

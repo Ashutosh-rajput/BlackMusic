@@ -9,6 +9,7 @@ class AppTheme {
     Color(0xFF29B6F6), // Sky Blue
     Color(0xFFEC407A), // Hot Pink
     Color(0xFFFFC107), // Amber Gold
+    Color(0xFF2BC5B4), // Teal
   ];
 
   static const Color darkBackground = Color(0xFF121216);

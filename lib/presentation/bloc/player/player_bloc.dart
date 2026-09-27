@@ -344,6 +344,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       }
       _consecutiveFailures = 0;
       _isChangingSong = false;
+      _preResolveNextTrack();
     } catch (e) {
       _isChangingSong = false;
       if (generation != _playGeneration ||
@@ -359,7 +360,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       // If queue has other songs and we haven't reached max consecutive error threshold (3)
       if (_queue.length > 1 && _consecutiveFailures < 3 && _consecutiveFailures < _queue.length) {
         final nextSong = _getNextSong(song);
-        if (nextSong != null && nextSong.id != song.id && nextSong.filePath.trim().isNotEmpty) {
+        if (nextSong != null && nextSong.id != song.id && (nextSong.filePath.trim().isNotEmpty || nextSong.source == 'jiosaavn')) {
           await Future.delayed(const Duration(milliseconds: 300));
           if (generation != _playGeneration) return;
           await _playSongInternal(nextSong, emit);
@@ -386,7 +387,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Song? _getNextSong(Song current) {
-    final validQueue = _queue.where((s) => s.filePath.trim().isNotEmpty).toList();
+    final validQueue = _queue.where((s) => s.filePath.trim().isNotEmpty || s.source == 'jiosaavn').toList();
     if (validQueue.isEmpty) return null;
     if (_isShuffle && validQueue.length > 1) {
       final available = validQueue.where((s) => s.id != current.id).toList();
@@ -777,7 +778,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       add(const AutoExpandQueueEvent());
     } else if (_autoPlayNext && _currentSong != null) {
       // Reached the end of the queue: fetch more songs immediately and continue playback
-      await _expandQueueInternal(emit);
+      await _expandQueueInternal(emit, force: true);
       nextSong = _getNextSong(_currentSong!);
       if (nextSong != null) {
         await _playSongInternal(nextSong, emit);
@@ -918,6 +919,28 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     } catch (_) {}
   }
 
+  void _preResolveNextTrack() {
+    if (_currentSong == null) return;
+    final next = _getNextSong(_currentSong!);
+    if (next != null && next.filePath.isEmpty && next.source == 'jiosaavn') {
+      final lookupKey = (next.mediaId != null && next.mediaId!.isNotEmpty)
+          ? next.mediaId!
+          : next.id.toString();
+      JioSaavnDecoder.fetchSongDetails(lookupKey).then((details) {
+        final streamUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
+        if (streamUrl != null && streamUrl.isNotEmpty) {
+          final qIndex = _queue.indexWhere((s) => s.id == next.id);
+          if (qIndex != -1) {
+            final resolved = _queue[qIndex].copyWith(filePath: streamUrl);
+            _queue[qIndex] = resolved;
+            _audioService.addSongsToQueue([resolved]);
+            debugPrint('PulseIQ: Pre-resolved stream URL for upcoming track "${resolved.title}"');
+          }
+        }
+      }).catchError((_) {});
+    }
+  }
+
   void _onSetAutoPlayNext(SetAutoPlayNextEvent event, Emitter<PlayerState> emit) {
     _autoPlayNext = event.autoPlayNext;
   }
@@ -929,7 +952,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     await _expandQueueInternal(emit);
   }
 
-  Future<void> _expandQueueInternal(Emitter<PlayerState> emit) async {
+  Future<void> _expandQueueInternal(Emitter<PlayerState> emit, {bool force = false}) async {
     if (!_autoPlayNext || _repeatMode == 'One' || _isExpandingQueue) return;
     if (_queue.isEmpty) return;
 
@@ -938,13 +961,13 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         ? _queue.indexWhere((s) => s.id == currentId)
         : -1;
 
-    // Expand whenever we are within 3 tracks of the end of the queue
+    // Expand whenever we are within 3 tracks of the end of the queue or forced at queue end
     final remaining = currentIndex != -1 ? (_queue.length - 1 - currentIndex) : 0;
-    if (remaining > 3) return;
+    if (!force && remaining > 3) return;
 
     _isExpandingQueue = true;
     try {
-      final seedSong = _queue.isNotEmpty ? _queue.last : _currentSong;
+      final seedSong = (_queue.isNotEmpty && _queue.last.title.trim().isNotEmpty) ? _queue.last : _currentSong;
       if (seedSong == null) return;
 
       final recent = _repository != null

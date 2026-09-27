@@ -82,7 +82,7 @@ void main() async {
       androidNotificationChannelDescription:
           'Controls and track details for music currently playing',
       androidNotificationOngoing: false,
-      androidNotificationIcon: 'mipmap/ic_launcher',
+      androidNotificationIcon: 'drawable/ic_stat_music',
     );
     debugPrint("Background initialized");
   } catch (e) {
