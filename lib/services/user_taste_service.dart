@@ -58,10 +58,17 @@ class SongInteraction {
   int skipCount;
   bool isFavorite;
   DateTime lastInteraction;
+  int searchPlayCount;
 
   // Separate decayed signal accumulators (30-day half-life continuous decay)
   double positiveScore;
   double negativeScore;
+
+  // Candidate metadata cached for high-priority recommendation reconstruction
+  String? imageUrl;
+  String? token;
+  String? duration;
+  String? language;
 
   SongInteraction({
     required this.trackKey,
@@ -74,10 +81,15 @@ class SongInteraction {
     this.skipCount = 0,
     this.isFavorite = false,
     required this.lastInteraction,
+    this.searchPlayCount = 0,
     double? positiveScore,
     double? negativeScore,
+    this.imageUrl,
+    this.token,
+    this.duration,
+    this.language,
   })  : positiveScore = positiveScore ??
-            ((completeCount * 1.5) + (playCount * 0.5) + (isFavorite ? 3.0 : 0.0)),
+            ((completeCount * 1.5) + (playCount * 0.5) + (searchPlayCount * 5.0) + (isFavorite ? 3.0 : 0.0)),
         negativeScore = negativeScore ?? (skipCount * 2.0);
 
   // 30-day half life decay: lambda = ln(2) / 30 ~= 0.0231049
@@ -98,6 +110,18 @@ class SongInteraction {
     positiveScore += 0.5;
   }
 
+  void recordSearchPlay(DateTime now, {JioSaavnItem? item}) {
+    _decayAccumulators(now);
+    searchPlayCount++;
+    positiveScore += 5.0; // High explicit user intent boost
+    if (item != null) {
+      if (item.imageUrl.isNotEmpty) imageUrl = item.imageUrl;
+      if (item.token.isNotEmpty) token = item.token;
+      if (item.duration != null && item.duration!.isNotEmpty) duration = item.duration;
+      if (item.language != null && item.language!.isNotEmpty) language = item.language;
+    }
+  }
+
   void recordComplete(DateTime now) {
     _decayAccumulators(now);
     completeCount++;
@@ -113,6 +137,23 @@ class SongInteraction {
   void recordFavorite(DateTime now, bool fav) {
     _decayAccumulators(now);
     isFavorite = fav;
+  }
+
+  /// Reconstructs a JioSaavnItem candidate from interaction profile.
+  JioSaavnItem toJioSaavnItem() {
+    final idStr = trackKey.startsWith('jiosaavn:')
+        ? trackKey.substring('jiosaavn:'.length)
+        : songId.toString();
+    return JioSaavnItem(
+      type: 'song',
+      id: idStr,
+      token: (token != null && token!.isNotEmpty) ? token! : idStr,
+      title: title,
+      subtitle: artist,
+      imageUrl: imageUrl ?? '',
+      duration: duration,
+      language: language,
+    );
   }
 
   /// Computes dynamic score using separately decayed positive and negative signals.
@@ -136,8 +177,13 @@ class SongInteraction {
         'skipCount': skipCount,
         'isFavorite': isFavorite == true,
         'lastInteraction': lastInteraction.toIso8601String(),
+        'searchPlayCount': searchPlayCount,
         'positiveScore': positiveScore,
         'negativeScore': negativeScore,
+        'imageUrl': imageUrl,
+        'token': token,
+        'duration': duration,
+        'language': language,
       };
 
   factory SongInteraction.fromJson(Map<String, dynamic> json) {
@@ -156,12 +202,15 @@ class SongInteraction {
         ? json['skipCount'] as int
         : int.tryParse(json['skipCount']?.toString() ?? '0') ?? 0;
     final isFavorite = json['isFavorite'] == true;
+    final searchPlayCount = (json['searchPlayCount'] is int)
+        ? json['searchPlayCount'] as int
+        : int.tryParse(json['searchPlayCount']?.toString() ?? '0') ?? 0;
     final lastInteraction =
         DateTime.tryParse(json['lastInteraction']?.toString() ?? '') ?? DateTime.now();
 
     final positiveScore = (json['positiveScore'] is num)
         ? (json['positiveScore'] as num).toDouble()
-        : ((completeCount * 1.5) + (playCount * 0.5) + (isFavorite ? 3.0 : 0.0));
+        : ((completeCount * 1.5) + (playCount * 0.5) + (searchPlayCount * 5.0) + (isFavorite ? 3.0 : 0.0));
     final negativeScore = (json['negativeScore'] is num)
         ? (json['negativeScore'] as num).toDouble()
         : (skipCount * 2.0);
@@ -177,8 +226,13 @@ class SongInteraction {
       skipCount: skipCount,
       isFavorite: isFavorite,
       lastInteraction: lastInteraction,
+      searchPlayCount: searchPlayCount,
       positiveScore: positiveScore,
       negativeScore: negativeScore,
+      imageUrl: json['imageUrl']?.toString(),
+      token: json['token']?.toString(),
+      duration: json['duration']?.toString(),
+      language: json['language']?.toString(),
     );
   }
 }
@@ -202,6 +256,7 @@ class UserTasteService {
   // Secondary lookup by integer songId for legacy migrations
   final Map<int, String> _songIdToTrackKey = {};
   final Map<String, double> _artistAffinities = {};
+  final Set<String> _searchPlayedArtists = {};
 
   Timer? _saveDebounceTimer;
   bool _isInitialized = false;
@@ -286,11 +341,18 @@ class UserTasteService {
 
   void _recalculateArtistAffinities() {
     _artistAffinities.clear();
+    _searchPlayedArtists.clear();
     final now = _clock();
 
     for (final inter in _interactions.values) {
       final tokens = parseArtistTokens(inter.artist);
       if (tokens.isEmpty) continue;
+
+      if (inter.searchPlayCount > 0) {
+        for (final token in tokens) {
+          _searchPlayedArtists.add(token);
+        }
+      }
 
       final songScore = inter.computeAffinityScore(now);
       if (songScore <= 0.0) continue;
@@ -317,7 +379,7 @@ class UserTasteService {
     return null;
   }
 
-  SongInteraction _getOrCreateInteraction(Song song) {
+  SongInteraction _getOrCreateInteraction(Song song, {JioSaavnItem? item}) {
     final trackKey = _canonicalKeyForSong(song);
     var interaction = _getInteraction(trackKey, song.id);
     if (interaction == null) {
@@ -328,11 +390,41 @@ class UserTasteService {
         artist: song.artist,
         genre: song.genre,
         lastInteraction: _clock(),
+        imageUrl: item?.imageUrl ?? ((song.albumArt?.isNotEmpty ?? false) ? song.albumArt : null),
+        token: item?.token,
+        duration: item?.duration,
+        language: item?.language,
       );
       _interactions[trackKey] = interaction;
       _songIdToTrackKey[song.id] = trackKey;
+    } else {
+      if (item != null) {
+        if (item.imageUrl.isNotEmpty) interaction.imageUrl = item.imageUrl;
+        if (item.token.isNotEmpty) interaction.token = item.token;
+        if (item.duration != null && item.duration!.isNotEmpty) interaction.duration = item.duration;
+        if (item.language != null && item.language!.isNotEmpty) interaction.language = item.language;
+      }
     }
     return interaction;
+  }
+
+  /// Explicitly records high-intent playback initiated when user searches and selects a song.
+  void recordSearchPlay(Song song, {JioSaavnItem? item}) {
+    final now = _clock();
+    final interaction = _getOrCreateInteraction(song, item: item);
+    interaction.recordSearchPlay(now, item: item);
+
+    _recalculateArtistAffinities();
+    _scheduleSave();
+    debugPrint('PulseIQ: High-intent search play recorded for "${song.title}" (searchCount: ${interaction.searchPlayCount})');
+  }
+
+  /// Returns all interactions that have been searched and played, ordered by recency.
+  List<SongInteraction> getSearchPlayedInteractions() {
+    return _interactions.values
+        .where((i) => i.searchPlayCount > 0)
+        .toList()
+      ..sort((a, b) => b.lastInteraction.compareTo(a.lastInteraction));
   }
 
   // --- Real-Time Implicit Signal Capture with PlaybackSession ---
@@ -490,6 +582,18 @@ class UserTasteService {
       if (interaction.skipCount > interaction.completeCount) {
         score -= (interaction.skipCount * 2.0).clamp(0.0, 6.0);
       }
+      // Highest priority signal: Tracks explicitly searched and played by user
+      if (interaction.searchPlayCount > 0) {
+        score += 25.0 + (interaction.searchPlayCount * 5.0).clamp(0.0, 25.0);
+      }
+    }
+
+    // Direct affinity boost for candidates from artists that user searched and played
+    for (final token in candidateTokens) {
+      if (_searchPlayedArtists.contains(token)) {
+        score += 5.0;
+        break;
+      }
     }
 
     // 3. Multi-seed co-occurrence boost (Finding 5)
@@ -567,8 +671,10 @@ class UserTasteService {
       for (final candidate in remaining) {
         final primaryArtist = parseArtistTokens(candidate.subtitle).firstOrNull ?? '';
         final count = artistCounts[primaryArtist] ?? 0;
-        if (primaryArtist.isNotEmpty && count >= maxPerArtist) {
-          continue; // Enforce artist quota
+        final inter = _getInteraction(candidate.canonicalKey, candidate.id);
+        final isSearchPlayed = (inter?.searchPlayCount ?? 0) > 0;
+        if (!isSearchPlayed && primaryArtist.isNotEmpty && count >= maxPerArtist) {
+          continue; // Enforce artist quota on recommendations, not explicit user search plays
         }
 
         final relevance = normalizedScores[candidate] ?? 0.0;
@@ -624,7 +730,9 @@ class UserTasteService {
       for (final candidate in remaining) {
         final primaryArtist = parseArtistTokens(candidate.subtitle).firstOrNull ?? '';
         final count = artistCounts[primaryArtist] ?? 0;
-        if (primaryArtist.isEmpty || count < maxPerArtist) {
+        final inter = _getInteraction(candidate.canonicalKey, candidate.id);
+        final isSearchPlayed = (inter?.searchPlayCount ?? 0) > 0;
+        if (isSearchPlayed || primaryArtist.isEmpty || count < maxPerArtist) {
           fallbackCandidate = candidate;
           break;
         }
@@ -895,12 +1003,16 @@ class UserTasteService {
           }
         }
       } else {
-        // Home multi-seed mode (Favorites prioritized, then top history)
+        // Home multi-seed mode (Search-played songs highest priority, then favorites, then top history)
         final List<Song> seeds = [];
         final seenSeedTitles = <String>{};
 
-        for (final song in [...favorites, ...recentHistory]) {
-          if (seeds.length >= 3) break;
+        final searchPlayedSongs = getSearchPlayedInteractions()
+            .map((i) => i.toJioSaavnItem().toSong())
+            .toList();
+
+        for (final song in [...searchPlayedSongs, ...favorites, ...recentHistory]) {
+          if (seeds.length >= 4) break;
           final norm = song.title.toLowerCase().trim();
           if (!seenSeedTitles.contains(norm) && norm.isNotEmpty) {
             seenSeedTitles.add(norm);
@@ -933,6 +1045,13 @@ class UserTasteService {
             deduplicated[key] = item;
             coOccurrences[key] = (coOccurrences[key] ?? 0) + 1;
           }
+          // Direct injection of user's searched and played songs into candidate pool
+          for (final sp in getSearchPlayedInteractions()) {
+            final item = sp.toJioSaavnItem();
+            final key = item.canonicalKey;
+            deduplicated[key] = item;
+            coOccurrences[key] = (coOccurrences[key] ?? 0) + 3;
+          }
           pool = deduplicated.values.toList();
         }
       }
@@ -940,6 +1059,13 @@ class UserTasteService {
       // 3. Filter candidates against exclusions (Finding 10)
       final candidateList = pool.where((item) {
         if (!item.isSong || item.title.trim().isEmpty) return false;
+        final inter = _getInteraction(item.canonicalKey, item.id);
+        final isSearchPlayed = (inter?.searchPlayCount ?? 0) > 0;
+        // In home recommendation mode, songs the user explicitly searched and played
+        // are never filtered out by recent history exclusions
+        if (context == RecommendationContext.home && isSearchPlayed) {
+          return true;
+        }
         if (excludedKeys.contains(item.canonicalKey)) return false;
         if (excludedTitles.contains(item.title.trim().toLowerCase())) return false;
         return true;

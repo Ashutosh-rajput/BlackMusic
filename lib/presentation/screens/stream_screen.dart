@@ -98,7 +98,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           streamHistory: _lastPlayedStreamSongs,
           favorites: StreamFavoritesService.instance.favorites,
           lang: _currentLang,
-          limit: 15,
+          limit: 30,
         ),
       ]);
 
@@ -120,7 +120,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         }
         seedId ??= newReleases.where((i) => i.isSong && i.id.isNotEmpty).firstOrNull?.id;
         if (seedId != null && seedId.isNotEmpty) {
-          suggestions = await JioSaavnDecoder.fetchSongSuggestions(seedId, limit: 10);
+          suggestions = await JioSaavnDecoder.fetchSongSuggestions(seedId, limit: 25);
         }
       }
 
@@ -317,6 +317,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   }
 
   void _openAlbumDetails(JioSaavnItem album) {
+    final fromSearch = _isSearching;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -326,7 +327,27 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => _AlbumTracksSheet(item: album),
+      builder: (ctx) => _AlbumTracksSheet(
+        item: album,
+        fromSearch: fromSearch,
+      ),
+    );
+  }
+
+  void _openSuggestedSongsDetails() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? const Color(0xFF181824)
+          : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _SuggestedSongsSheet(
+        songs: _suggestedSongs,
+        hasPersonalization: _topPlayed.isNotEmpty || StreamFavoritesService.instance.favorites.isNotEmpty,
+      ),
     );
   }
 
@@ -364,6 +385,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       List<Song> queueToPlay;
       if (fromSearch) {
         queueToPlay = [song];
+        UserTasteService.instance.recordSearchPlay(song, item: item);
       } else if (contextSongQueue != null && contextSongQueue.isNotEmpty) {
         queueToPlay = contextSongQueue.map((s) => s.id == song.id ? song : s).toList();
         if (!queueToPlay.any((s) => s.id == song.id)) {
@@ -403,7 +425,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         currentSong: song,
         recentHistory: _lastPlayedStreamSongs,
         lang: _currentLang,
-        limit: 10,
+        limit: 30,
       ).then((suggestions) {
         if (mounted && suggestions.isNotEmpty) {
           setState(() => _suggestedSongs = suggestions);
@@ -823,43 +845,31 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           const SizedBox(height: 16),
         ],
 
-        // 0.5 Stream Favorites (if any)
-        StreamBuilder<List<Song>>(
-          stream: StreamFavoritesService.instance.onFavoritesChanged,
-          initialData: StreamFavoritesService.instance.favorites,
-          builder: (context, snapshot) {
-            final favs = snapshot.data ?? StreamFavoritesService.instance.favorites;
-            if (favs.isEmpty) return const SizedBox.shrink();
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSectionHeader(
-                  title: 'Stream Favorites',
-                  subtitle: 'Your favorite online tracks',
-                  icon: Icons.favorite_rounded,
-                  actionLabel: favs.length > 5 ? 'See All (${favs.length})' : null,
-                  onAction: () => setState(() => _selectedFilter = 4),
+        // 1. Song Suggestions (PulseIQ Multi-Seed & Composer Radar)
+        if (_suggestedSongs.isNotEmpty) ...[
+          _buildSectionHeader(
+            title: 'Song Suggestions',
+            subtitle: (_topPlayed.isNotEmpty || StreamFavoritesService.instance.favorites.isNotEmpty)
+                ? 'Curated from your favorite artists & composers'
+                : 'Recommended songs for you',
+            icon: Icons.recommend_rounded,
+            actionLabel: _suggestedSongs.length > 6 ? 'See All (${_suggestedSongs.length})' : null,
+            onAction: _openSuggestedSongsDetails,
+          ),
+          ..._suggestedSongs.take(10).map((item) => _StreamSongTile(
+                item: item,
+                isLoading: _loadingSongId == item.id,
+                onPlay: () => _streamSingleSong(
+                  item,
+                  contextQueue: _suggestedSongs,
                 ),
-                ...favs.take(5).map((song) {
-                  final item = song.toJioSaavnItem();
-                  return _StreamSongTile(
-                    item: item,
-                    isLoading: _loadingSongId == item.id,
-                    onPlay: () => _streamSingleSong(
-                      item,
-                      contextSongQueue: favs,
-                    ),
-                    onDownload: () => _downloadSong(item),
-                    onAddToQueue: () => _addSongToQueue(item),
-                  );
-                }),
-                const SizedBox(height: 16),
-              ],
-            );
-          },
-        ),
+                onDownload: () => _downloadSong(item),
+                onAddToQueue: () => _addSongToQueue(item),
+              )),
+          const SizedBox(height: 16),
+        ],
 
-        // 1. Trending Songs (Directly playable single songs)
+        // 2. Trending Songs (Directly playable single songs)
         if (allSongs.isNotEmpty) ...[
           _buildSectionHeader(
             title: 'Trending Songs',
@@ -874,28 +884,6 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                 onPlay: () => _streamSingleSong(
                   item,
                   contextQueue: allSongs,
-                ),
-                onDownload: () => _downloadSong(item),
-                onAddToQueue: () => _addSongToQueue(item),
-              )),
-          const SizedBox(height: 16),
-        ],
-
-        // 1.5 Song Suggestions (PulseIQ Multi-Seed & Composer Radar)
-        if (_suggestedSongs.isNotEmpty) ...[
-          _buildSectionHeader(
-            title: 'Song Suggestions',
-            subtitle: (_topPlayed.isNotEmpty || StreamFavoritesService.instance.favorites.isNotEmpty)
-                ? 'Curated from your favorite artists & composers'
-                : 'Recommended songs for you',
-            icon: Icons.recommend_rounded,
-          ),
-          ..._suggestedSongs.take(8).map((item) => _StreamSongTile(
-                item: item,
-                isLoading: _loadingSongId == item.id,
-                onPlay: () => _streamSingleSong(
-                  item,
-                  contextQueue: _suggestedSongs,
                 ),
                 onDownload: () => _downloadSong(item),
                 onAddToQueue: () => _addSongToQueue(item),
@@ -1320,6 +1308,18 @@ class _StreamSongTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFF2BC5B4),
+                ),
+              ),
+            ),
           if (onAddToQueue != null)
             IconButton(
               icon: const Icon(Icons.playlist_add_rounded, size: 22),
@@ -1333,24 +1333,6 @@ class _StreamSongTile extends StatelessWidget {
             visualDensity: VisualDensity.compact,
             onPressed: isLoading ? null : onDownload,
           ),
-          isLoading
-              ? const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Color(0xFF2BC5B4),
-                    ),
-                  ),
-                )
-              : IconButton(
-                  icon: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF2BC5B4), size: 28),
-                  tooltip: 'Stream',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onPlay,
-                ),
         ],
       ),
       onTap: isLoading ? null : onPlay,
@@ -1478,9 +1460,241 @@ class _StreamCard extends StatelessWidget {
   }
 }
 
+class _SuggestedSongsSheet extends StatelessWidget {
+  final List<JioSaavnItem> songs;
+  final bool hasPersonalization;
+
+  const _SuggestedSongsSheet({
+    required this.songs,
+    required this.hasPersonalization,
+  });
+
+  Future<void> _streamTrack(BuildContext context, int index) async {
+    if (songs.isEmpty || index < 0 || index >= songs.length) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final targetTrack = songs[index];
+
+    String? directUrl = targetTrack.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(targetTrack.encryptedMediaUrl);
+    if (directUrl == null || directUrl.isEmpty) {
+      final details = await JioSaavnDecoder.fetchSongDetails(targetTrack.token.isNotEmpty ? targetTrack.token : targetTrack.id);
+      directUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
+    }
+
+    final songModels = songs.map((t) {
+      final s = t.toSong(albumName: 'Song Suggestions');
+      if (t.id == targetTrack.id && directUrl != null && directUrl.isNotEmpty) {
+        return s.copyWith(filePath: directUrl);
+      }
+      return s;
+    }).toList();
+
+    if (!context.mounted) return;
+    context.read<PlayerBloc>().add(PlayQueueEvent(songModels, initialIndex: index));
+    Navigator.pop(context);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Streaming "${songModels[index].title}"', style: GoogleFonts.outfit()),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    if (getIt<SettingsService>().autoDownloadStreamSongs && index < songs.length) {
+      _downloadTrack(context, songs[index]);
+    }
+  }
+
+  void _addTrackToQueue(BuildContext context, JioSaavnItem track) {
+    final song = track.toSong(albumName: 'Song Suggestions');
+    context.read<PlayerBloc>().add(AddToQueueEvent(song));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Added "${track.title}" to queue', style: GoogleFonts.outfit()),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _downloadTrack(BuildContext context, JioSaavnItem track) {
+    final downloadService = getIt<DownloadService>();
+    final directUrl = track.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
+    if (directUrl != null) {
+      final secs = int.tryParse(track.duration ?? '0') ?? 0;
+      downloadService.enqueueDownload(
+        url: directUrl,
+        title: track.title,
+        artist: track.subtitle,
+        album: 'Song Suggestions',
+        albumArt: track.imageUrl,
+        duration: secs > 0 ? Duration(seconds: secs) : null,
+      );
+      showDownloadQueuedSnackBar(context, title: track.title);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.45,
+      maxChildSize: 0.94,
+      expand: false,
+      builder: (ctx, scrollController) {
+        return Column(
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2BC5B4).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.recommend_rounded,
+                      color: Color(0xFF2BC5B4),
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Song Suggestions (${songs.length})',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          hasPersonalization
+                              ? 'Curated from your favorite artists & composers'
+                              : 'Recommended songs for you',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Row(
+                          children: [
+                            Icon(Icons.auto_awesome_rounded, size: 14, color: Color(0xFF2BC5B4)),
+                            SizedBox(width: 4),
+                            Text(
+                              'PulseIQ Recommendation Engine',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF2BC5B4), fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (songs.isNotEmpty)
+                    IconButton.filled(
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xFF2BC5B4),
+                        foregroundColor: Colors.black,
+                      ),
+                      icon: const Icon(Icons.play_arrow_rounded, size: 28),
+                      tooltip: 'Play All',
+                      onPressed: () => _streamTrack(context, 0),
+                    ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: songs.isEmpty
+                  ? const Center(child: Text('No song suggestions available.'))
+                  : ListView.separated(
+                      controller: scrollController,
+                      itemCount: songs.length,
+                      separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        indent: 72,
+                        color: isDark ? Colors.white10 : Colors.black12,
+                      ),
+                      itemBuilder: (ctx, index) {
+                        final track = songs[index];
+                        return ListTile(
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: AlbumArtWidget(
+                              albumArt: track.imageUrl,
+                              width: 44,
+                              height: 44,
+                              fallbackIcon: Icons.music_note_rounded,
+                            ),
+                          ),
+                          title: Text(
+                            track.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(
+                            track.subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.outfit(fontSize: 12),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.playlist_add_rounded, size: 22),
+                                tooltip: 'Add to queue',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _addTrackToQueue(context, track),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.download_rounded, size: 20),
+                                tooltip: 'Download',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _downloadTrack(context, track),
+                              ),
+                            ],
+                          ),
+                          onTap: () => _streamTrack(context, index),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _AlbumTracksSheet extends StatefulWidget {
   final JioSaavnItem item;
-  const _AlbumTracksSheet({required this.item});
+  final bool fromSearch;
+  const _AlbumTracksSheet({required this.item, this.fromSearch = false});
 
   @override
   State<_AlbumTracksSheet> createState() => _AlbumTracksSheetState();
@@ -1508,12 +1722,33 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
     });
   }
 
-  void _streamTrack(int index) {
-    if (_tracks.isEmpty) return;
-    final songs = _tracks.map((t) => t.toSong(albumName: widget.item.title)).toList();
+  Future<void> _streamTrack(int index) async {
+    if (_tracks.isEmpty || index < 0 || index >= _tracks.length) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final targetTrack = _tracks[index];
+
+    // Ensure direct stream URL is available for the selected track
+    String? directUrl = targetTrack.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(targetTrack.encryptedMediaUrl);
+    if (directUrl == null || directUrl.isEmpty) {
+      final details = await JioSaavnDecoder.fetchSongDetails(targetTrack.token.isNotEmpty ? targetTrack.token : targetTrack.id);
+      directUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
+    }
+
+    final songs = _tracks.map((t) {
+      final s = t.toSong(albumName: widget.item.title);
+      if (t.id == targetTrack.id && directUrl != null && directUrl.isNotEmpty) {
+        return s.copyWith(filePath: directUrl);
+      }
+      return s;
+    }).toList();
+
+    if (!mounted) return;
+    if (widget.fromSearch && index < songs.length) {
+      UserTasteService.instance.recordSearchPlay(songs[index], item: targetTrack);
+    }
     context.read<PlayerBloc>().add(PlayQueueEvent(songs, initialIndex: index));
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       SnackBar(
         content: Text('Streaming "${songs[index].title}"', style: GoogleFonts.outfit()),
         duration: const Duration(seconds: 2),
@@ -1655,23 +1890,19 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
                           itemCount: _tracks.length,
                           separatorBuilder: (_, __) => Divider(
                             height: 1,
-                            indent: 64,
+                            indent: 72,
                             color: isDark ? Colors.white10 : Colors.black12,
                           ),
                           itemBuilder: (ctx, index) {
                             final track = _tracks[index];
                             return ListTile(
-                              leading: SizedBox(
-                                width: 36,
-                                height: 36,
-                                child: Center(
-                                  child: Text(
-                                    '${index + 1}',
-                                    style: GoogleFonts.outfit(
-                                      fontWeight: FontWeight.bold,
-                                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                                    ),
-                                  ),
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: AlbumArtWidget(
+                                  albumArt: track.imageUrl.isNotEmpty ? track.imageUrl : widget.item.imageUrl,
+                                  width: 44,
+                                  height: 44,
+                                  fallbackIcon: Icons.music_note_rounded,
                                 ),
                               ),
                               title: Text(
@@ -1700,13 +1931,6 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
                                     tooltip: 'Download',
                                     visualDensity: VisualDensity.compact,
                                     onPressed: () => _downloadTrack(track),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.play_circle_fill_rounded,
-                                        color: Color(0xFF2BC5B4), size: 28),
-                                    tooltip: 'Stream',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => _streamTrack(index),
                                   ),
                                 ],
                               ),

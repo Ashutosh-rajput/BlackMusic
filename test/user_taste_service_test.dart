@@ -595,5 +595,130 @@ void main() {
       final song = item.toSong();
       expect(song.id, equals(stableId));
     });
+
+    test('Search-and-played songs are given highest priority in scoring and recommendations', () async {
+      // 1. Create a regular played song
+      final regularSong = Song(
+        id: 101,
+        title: 'Passive Song',
+        artist: 'Passive Artist',
+        album: 'JioSaavn',
+        filePath: 'stream://101',
+        duration: const Duration(seconds: 200),
+        dateModified: currentTime,
+      );
+      service.onSongStarted(regularSong);
+
+      // 2. Create a search-and-played song
+      const searchItem = JioSaavnItem(
+        type: 'song',
+        id: 'search_99',
+        token: 'token_search_99',
+        title: 'Searched Masterpiece',
+        subtitle: 'Special Artist',
+        imageUrl: 'https://example.com/art.jpg',
+        duration: '240',
+        language: 'hindi',
+      );
+      final searchSong = searchItem.toSong();
+      service.recordSearchPlay(searchSong, item: searchItem);
+
+      // Verify interaction
+      final searchInteractions = service.getSearchPlayedInteractions();
+      expect(searchInteractions.length, equals(1));
+      expect(searchInteractions.first.searchPlayCount, equals(1));
+      expect(searchInteractions.first.title, equals('Searched Masterpiece'));
+      expect(searchInteractions.first.imageUrl, equals('https://example.com/art.jpg'));
+
+      // 3. Compare candidate scores: search song vs regular song
+      const regularItem = JioSaavnItem(
+        type: 'song',
+        id: '101',
+        token: '101',
+        title: 'Passive Song',
+        subtitle: 'Passive Artist',
+        imageUrl: '',
+      );
+
+      final searchScore = service.scoreCandidate(searchItem);
+      final regularScore = service.scoreCandidate(regularItem);
+
+      // Search score should have the massive priority bonus (>= 30.0) compared to passive song (< 10.0)
+      expect(searchScore, greaterThan(30.0));
+      expect(regularScore, lessThan(10.0));
+      expect(searchScore, greaterThan(regularScore + 20.0),
+          reason: 'Search-played song must receive decisively higher score');
+
+      // 4. Recommendations from the searched artist should also get an affinity boost
+      const relatedCandidate = JioSaavnItem(
+        type: 'song',
+        id: 'related_1',
+        token: 'related_1',
+        title: 'Another Hit',
+        subtitle: 'Special Artist',
+        imageUrl: '',
+      );
+      const unrelatedCandidate = JioSaavnItem(
+        type: 'song',
+        id: 'unrelated_1',
+        token: 'unrelated_1',
+        title: 'Unrelated Song',
+        subtitle: 'Unknown Singer',
+        imageUrl: '',
+      );
+      final relatedScore = service.scoreCandidate(relatedCandidate);
+      final unrelatedScore = service.scoreCandidate(unrelatedCandidate);
+      expect(relatedScore, greaterThan(unrelatedScore + 4.0),
+          reason: 'Candidate from searched artist must receive affinity boost');
+
+      // 5. In home recommendations, the search-played song must be exempt from history exclusion
+      // and rank at the top (#1)
+      final recommendations = await service.getCandidateRecommendations(
+        context: RecommendationContext.home,
+        recentHistory: [searchSong, regularSong],
+        lang: 'hindi',
+        limit: 10,
+      );
+
+      expect(recommendations.isNotEmpty, isTrue);
+      expect(recommendations.first.canonicalKey, equals(searchItem.canonicalKey),
+          reason: 'Search-played song must have highest priority (#1) in suggestions');
+    });
+
+    test('Search play count and metadata persist and reload across restarts', () async {
+      const searchItem = JioSaavnItem(
+        type: 'song',
+        id: 'persist_search_1',
+        token: 'token_persist_1',
+        title: 'Persistent Search Hit',
+        subtitle: 'Star Artist',
+        imageUrl: 'https://example.com/cover.jpg',
+        duration: '195',
+        language: 'hindi',
+      );
+      final song = searchItem.toSong();
+      service.recordSearchPlay(song, item: searchItem);
+
+      // Flush to disk
+      await service.flush();
+      expect(tempFile.existsSync(), isTrue);
+
+      // Reload into fresh service instance
+      final freshService = UserTasteService(
+        clock: () => currentTime,
+        storageFile: tempFile,
+      );
+      await freshService.init();
+
+      final reloaded = freshService.getSearchPlayedInteractions();
+      expect(reloaded.length, equals(1));
+      expect(reloaded.first.title, equals('Persistent Search Hit'));
+      expect(reloaded.first.searchPlayCount, equals(1));
+      expect(reloaded.first.imageUrl, equals('https://example.com/cover.jpg'));
+
+      final score = freshService.scoreCandidate(searchItem);
+      expect(score, greaterThan(30.0));
+      freshService.dispose();
+    });
   });
 }

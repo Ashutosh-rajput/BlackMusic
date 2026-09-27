@@ -191,5 +191,21 @@ void main() {
       expect(state.queue.length, equals(1));
       expect(state.queue.first.id, equals(999));
     });
+
+    test('PlayQueueEvent successfully switches playback when a song is already playing', () async {
+      playerBloc.add(PlaySongEvent(testSong));
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      expect((playerBloc.state as PlayerPlaying).song.id, equals(testSong.id));
+
+      final albumQueue = [testSong, testSong2];
+      playerBloc.add(PlayQueueEvent(albumQueue, initialIndex: 1));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      final state = playerBloc.state as PlayerPlaying;
+      expect(state.song.id, equals(testSong2.id));
+      expect(state.queue.length, equals(2));
+    });
   });
 }

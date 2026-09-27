@@ -427,14 +427,18 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _queue = List.from(validSongs);
     _originalQueue = List.from(validSongs);
 
+    final safeIndex = event.initialIndex.clamp(0, validSongs.length - 1);
+    final targetSong = validSongs[safeIndex];
+
     if (_isShuffle) {
       _queue.shuffle();
+      _queue.removeWhere((s) => s.id == targetSong.id);
+      _queue.insert(0, targetSong);
     }
 
-    final safeIndex = event.initialIndex.clamp(0, _queue.length - 1);
-    _currentSong = _queue[safeIndex];
     _consecutiveFailures = 0;
-    await _playSongInternal(_currentSong!, emit);
+    _currentSong = null;
+    await _playSongInternal(targetSong, emit);
   }
 
   Future<void> _onPlaySongAtIndex(PlaySongAtIndexEvent event, Emitter<PlayerState> emit) async {
