@@ -522,8 +522,14 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _showToast('Starting radio for "${currentSong.title}"...');
 
     try {
-      List<Song> radioSongs = await UserTasteService.instance.getSmartAutoplayRecommendations(
-        currentSong,
+      final recent = _repository != null
+          ? await _repository.getLastPlayedStreamSongs(limit: 20)
+          : <Song>[];
+      List<Song> radioSongs = await UserTasteService.instance.getRecommendations(
+        context: RecommendationContext.radio,
+        currentSong: currentSong,
+        queue: _queue,
+        recentHistory: recent,
         limit: 25,
       );
 
@@ -729,7 +735,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   Future<void> _onNextSong(NextSongEvent event, Emitter<PlayerState> emit) async {
     if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
     if (event.isManualSkip && _currentSong != null) {
-      UserTasteService.instance.onSongSkipped(_currentSong!);
+      UserTasteService.instance.onSongSkipped(_currentSong!, isManual: true);
     }
     _consecutiveFailures = 0;
     final nextSong = _getNextSong(_currentSong!);
@@ -737,7 +743,16 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       await _playSongInternal(nextSong, emit);
     } else if (_autoPlayNext && _currentSong != null) {
       try {
-        final recs = await UserTasteService.instance.getSmartAutoplayRecommendations(_currentSong!, limit: 10);
+        final recent = _repository != null
+            ? await _repository.getLastPlayedStreamSongs(limit: 20)
+            : <Song>[];
+        final recs = await UserTasteService.instance.getRecommendations(
+          context: RecommendationContext.autoplay,
+          currentSong: _currentSong,
+          queue: _queue,
+          recentHistory: recent,
+          limit: 10,
+        );
         if (recs.isNotEmpty) {
           _queue.addAll(recs);
           _originalQueue.addAll(recs);
@@ -802,10 +817,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   Future<void> _onTrackChanged(TrackChangedEvent event, Emitter<PlayerState> emit) async {
     if (_currentSong?.id == event.song.id && state is PlayerPlaying) return;
-    final previousSong = _currentSong;
-    if (previousSong != null && previousSong.id != event.song.id) {
-      UserTasteService.instance.onSongCompleted(previousSong);
-    }
     _currentSong = event.song;
     _settingsService?.setLastPlayedSongId(event.song.id);
     _settingsService?.setLastPlayedPositionMs(0);

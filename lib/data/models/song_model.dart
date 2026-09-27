@@ -56,6 +56,17 @@ class Song extends Equatable {
     return source ?? 'local';
   }
 
+  String get canonicalKey {
+    final src = effectiveSource;
+    if (src == 'jiosaavn') {
+      return 'jiosaavn:$id';
+    }
+    if (src == 'youtube') {
+      return 'youtube:$id';
+    }
+    return 'local:${filePath.toLowerCase().trim()}';
+  }
+
   String? get effectiveAudioQuality {
     if (audioQuality != null && audioQuality!.isNotEmpty) {
       return audioQuality;

@@ -281,8 +281,14 @@ class AppDatabase extends _$AppDatabase {
         .go();
   }
 
-  Future<int> deleteSongById(int songId) =>
-      (delete(songs)..where((t) => t.id.equals(songId))).go();
+  Future<int> deleteSongById(int songId) {
+    return transaction(() async {
+      await (delete(playlistSongs)..where((t) => t.songId.equals(songId))).go();
+      await (delete(lyrics)..where((t) => t.songId.equals(songId))).go();
+      await (delete(playHistory)..where((t) => t.songId.equals(songId))).go();
+      return (delete(songs)..where((t) => t.id.equals(songId))).go();
+    });
+  }
 
   // Lyrics helpers
   Future<Lyric?> getLyricsBySongId(int songId) =>

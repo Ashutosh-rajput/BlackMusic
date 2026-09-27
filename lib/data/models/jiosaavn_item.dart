@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:pixel_player/core/utils/hash_utils.dart';
 import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 
@@ -47,6 +48,12 @@ class JioSaavnItem extends Equatable {
   bool get isArtist => type == 'artist';
   bool get isPlaylist => type == 'playlist';
 
+  String get canonicalKey {
+    if (id.isNotEmpty) return 'jiosaavn:$id';
+    if (token.isNotEmpty) return 'jiosaavn:$token';
+    return 'jiosaavn:${generateStableId(title)}';
+  }
+
   /// Converts this JioSaavnItem into a playable online Song model.
   Song toSong({String? albumName, String? overrideStreamUrl}) {
     final streamUrl = overrideStreamUrl ??
@@ -55,7 +62,7 @@ class JioSaavnItem extends Equatable {
         '';
     final durSecs = int.tryParse(duration ?? '0') ?? 0;
     final parsedId = int.tryParse(id);
-    final idHash = parsedId ?? (id.isNotEmpty ? id : token).hashCode.abs();
+    final idHash = parsedId ?? generateStableId(canonicalKey);
     return Song(
       id: idHash != 0 ? idHash : DateTime.now().millisecondsSinceEpoch,
       title: title.isNotEmpty ? title : 'Track',

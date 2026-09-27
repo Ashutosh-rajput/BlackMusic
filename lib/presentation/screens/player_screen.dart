@@ -609,7 +609,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                       iconSize: 38,
                       onPressed: () {
-                        context.read<PlayerBloc>().add(const NextSongEvent());
+                        context.read<PlayerBloc>().add(const NextSongEvent(isManualSkip: true));
                       },
                     ),
                     IconButton(

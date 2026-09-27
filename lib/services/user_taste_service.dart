@@ -8,19 +8,63 @@ import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
 import 'package:pixel_player/data/models/jiosaavn_item.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 
-/// Interaction metrics recorded implicitly for a single song.
+/// Context for generating recommendations.
+enum RecommendationContext {
+  home,
+  radio,
+  autoplay,
+}
+
+/// One terminal outcome per playback session.
+enum SessionOutcome {
+  inProgress,
+  completed,
+  skipped,
+  abandoned,
+}
+
+/// Represents an ongoing track listening session.
+class PlaybackSession {
+  final String trackKey;
+  final Song song;
+  final DateTime startTime;
+  Duration lastPosition;
+  Duration duration;
+  SessionOutcome outcome;
+
+  PlaybackSession({
+    required this.trackKey,
+    required this.song,
+    required this.startTime,
+    Duration? initialDuration,
+  })  : lastPosition = Duration.zero,
+        duration = initialDuration ?? song.duration,
+        outcome = SessionOutcome.inProgress;
+
+  bool get isTerminal => outcome != SessionOutcome.inProgress;
+}
+
+/// Interaction metrics recorded implicitly and explicitly for a track.
+/// Uses separately decayed positive and negative score accumulators to prevent
+/// new skips from reviving decayed completions (Solves Finding 1).
 class SongInteraction {
+  final String trackKey;
   final int songId;
   final String title;
   final String artist;
   final String? genre;
   int playCount;
   int completeCount;
-  int skipCount; // Skipped < 15s
+  int skipCount;
   bool isFavorite;
   DateTime lastInteraction;
 
+  // Separate decayed signal accumulators (30-day half-life continuous decay)
+  double positiveScore;
+  double negativeScore;
+
   SongInteraction({
+    required this.trackKey,
     required this.songId,
     required this.title,
     required this.artist,
@@ -30,9 +74,62 @@ class SongInteraction {
     this.skipCount = 0,
     this.isFavorite = false,
     required this.lastInteraction,
-  });
+    double? positiveScore,
+    double? negativeScore,
+  })  : positiveScore = positiveScore ??
+            ((completeCount * 1.5) + (playCount * 0.5) + (isFavorite ? 3.0 : 0.0)),
+        negativeScore = negativeScore ?? (skipCount * 2.0);
+
+  // 30-day half life decay: lambda = ln(2) / 30 ~= 0.0231049
+  static const double _lambda = 0.0231049;
+
+  void _decayAccumulators(DateTime now) {
+    if (now.isBefore(lastInteraction)) return;
+    final days = now.difference(lastInteraction).inSeconds / 86400.0;
+    final factor = exp(-_lambda * days);
+    positiveScore *= factor;
+    negativeScore *= factor;
+    lastInteraction = now;
+  }
+
+  void recordPlay(DateTime now) {
+    _decayAccumulators(now);
+    playCount++;
+    positiveScore += 0.5;
+  }
+
+  void recordComplete(DateTime now) {
+    _decayAccumulators(now);
+    completeCount++;
+    positiveScore += 1.5;
+  }
+
+  void recordSkip(DateTime now) {
+    _decayAccumulators(now);
+    skipCount++;
+    negativeScore += 2.0;
+  }
+
+  void recordFavorite(DateTime now, bool fav) {
+    _decayAccumulators(now);
+    if (!isFavorite && fav) {
+      positiveScore += 3.0;
+    }
+    isFavorite = fav;
+  }
+
+  /// Computes dynamic score using separately decayed positive and negative signals.
+  double computeAffinityScore(DateTime now) {
+    final days = max(0.0, now.difference(lastInteraction).inSeconds / 86400.0);
+    final factor = exp(-_lambda * days);
+    final favBonus = isFavorite ? 3.0 : 0.0;
+    final decayedPos = (positiveScore + favBonus) * factor;
+    final decayedNeg = negativeScore * factor;
+    return max(0.0, decayedPos - decayedNeg);
+  }
 
   Map<String, dynamic> toJson() => {
+        'trackKey': trackKey,
         'songId': songId,
         'title': title,
         'artist': artist,
@@ -42,42 +139,55 @@ class SongInteraction {
         'skipCount': skipCount,
         'isFavorite': isFavorite == true,
         'lastInteraction': lastInteraction.toIso8601String(),
+        'positiveScore': positiveScore,
+        'negativeScore': negativeScore,
       };
 
-  factory SongInteraction.fromJson(Map<String, dynamic> json) => SongInteraction(
-        songId: (json['songId'] is int)
-            ? json['songId'] as int
-            : int.tryParse(json['songId']?.toString() ?? '0') ?? 0,
-        title: json['title']?.toString() ?? '',
-        artist: json['artist']?.toString() ?? '',
-        genre: json['genre']?.toString(),
-        playCount: (json['playCount'] is int)
-            ? json['playCount'] as int
-            : int.tryParse(json['playCount']?.toString() ?? '0') ?? 0,
-        completeCount: (json['completeCount'] is int)
-            ? json['completeCount'] as int
-            : int.tryParse(json['completeCount']?.toString() ?? '0') ?? 0,
-        skipCount: (json['skipCount'] is int)
-            ? json['skipCount'] as int
-            : int.tryParse(json['skipCount']?.toString() ?? '0') ?? 0,
-        isFavorite: json['isFavorite'] == true,
-        lastInteraction: DateTime.tryParse(json['lastInteraction']?.toString() ?? '') ?? DateTime.now(),
-      );
+  factory SongInteraction.fromJson(Map<String, dynamic> json) {
+    final parsedSongId = (json['songId'] is int)
+        ? json['songId'] as int
+        : int.tryParse(json['songId']?.toString() ?? '0') ?? 0;
+    final trackKey = json['trackKey']?.toString() ??
+        (parsedSongId != 0 ? 'legacy:$parsedSongId' : 'unknown:${json['title']}');
+    final playCount = (json['playCount'] is int)
+        ? json['playCount'] as int
+        : int.tryParse(json['playCount']?.toString() ?? '0') ?? 0;
+    final completeCount = (json['completeCount'] is int)
+        ? json['completeCount'] as int
+        : int.tryParse(json['completeCount']?.toString() ?? '0') ?? 0;
+    final skipCount = (json['skipCount'] is int)
+        ? json['skipCount'] as int
+        : int.tryParse(json['skipCount']?.toString() ?? '0') ?? 0;
+    final isFavorite = json['isFavorite'] == true;
+    final lastInteraction =
+        DateTime.tryParse(json['lastInteraction']?.toString() ?? '') ?? DateTime.now();
 
-  /// Computes dynamic score using Spotify-style implicit & explicit feedback weights
-  /// and exponential time-decay (30-day half-life).
-  double computeAffinityScore(DateTime now) {
-    final daysSince = max(0, now.difference(lastInteraction).inHours) / 24.0;
-    // 30-day half life decay: lambda = ln(2) / 30 ~= 0.0231
-    final decay = exp(-0.0231 * daysSince);
+    final positiveScore = (json['positiveScore'] is num)
+        ? (json['positiveScore'] as num).toDouble()
+        : ((completeCount * 1.5) + (playCount * 0.5) + (isFavorite ? 3.0 : 0.0));
+    final negativeScore = (json['negativeScore'] is num)
+        ? (json['negativeScore'] as num).toDouble()
+        : (skipCount * 2.0);
 
-    // Weight formula:
-    // Explicit Favorite = +6.0, Complete play = +1.5, regular start = +0.5, skip = -2.0
-    final favBonus = (isFavorite == true) ? 6.0 : 0.0;
-    final rawScore = (completeCount * 1.5) + (playCount * 0.5) + favBonus - (skipCount * 2.0);
-    return max(0.0, rawScore) * decay;
+    return SongInteraction(
+      trackKey: trackKey,
+      songId: parsedSongId,
+      title: json['title']?.toString() ?? '',
+      artist: json['artist']?.toString() ?? '',
+      genre: json['genre']?.toString(),
+      playCount: playCount,
+      completeCount: completeCount,
+      skipCount: skipCount,
+      isFavorite: isFavorite,
+      lastInteraction: lastInteraction,
+      positiveScore: positiveScore,
+      negativeScore: negativeScore,
+    );
   }
 }
+
+typedef SearchSongsFn = Future<List<JioSaavnItem>> Function(String query);
+typedef FetchSuggestionsFn = Future<List<JioSaavnItem>> Function(String id, {int limit});
 
 /// PulseIQ On-Device Taste Profiler and Candidate Recommendation Engine.
 class UserTasteService {
@@ -85,21 +195,52 @@ class UserTasteService {
   static UserTasteService? _instance;
   static UserTasteService get instance => _instance ??= UserTasteService();
 
-  final Map<int, SongInteraction> _interactions = {};
-  final Map<String, double> _artistAffinities = {};
-  Timer? _saveDebounceTimer;
+  final DateTime Function() _clock;
+  final SearchSongsFn _searchSongs;
+  final FetchSuggestionsFn _fetchSuggestions;
   File? _storageFile;
+
+  // Stored by canonical trackKey
+  final Map<String, SongInteraction> _interactions = {};
+  // Secondary lookup by integer songId for legacy migrations
+  final Map<int, String> _songIdToTrackKey = {};
+  final Map<String, double> _artistAffinities = {};
+
+  Timer? _saveDebounceTimer;
   bool _isInitialized = false;
 
-  // Active track playback tracking state
-  int? _activeSongId;
-  DateTime? _activeSongStartTime;
-  Duration _lastPosition = Duration.zero;
-  Duration _lastDuration = Duration.zero;
-  bool _completionRecorded = false;
+  // Active playback session carrying single terminal outcome
+  PlaybackSession? _activeSession;
 
-  UserTasteService() {
+  UserTasteService({
+    DateTime Function()? clock,
+    SearchSongsFn? searchSongs,
+    FetchSuggestionsFn? fetchSuggestions,
+    File? storageFile,
+  })  : _clock = clock ?? DateTime.now,
+        _searchSongs = searchSongs ?? JioSaavnDecoder.searchSongs,
+        _fetchSuggestions = fetchSuggestions ?? JioSaavnDecoder.fetchSongSuggestions,
+        _storageFile = storageFile {
     _instance = this;
+  }
+
+  static final RegExp _artistSplitRegex = RegExp(
+    r'[,&/]|(?:\s+feat\.?\s+)|\s+ft\.?\s+|\s+featuring\s+|(?:\s+with\s+)',
+    caseSensitive: false,
+  );
+
+  /// Splits and normalizes artist names into exact clean tokens.
+  static List<String> parseArtistTokens(String artistsString) {
+    if (artistsString.trim().isEmpty) return const [];
+    return artistsString
+        .split(_artistSplitRegex)
+        .map((t) => t.trim().toLowerCase().replaceAll(RegExp(r'[^\w\s]'), ''))
+        .where((t) => t.isNotEmpty && t != 'unknown' && t != 'various artists')
+        .toList();
+  }
+
+  static String _canonicalKeyForSong(Song song) {
+    return song.canonicalKey;
   }
 
   Future<File> _resolveStorageFile() async {
@@ -127,7 +268,10 @@ class UserTasteService {
               if (item is Map<String, dynamic>) {
                 try {
                   final interaction = SongInteraction.fromJson(item);
-                  _interactions[interaction.songId] = interaction;
+                  _interactions[interaction.trackKey] = interaction;
+                  if (interaction.songId != 0) {
+                    _songIdToTrackKey[interaction.songId] = interaction.trackKey;
+                  }
                 } catch (e) {
                   debugPrint('PulseIQ: Skipped corrupt item in taste profile: $e');
                 }
@@ -145,152 +289,171 @@ class UserTasteService {
 
   void _recalculateArtistAffinities() {
     _artistAffinities.clear();
-    final now = DateTime.now();
+    final now = _clock();
 
     for (final inter in _interactions.values) {
-      final cleanArtist = inter.artist.trim();
-      if (cleanArtist.isEmpty || cleanArtist.toLowerCase() == 'unknown') continue;
+      final tokens = parseArtistTokens(inter.artist);
+      if (tokens.isEmpty) continue;
 
       final songScore = inter.computeAffinityScore(now);
-      _artistAffinities[cleanArtist] = (_artistAffinities[cleanArtist] ?? 0.0) + songScore;
+      if (songScore <= 0.0) continue;
+
+      // Primary artist receives full score; collaborators receive half
+      for (int i = 0; i < tokens.length; i++) {
+        final token = tokens[i];
+        final weight = i == 0 ? 1.0 : 0.5;
+        _artistAffinities[token] = (_artistAffinities[token] ?? 0.0) + (songScore * weight);
+      }
     }
   }
 
-  // --- Real-Time Implicit Signal Capture ---
+  SongInteraction? _getInteraction(String trackKey, [dynamic fallbackId]) {
+    var interaction = _interactions[trackKey];
+    if (interaction != null) return interaction;
 
-  /// Called when a song begins playback.
-  void onSongStarted(Song song) {
-    final now = DateTime.now();
-
-    // If previous song was active, check if it was skipped prematurely
-    if (_activeSongId != null && _activeSongStartTime != null && !_completionRecorded) {
-      final elapsed = now.difference(_activeSongStartTime!);
-      if (elapsed.inSeconds < 15 && _lastPosition.inSeconds < 15) {
-        _recordSkipInternal(_activeSongId!);
+    if (fallbackId != null) {
+      final intId = (fallbackId is int) ? fallbackId : int.tryParse(fallbackId.toString());
+      if (intId != null && _songIdToTrackKey.containsKey(intId)) {
+        return _interactions[_songIdToTrackKey[intId]];
       }
     }
+    return null;
+  }
 
-    _activeSongId = song.id;
-    _activeSongStartTime = now;
-    _lastPosition = Duration.zero;
-    _lastDuration = song.duration;
-    _completionRecorded = false;
-
-    // Record or update interaction
-    var interaction = _interactions[song.id];
+  SongInteraction _getOrCreateInteraction(Song song) {
+    final trackKey = _canonicalKeyForSong(song);
+    var interaction = _getInteraction(trackKey, song.id);
     if (interaction == null) {
       interaction = SongInteraction(
+        trackKey: trackKey,
         songId: song.id,
         title: song.title,
         artist: song.artist,
         genre: song.genre,
-        playCount: 1,
-        lastInteraction: now,
+        lastInteraction: _clock(),
       );
-      _interactions[song.id] = interaction;
-    } else {
-      interaction.playCount++;
-      interaction.lastInteraction = now;
+      _interactions[trackKey] = interaction;
+      _songIdToTrackKey[song.id] = trackKey;
     }
+    return interaction;
+  }
+
+  // --- Real-Time Implicit Signal Capture with PlaybackSession ---
+
+  /// Called when a song begins playback. Starts a new PlaybackSession.
+  void onSongStarted(Song song) {
+    final now = _clock();
+
+    // Check if previous session was abandoned or skipped early
+    if (_activeSession != null && !_activeSession!.isTerminal) {
+      final prev = _activeSession!;
+      final elapsed = now.difference(prev.startTime).inSeconds;
+      if (elapsed < 15 && prev.lastPosition.inSeconds < 15) {
+        prev.outcome = SessionOutcome.skipped;
+        _recordSkipInternal(prev.trackKey);
+      } else {
+        prev.outcome = SessionOutcome.abandoned;
+      }
+    }
+
+    final key = _canonicalKeyForSong(song);
+    _activeSession = PlaybackSession(
+      trackKey: key,
+      song: song,
+      startTime: now,
+      initialDuration: song.duration,
+    );
+
+    final interaction = _getOrCreateInteraction(song);
+    interaction.recordPlay(now);
 
     _recalculateArtistAffinities();
     _scheduleSave();
     debugPrint('PulseIQ: Started playing "${song.title}" by "${song.artist}" (plays: ${interaction.playCount})');
   }
 
-  /// Called on playback progress stream.
+  /// Called on playback progress stream. Transitions session to completed once
+  /// listening threshold (>= 80% or >= 3 minutes) is crossed.
   void onPlaybackProgress(Song song, Duration position, Duration duration) {
-    if (_activeSongId != song.id) {
-      _activeSongId = song.id;
-      _activeSongStartTime ??= DateTime.now();
-      _completionRecorded = false;
+    if (_activeSession == null || _activeSession!.song.id != song.id) {
+      _activeSession = PlaybackSession(
+        trackKey: _canonicalKeyForSong(song),
+        song: song,
+        startTime: _clock(),
+        initialDuration: duration,
+      );
     }
-    _lastPosition = position;
-    if (duration > Duration.zero) _lastDuration = duration;
+
+    final session = _activeSession!;
+    if (session.isTerminal) return;
+
+    session.lastPosition = position;
+    if (duration > Duration.zero) session.duration = duration;
 
     // Spotify rule: Listening past 80% or 3 minutes counts as an intentional complete play
-    if (!_completionRecorded && _lastDuration > Duration.zero) {
-      final ratio = position.inMilliseconds / _lastDuration.inMilliseconds;
+    if (session.duration > Duration.zero) {
+      final ratio = position.inMilliseconds / session.duration.inMilliseconds;
       if (ratio >= 0.80 || position.inSeconds >= 180) {
-        onSongCompleted(song);
+        session.outcome = SessionOutcome.completed;
+        _recordCompletionInternal(session.trackKey, song);
       }
     }
   }
 
-  /// Explicitly called when user taps "Next" or skips before song naturally completes.
-  void onSongSkipped(Song song) {
-    if (_completionRecorded) return; // Not a negative skip if already completed
-    final now = DateTime.now();
-    final elapsed = _activeSongStartTime != null ? now.difference(_activeSongStartTime!).inSeconds : _lastPosition.inSeconds;
-
-    if (elapsed < 15 || _lastPosition.inSeconds < 15) {
-      _recordSkipInternal(song.id);
+  /// Explicitly called when user initiates a manual skip before song naturally completes.
+  void onSongSkipped(Song song, {bool isManual = true}) {
+    final session = _activeSession;
+    if (session != null && session.song.id == song.id) {
+      if (session.outcome == SessionOutcome.completed) return; // Not a negative skip if completed
+      if (session.outcome == SessionOutcome.skipped) return;
+      session.outcome = SessionOutcome.skipped;
     }
+    _recordSkipInternal(_canonicalKeyForSong(song));
   }
 
-  /// Called when audio reaches completion.
+  /// Called when audio reaches natural completion (e.g. ProcessingState.completed).
   void onSongCompleted(Song song) {
-    if (_completionRecorded) return; // Prevent double counting
-    _completionRecorded = true;
-
-    final now = DateTime.now();
-    var interaction = _interactions[song.id];
-    if (interaction == null) {
-      interaction = SongInteraction(
-        songId: song.id,
-        title: song.title,
-        artist: song.artist,
-        genre: song.genre,
-        playCount: 1,
-        completeCount: 1,
-        lastInteraction: now,
-      );
-      _interactions[song.id] = interaction;
-    } else {
-      interaction.completeCount++;
-      interaction.lastInteraction = now;
+    final session = _activeSession;
+    if (session != null && session.song.id == song.id) {
+      if (session.outcome == SessionOutcome.completed) return;
+      session.outcome = SessionOutcome.completed;
     }
-
-    _recalculateArtistAffinities();
-    _scheduleSave();
-    debugPrint('PulseIQ: Recorded completion for "${song.title}" by "${song.artist}" (completed: ${interaction.completeCount} times)');
+    _recordCompletionInternal(_canonicalKeyForSong(song), song);
   }
 
   /// Explicitly records when a track is marked or unmarked as favorite.
   void onSongFavoriteToggled(Song song, bool isFav) {
-    final now = DateTime.now();
-    var interaction = _interactions[song.id];
-    if (interaction == null) {
-      interaction = SongInteraction(
-        songId: song.id,
-        title: song.title,
-        artist: song.artist,
-        genre: song.genre,
-        isFavorite: isFav,
-        lastInteraction: now,
-      );
-      _interactions[song.id] = interaction;
-    } else {
-      interaction.isFavorite = isFav;
-      interaction.lastInteraction = now;
-    }
+    final now = _clock();
+    final interaction = _getOrCreateInteraction(song);
+    interaction.recordFavorite(now, isFav);
 
     _recalculateArtistAffinities();
     _scheduleSave();
     debugPrint('PulseIQ: Recorded favorite=$isFav for "${song.title}" by "${song.artist}"');
   }
 
-  void _recordSkipInternal(int songId) {
-    final interaction = _interactions[songId];
+  void _recordCompletionInternal(String trackKey, Song song) {
+    final now = _clock();
+    final interaction = _getOrCreateInteraction(song);
+    interaction.recordComplete(now);
+
+    _recalculateArtistAffinities();
+    _scheduleSave();
+    debugPrint('PulseIQ: Recorded completion for "${song.title}" by "${song.artist}" (completed: ${interaction.completeCount} times)');
+  }
+
+  void _recordSkipInternal(String trackKey) {
+    final now = _clock();
+    final interaction = _interactions[trackKey];
     if (interaction != null) {
-      interaction.skipCount++;
-      interaction.lastInteraction = DateTime.now();
+      interaction.recordSkip(now);
+      _recalculateArtistAffinities();
       _scheduleSave();
       debugPrint('PulseIQ: Recorded skip penalty for "${interaction.title}" (skips: ${interaction.skipCount})');
     }
   }
 
-  // --- Taste Metrics & Recommendations ---
+  // --- Taste Metrics & Candidate Scoring ---
 
   /// Returns top artists sorted by dynamic affinity score.
   List<String> getTopArtists({int limit = 10}) {
@@ -301,69 +464,225 @@ class UserTasteService {
   }
 
   /// Scores a candidate song against the user's on-device taste profile.
-  double scoreCandidate(JioSaavnItem candidate) {
-    final now = DateTime.now();
-    double score = 1.0; // Base score
+  /// Normalizes individual signals and caps artist dominance (Findings 7, 8, 11).
+  double scoreCandidate(JioSaavnItem candidate, {String? preferredLang}) {
+    final now = _clock();
+    double score = 1.0; // Base baseline
 
-    // 1. Artist affinity check
-    final artist = candidate.subtitle.trim();
-    if (artist.isNotEmpty) {
-      for (final entry in _artistAffinities.entries) {
-        if (artist.toLowerCase().contains(entry.key.toLowerCase())) {
-          score += (entry.value * 2.0).clamp(0.0, 10.0);
-          break;
-        }
+    // 1. Exact Artist Token Affinity check (Finding 7)
+    final candidateTokens = parseArtistTokens(candidate.subtitle);
+    double maxArtistAffinity = 0.0;
+    for (final token in candidateTokens) {
+      final aff = _artistAffinities[token] ?? 0.0;
+      if (aff > maxArtistAffinity) {
+        maxArtistAffinity = aff;
+      }
+    }
+    // Cap artist influence to avoid single favorite artist dominating everything (Finding 11)
+    score += (maxArtistAffinity * 1.5).clamp(0.0, 5.0);
+
+    // 2. Track Interaction History (Finding 2, 11)
+    final interaction = _getInteraction(candidate.canonicalKey, candidate.id);
+    if (interaction != null) {
+      final affinity = interaction.computeAffinityScore(now);
+      score += affinity.clamp(0.0, 8.0);
+      if (interaction.skipCount > interaction.completeCount) {
+        score -= (interaction.skipCount * 2.0).clamp(0.0, 6.0);
       }
     }
 
-    // 2. Prior interaction history check (if user already heard it)
-    final candidateId = int.tryParse(candidate.id) ?? (candidate.id.isNotEmpty ? candidate.id : candidate.token).hashCode.abs();
-    final interaction = _interactions[candidateId];
-    if (interaction != null) {
-      final affinity = interaction.computeAffinityScore(now);
-      score += affinity;
-      if (interaction.isFavorite == true) {
-        score += 8.0; // Major boost for favorited track
-      }
-      if (interaction.skipCount > interaction.completeCount) {
-        score -= (interaction.skipCount * 3.0); // Significant penalty for skipped tracks
+    // 3. Language preference score feature (Finding 8)
+    if (preferredLang != null && preferredLang.isNotEmpty) {
+      final candLang = candidate.language?.trim().toLowerCase();
+      if (candLang != null && candLang.isNotEmpty) {
+        if (candLang == preferredLang.trim().toLowerCase()) {
+          score += 2.0; // Language match boost
+        }
       }
     }
 
     return max(0.1, score);
   }
 
-  /// Maximal Marginal Relevance (MMR) Diversity Filter:
-  /// Prevents echo chambers by limiting max tracks per artist.
+  /// True Maximal Marginal Relevance (MMR) Diversity Filter:
+  /// Balances normalized relevance against similarity across artists, albums, and language,
+  /// with a 10-20% exploration factor and a per-artist cap (Finding 6).
   List<JioSaavnItem> rankAndFilterWithMMR(
     List<JioSaavnItem> candidates, {
+    String? preferredLang,
+    double lambda = 0.7,
     int maxPerArtist = 2,
     int maxResults = 25,
+    double explorationRate = 0.15,
   }) {
-    final scored = candidates.map((item) => (item, scoreCandidate(item))).toList()
-      ..sort((a, b) => b.$2.compareTo(a.$2));
+    if (candidates.isEmpty) return const [];
 
-    final result = <JioSaavnItem>[];
-    final artistCount = <String, int>{};
+    // Calculate raw scores
+    final scored = candidates
+        .map((item) => (item, scoreCandidate(item, preferredLang: preferredLang)))
+        .toList();
 
+    double minScore = double.infinity;
+    double maxScore = -double.infinity;
     for (final pair in scored) {
-      if (result.length >= maxResults) break;
-      final item = pair.$1;
-      final primaryArtist = item.subtitle.split(',').first.trim().toLowerCase();
+      if (pair.$2 < minScore) minScore = pair.$2;
+      if (pair.$2 > maxScore) maxScore = pair.$2;
+    }
+    final range = max(0.001, maxScore - minScore);
 
-      final count = artistCount[primaryArtist] ?? 0;
-      if (count < maxPerArtist || primaryArtist.isEmpty) {
-        result.add(item);
-        artistCount[primaryArtist] = count + 1;
+    // Normalized relevance R(x) in [0, 1]
+    final normalizedScores = Map<JioSaavnItem, double>.fromEntries(
+      scored.map((p) => MapEntry(p.$1, (p.$2 - minScore) / range)),
+    );
+
+    final selected = <JioSaavnItem>[];
+    final artistCounts = <String, int>{};
+    final remaining = List<JioSaavnItem>.from(candidates);
+
+    // Iterative MMR selection
+    while (selected.length < maxResults && remaining.isNotEmpty) {
+      JioSaavnItem? bestCandidate;
+      double bestMMR = -double.infinity;
+
+      for (final candidate in remaining) {
+        final primaryArtist = parseArtistTokens(candidate.subtitle).firstOrNull ?? '';
+        final count = artistCounts[primaryArtist] ?? 0;
+        if (primaryArtist.isNotEmpty && count >= maxPerArtist) {
+          continue; // Enforce artist quota
+        }
+
+        final relevance = normalizedScores[candidate] ?? 0.0;
+        double maxSim = 0.0;
+
+        for (final sel in selected) {
+          final sim = _computeSimilarity(candidate, sel);
+          if (sim > maxSim) maxSim = sim;
+        }
+
+        final mmr = (lambda * relevance) - ((1.0 - lambda) * maxSim);
+        if (mmr > bestMMR) {
+          bestMMR = mmr;
+          bestCandidate = candidate;
+        }
+      }
+
+      if (bestCandidate != null) {
+        selected.add(bestCandidate);
+        remaining.remove(bestCandidate);
+        final primaryArtist = parseArtistTokens(bestCandidate.subtitle).firstOrNull ?? '';
+        if (primaryArtist.isNotEmpty) {
+          artistCounts[primaryArtist] = (artistCounts[primaryArtist] ?? 0) + 1;
+        }
+      } else {
+        // Quota saturated for top artists; take next best remaining
+        break;
       }
     }
 
-    return result;
+    // Add exploration slots (10-20%) if candidates remain and slots exist
+    final explorationSlots = (maxResults * explorationRate).round();
+    if (selected.length < maxResults && remaining.isNotEmpty) {
+      // Pick novel artist candidates
+      final existingArtists = selected.map((s) => parseArtistTokens(s.subtitle).firstOrNull ?? '').toSet();
+      final novelCandidates = remaining.where((c) {
+        final artist = parseArtistTokens(c.subtitle).firstOrNull ?? '';
+        return !existingArtists.contains(artist);
+      }).take(explorationSlots).toList();
+
+      for (final novel in novelCandidates) {
+        if (selected.length >= maxResults) break;
+        selected.add(novel);
+      }
+    }
+
+    return selected;
   }
 
-  /// Strategy 2: Multi-Seed Harvesting
-  /// Fetches suggestions for up to 3 distinct seed songs in parallel.
-  /// Tracks co-occurrence: songs appearing across multiple seed lists get a high-confidence boost!
+  /// Calculates content similarity between two JioSaavn items in [0, 1].
+  double _computeSimilarity(JioSaavnItem a, JioSaavnItem b) {
+    double sim = 0.0;
+    final aArtists = parseArtistTokens(a.subtitle).toSet();
+    final bArtists = parseArtistTokens(b.subtitle).toSet();
+    if (aArtists.intersection(bArtists).isNotEmpty) {
+      sim += 0.6;
+    }
+    if (a.music != null && b.music != null && a.music!.isNotEmpty && a.music == b.music) {
+      sim += 0.3;
+    }
+    if (a.language != null && b.language != null && a.language!.toLowerCase() == b.language!.toLowerCase()) {
+      sim += 0.1;
+    }
+    return min(1.0, sim);
+  }
+
+  // --- Seed Resolution Matching (Finding 5) ---
+
+  /// Resolves the authentic provider item for a seed song using fuzzy title similarity,
+  /// artist token overlap, and duration tolerance.
+  static JioSaavnItem? findBestSeedMatch(Song seed, List<JioSaavnItem> candidates) {
+    if (candidates.isEmpty) return null;
+
+    final seedTitleClean = _cleanText(seed.title);
+    final seedArtistTokens = parseArtistTokens(seed.artist).toSet();
+    final seedDurSecs = seed.duration.inSeconds;
+
+    JioSaavnItem? bestMatch;
+    double bestScore = -1.0;
+
+    for (final item in candidates) {
+      if (!item.isSong || item.title.trim().isEmpty) continue;
+      final candTitleClean = _cleanText(item.title);
+      final candArtistTokens = parseArtistTokens(item.subtitle).toSet();
+
+      // Title match
+      final titleSim = _stringSimilarity(seedTitleClean, candTitleClean);
+
+      // Artist overlap
+      final overlap = seedArtistTokens.intersection(candArtistTokens);
+      final artistSim = seedArtistTokens.isNotEmpty
+          ? overlap.length / seedArtistTokens.length
+          : 0.5;
+
+      // Duration tolerance
+      double durationSim = 0.5;
+      final candDur = int.tryParse(item.duration ?? '0') ?? 0;
+      if (seedDurSecs > 0 && candDur > 0) {
+        final diff = (seedDurSecs - candDur).abs();
+        if (diff <= 15) {
+          durationSim = 1.0;
+        } else if (diff <= 45) {
+          durationSim = 0.7;
+        } else {
+          durationSim = 0.2;
+        }
+      }
+
+      final score = (titleSim * 0.55) + (artistSim * 0.30) + (durationSim * 0.15);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = item;
+      }
+    }
+
+    return bestScore >= 0.40 ? bestMatch : candidates.first;
+  }
+
+  static String _cleanText(String text) {
+    return text.toLowerCase().replaceAll(RegExp(r'[^\w\s]'), ' ').trim();
+  }
+
+  static double _stringSimilarity(String a, String b) {
+    if (a == b) return 1.0;
+    if (a.isEmpty || b.isEmpty) return 0.0;
+    final aWords = a.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toSet();
+    final bWords = b.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toSet();
+    final intersection = aWords.intersection(bWords).length;
+    final union = aWords.union(bWords).length;
+    return union > 0 ? intersection / union : 0.0;
+  }
+
+  // --- Multi-Seed & Radar Candidate Retrieval ---
+
   Future<Map<JioSaavnItem, int>> fetchMultiSeedCandidates(
     List<Song> seedSongs, {
     int perSeedLimit = 15,
@@ -373,15 +692,12 @@ class UserTasteService {
     final futures = seedSongs.take(3).map((song) async {
       try {
         final query = '${song.title} ${song.artist}'.trim();
-        final searchResults = await JioSaavnDecoder.searchSongs(query);
-        String? seedId;
-        if (searchResults.isNotEmpty) {
-          final match = searchResults.firstWhere((s) => s.id.isNotEmpty, orElse: () => searchResults.first);
-          seedId = match.id.isNotEmpty ? match.id : match.token;
-        }
+        final searchResults = await _searchSongs(query);
+        final match = findBestSeedMatch(song, searchResults);
+        final seedId = match != null ? (match.id.isNotEmpty ? match.id : match.token) : null;
 
         if (seedId != null && seedId.isNotEmpty) {
-          final suggestions = await JioSaavnDecoder.fetchSongSuggestions(seedId, limit: perSeedLimit);
+          final suggestions = await _fetchSuggestions(seedId, limit: perSeedLimit);
           return suggestions;
         }
       } catch (e) {
@@ -394,7 +710,7 @@ class UserTasteService {
     for (final list in results) {
       for (final item in list) {
         if (!item.isSong || item.title.trim().isEmpty) continue;
-        final key = (item.id.isNotEmpty ? item.id : item.title.toLowerCase().trim());
+        final key = item.canonicalKey;
         if (occurrences.containsKey(key)) {
           final existing = occurrences[key]!;
           occurrences[key] = (existing.$1, existing.$2 + 1);
@@ -411,9 +727,6 @@ class UserTasteService {
     return candidateMap;
   }
 
-  /// Strategy 3: Artist Collaboration & Composer Radar
-  /// Extracts primary artists, featured artists, and composers from the user's top songs.
-  /// Queries their top catalogs for tracks the user hasn't heard yet.
   Future<List<JioSaavnItem>> fetchComposerAndCollaborationRadar(
     List<Song> topSongs, {
     int perCreatorLimit = 10,
@@ -424,21 +737,17 @@ class UserTasteService {
 
     for (final song in topSongs) {
       if (targetCreators.length >= maxCreators) break;
-      final candidates = [
-        ...song.artist.split(RegExp(r'[,&/]')),
-        if (song.albumArtist != null) ...song.albumArtist!.split(RegExp(r'[,&/]')),
-      ].map((s) => s.trim()).where((s) => s.isNotEmpty && s.toLowerCase() != 'unknown');
-
-      for (final name in candidates) {
-        if (targetCreators.length < maxCreators && !targetCreators.contains(name.toLowerCase())) {
-          targetCreators.add(name);
+      final tokens = parseArtistTokens(song.artist);
+      for (final token in tokens) {
+        if (targetCreators.length < maxCreators && !targetCreators.contains(token)) {
+          targetCreators.add(token);
         }
       }
     }
 
     final futures = targetCreators.map((creator) async {
       try {
-        final results = await JioSaavnDecoder.searchSongs(creator);
+        final results = await _searchSongs(creator);
         return results.where((item) => item.isSong && item.title.isNotEmpty).take(perCreatorLimit).toList();
       } catch (_) {
         return <JioSaavnItem>[];
@@ -449,14 +758,162 @@ class UserTasteService {
     for (final list in results) {
       radarCandidates.addAll(list);
     }
-
     return radarCandidates;
   }
 
-  /// High-level PulseIQ personalized recommendation pipeline combining:
-  /// 1. Multi-Seed Harvesting (cross-seed co-occurrence boosts)
-  /// 2. Artist Collaboration & Composer Radar
-  /// 3. MMR Diversity Filter & Skip-penalty Scoring
+  // --- Unified Recommendation Engine (Findings 9 & 10) ---
+
+  /// Single unified entry point for all recommendation surfaces (Home, Radio, Autoplay).
+  /// Excludes queue tracks, recent history, and current session (Finding 10).
+  Future<List<Song>> getRecommendations({
+    required RecommendationContext context,
+    Song? currentSong,
+    List<Song> queue = const [],
+    List<Song> recentHistory = const [],
+    List<Song> favorites = const [],
+    String lang = 'hindi',
+    int limit = 15,
+  }) async {
+    final candidateItems = await getCandidateRecommendations(
+      context: context,
+      currentSong: currentSong,
+      queue: queue,
+      recentHistory: recentHistory,
+      favorites: favorites,
+      lang: lang,
+      limit: limit,
+    );
+
+    return candidateItems
+        .map((item) => item.toSong())
+        .where((s) => s.filePath.trim().isNotEmpty)
+        .toList();
+  }
+
+  /// Retrieves and ranks raw candidate JioSaavnItems through the unified PulseIQ pipeline.
+  Future<List<JioSaavnItem>> getCandidateRecommendations({
+    required RecommendationContext context,
+    Song? currentSong,
+    List<Song> queue = const [],
+    List<Song> recentHistory = const [],
+    List<Song> favorites = const [],
+    String lang = 'hindi',
+    int limit = 15,
+  }) async {
+    try {
+      // 1. Build excluded canonical key and title sets (Finding 10)
+      final Set<String> excludedKeys = {};
+      final Set<String> excludedTitles = {};
+
+      void addExclusion(Song? song) {
+        if (song == null) return;
+        excludedKeys.add(song.canonicalKey);
+        final title = song.title.trim().toLowerCase();
+        if (title.isNotEmpty) excludedTitles.add(title);
+      }
+
+      addExclusion(currentSong);
+      for (final q in queue) {
+        addExclusion(q);
+      }
+      for (final r in recentHistory) {
+        addExclusion(r);
+      }
+
+      List<JioSaavnItem> pool = [];
+
+      // 2. Candidate retrieval based on context
+      if (context == RecommendationContext.autoplay || context == RecommendationContext.radio) {
+        // Single-seed mode around currentSong with fallback
+        if (currentSong != null) {
+          final query = '${currentSong.title} ${currentSong.artist}'.trim();
+          final searchResults = await _searchSongs(query);
+          final seedMatch = findBestSeedMatch(currentSong, searchResults);
+          final seedId = seedMatch != null ? (seedMatch.id.isNotEmpty ? seedMatch.id : seedMatch.token) : null;
+
+          if (seedId != null && seedId.isNotEmpty) {
+            pool = await _fetchSuggestions(seedId, limit: max(30, limit * 2));
+          }
+        }
+
+        // Fallback to top artist if single-seed suggestions are sparse
+        if (pool.length < 5) {
+          final topArtists = getTopArtists(limit: 3);
+          final fallbackArtist = topArtists.isNotEmpty
+              ? topArtists.first
+              : (currentSong != null ? currentSong.artist : lang);
+          if (fallbackArtist.isNotEmpty && fallbackArtist.toLowerCase() != 'unknown') {
+            final artistResults = await _searchSongs(fallbackArtist);
+            pool.addAll(artistResults.where((i) => i.isSong));
+          }
+        }
+      } else {
+        // Home multi-seed mode (Favorites prioritized, then top history)
+        final List<Song> seeds = [];
+        final seenSeedTitles = <String>{};
+
+        for (final song in [...favorites, ...recentHistory]) {
+          if (seeds.length >= 3) break;
+          final norm = song.title.toLowerCase().trim();
+          if (!seenSeedTitles.contains(norm) && norm.isNotEmpty) {
+            seenSeedTitles.add(norm);
+            seeds.add(song);
+          }
+        }
+
+        if (seeds.isEmpty) {
+          try {
+            final popular = await _searchSongs(lang);
+            seeds.addAll(popular.take(3).map((item) => item.toSong()));
+          } catch (_) {}
+        }
+
+        if (seeds.isNotEmpty) {
+          final multiSeedFuture = fetchMultiSeedCandidates(seeds, perSeedLimit: 15);
+          final composerRadarFuture = fetchComposerAndCollaborationRadar(seeds, perCreatorLimit: 8, maxCreators: 3);
+          final combined = await Future.wait([multiSeedFuture, composerRadarFuture]);
+          final multiSeedMap = combined[0] as Map<JioSaavnItem, int>;
+          final composerCandidates = combined[1] as List<JioSaavnItem>;
+
+          final Map<String, JioSaavnItem> deduplicated = {};
+          for (final item in multiSeedMap.keys) {
+            deduplicated[item.canonicalKey] = item;
+          }
+          for (final item in composerCandidates) {
+            deduplicated[item.canonicalKey] = item;
+          }
+          pool = deduplicated.values.toList();
+        }
+      }
+
+      // 3. Filter candidates against exclusions (Finding 10)
+      final candidateList = pool.where((item) {
+        if (!item.isSong || item.title.trim().isEmpty) return false;
+        if (excludedKeys.contains(item.canonicalKey)) return false;
+        if (excludedTitles.contains(item.title.trim().toLowerCase())) return false;
+        return true;
+      }).toList();
+
+      final candidatesToScore = candidateList.isNotEmpty ? candidateList : pool;
+
+      // 4. Re-rank with true iterative MMR and language weighting (Findings 6 & 8)
+      final ranked = rankAndFilterWithMMR(
+        candidatesToScore,
+        preferredLang: lang,
+        lambda: 0.7,
+        maxPerArtist: 2,
+        maxResults: limit,
+      );
+
+      debugPrint('PulseIQ: Recommended ${ranked.length} tracks for context $context.');
+      return ranked;
+    } catch (e) {
+      debugPrint('PulseIQ getCandidateRecommendations error: $e');
+      return [];
+    }
+  }
+
+  /// Backward-compatible wrapper for StreamScreen.
   Future<List<JioSaavnItem>> getPersonalizedSuggestions({
     required List<Song> topPlayed,
     required List<Song> streamHistory,
@@ -464,167 +921,42 @@ class UserTasteService {
     String lang = 'hindi',
     int limit = 15,
   }) async {
-    try {
-      // 1. Determine top 3 seed tracks: Favorites are given highest priority!
-      final List<Song> seeds = [];
-      final seenSeedTitles = <String>{};
-
-      for (final song in [...favorites, ...topPlayed, ...streamHistory]) {
-        if (seeds.length >= 3) break;
-        final norm = song.title.toLowerCase().trim();
-        if (!seenSeedTitles.contains(norm) && norm.isNotEmpty) {
-          seenSeedTitles.add(norm);
-          seeds.add(song);
-        }
-      }
-
-      // If user has zero listening history, fallback to language search seeds
-      if (seeds.isEmpty) {
-        try {
-          final popular = await JioSaavnDecoder.searchSongs(lang);
-          seeds.addAll(popular.take(3).map((item) => item.toSong()));
-        } catch (_) {}
-      }
-
-      if (seeds.isEmpty) return [];
-
-      // 2. Run Strategy 2 (Multi-Seed Harvesting) and Strategy 3 (Composer Radar) concurrently!
-      final multiSeedFuture = fetchMultiSeedCandidates(seeds, perSeedLimit: 15);
-      final composerRadarFuture = fetchComposerAndCollaborationRadar(seeds, perCreatorLimit: 8, maxCreators: 3);
-
-      final combined = await Future.wait([multiSeedFuture, composerRadarFuture]);
-      final multiSeedMap = combined[0] as Map<JioSaavnItem, int>;
-      final composerCandidates = combined[1] as List<JioSaavnItem>;
-
-      // 3. Assemble pool with co-occurrence weights
-      final Map<String, (JioSaavnItem, int)> pool = {};
-
-      for (final entry in multiSeedMap.entries) {
-        final key = entry.key.id.isNotEmpty ? entry.key.id : entry.key.title.toLowerCase().trim();
-        pool[key] = (entry.key, entry.value);
-      }
-
-      for (final item in composerCandidates) {
-        final key = item.id.isNotEmpty ? item.id : item.title.toLowerCase().trim();
-        if (pool.containsKey(key)) {
-          final existing = pool[key]!;
-          pool[key] = (existing.$1, existing.$2 + 1);
-        } else {
-          pool[key] = (item, 1);
-        }
-      }
-
-      // 4. Filter out songs the user has already played recently
-      final playedTitles = {
-        ...topPlayed.map((s) => s.title.toLowerCase().trim()),
-        ...streamHistory.map((s) => s.title.toLowerCase().trim())
-      };
-      final candidateList = pool.values
-          .where((p) => !playedTitles.contains(p.$1.title.toLowerCase().trim()))
-          .toList();
-
-      final finalCandidates = candidateList.isNotEmpty ? candidateList : pool.values.toList();
-
-      // 5. Score candidates with PulseIQ and Co-occurrence boost
-      final scoredCandidates = finalCandidates.map((pair) {
-        final item = pair.$1;
-        final coOccurrences = pair.$2;
-        double score = scoreCandidate(item);
-        if (coOccurrences > 1) {
-          score += (coOccurrences - 1) * 4.0; // High confidence multi-seed overlap boost
-        }
-        return (item, score);
-      }).toList();
-
-      debugPrint('PulseIQ: Generating suggestions from ${seeds.length} seeds: ${seeds.map((s) => s.title).toList()}');
-
-      // 6. Apply MMR Diversity filter (max 2 songs per artist)
-      scoredCandidates.sort((a, b) => b.$2.compareTo(a.$2));
-
-      final result = <JioSaavnItem>[];
-      final artistCount = <String, int>{};
-
-      for (final pair in scoredCandidates) {
-        if (result.length >= limit) break;
-        final item = pair.$1;
-        final primaryArtist = item.subtitle.split(',').first.trim().toLowerCase();
-
-        final count = artistCount[primaryArtist] ?? 0;
-        if (count < 2 || primaryArtist.isEmpty) {
-          result.add(item);
-          artistCount[primaryArtist] = count + 1;
-        }
-      }
-
-      debugPrint('PulseIQ: Harvested ${pool.length} pool tracks -> curated ${result.length} suggestions.');
-      return result;
-    } catch (e) {
-      debugPrint('PulseIQ getPersonalizedSuggestions error: $e');
-      return [];
-    }
+    return getCandidateRecommendations(
+      context: RecommendationContext.home,
+      recentHistory: [...topPlayed, ...streamHistory],
+      favorites: favorites,
+      lang: lang,
+      limit: limit,
+    );
   }
 
-  /// Generates next Smart Autoplay recommendations given the current song.
-  Future<List<Song>> getSmartAutoplayRecommendations(Song currentSong, {int limit = 10}) async {
-    try {
-      List<JioSaavnItem> candidates = [];
-
-      // 1. Seed retrieval: Get authentic JioSaavn ID
-      final searchQuery = '${currentSong.title} ${currentSong.artist}'.trim();
-      final searchResults = await JioSaavnDecoder.searchSongs(searchQuery);
-
-      String? seedId;
-      if (searchResults.isNotEmpty) {
-        final match = searchResults.firstWhere((s) => s.id.isNotEmpty, orElse: () => searchResults.first);
-        seedId = match.id.isNotEmpty ? match.id : match.token;
-      }
-
-      if (seedId != null && seedId.isNotEmpty) {
-        candidates = await JioSaavnDecoder.fetchSongSuggestions(seedId, limit: 30);
-      }
-
-      // 2. Fallback to top taste artist if suggestions are sparse
-      if (candidates.length < 5) {
-        final topArtists = getTopArtists(limit: 3);
-        final fallbackArtist = topArtists.isNotEmpty ? topArtists.first : currentSong.artist;
-        if (fallbackArtist.isNotEmpty && fallbackArtist != 'Unknown') {
-          final artistResults = await JioSaavnDecoder.searchSongs(fallbackArtist);
-          candidates.addAll(artistResults.where((i) => i.isSong));
-        }
-      }
-
-      // 3. Filter out current song & duplicates
-      final currentTitle = currentSong.title.trim().toLowerCase();
-      final filteredCandidates = candidates.where((item) {
-        return item.isSong &&
-            item.title.trim().isNotEmpty &&
-            item.title.trim().toLowerCase() != currentTitle;
-      }).toList();
-
-      // 4. Re-rank with PulseIQ taste scoring & MMR diversity filter
-      final reranked = rankAndFilterWithMMR(filteredCandidates, maxPerArtist: 2, maxResults: limit);
-
-      // 5. Convert to playable Song models
-      final result = reranked
-          .map((item) => item.toSong())
-          .where((s) => s.filePath.trim().isNotEmpty)
-          .toList();
-      debugPrint('PulseIQ: Smart Autoplay queued ${result.length} tracks for "${currentSong.title}"');
-      return result;
-    } catch (e) {
-      debugPrint('PulseIQ: Error generating Smart Autoplay: $e');
-      return [];
-    }
+  /// Backward-compatible wrapper for Smart Autoplay.
+  Future<List<Song>> getSmartAutoplayRecommendations(
+    Song currentSong, {
+    int limit = 10,
+  }) async {
+    return getRecommendations(
+      context: RecommendationContext.autoplay,
+      currentSong: currentSong,
+      limit: limit,
+    );
   }
+
+  // --- Persistence & Lifecycle Flush (Finding 12) ---
 
   void _scheduleSave() {
     _saveDebounceTimer?.cancel();
-    _saveDebounceTimer = Timer(const Duration(seconds: 3), _saveToFile);
+    _saveDebounceTimer = Timer(const Duration(seconds: 3), flush);
   }
 
-  Future<void> _saveToFile() async {
+  /// Immediately writes pending taste profile interactions to disk.
+  Future<void> flush() async {
+    _saveDebounceTimer?.cancel();
     try {
       final file = await _resolveStorageFile();
+      if (!await file.parent.exists()) {
+        await file.parent.create(recursive: true);
+      }
       final interactionList = _interactions.values.map((i) => i.toJson()).toList();
       final data = {
         'interactions': interactionList,
@@ -632,7 +964,12 @@ class UserTasteService {
       await file.writeAsString(jsonEncode(data));
       _recalculateArtistAffinities();
     } catch (e, st) {
-      debugPrint('PulseIQ: Failed to save taste profile: $e\n$st');
+      debugPrint('PulseIQ: Failed to flush taste profile: $e\n$st');
     }
+  }
+
+  void dispose() {
+    _saveDebounceTimer?.cancel();
+    _saveDebounceTimer = null;
   }
 }

@@ -215,7 +215,7 @@ class _MiniPlayerDock extends StatelessWidget {
                     IconButton(
                       icon: const Icon(Icons.skip_next_rounded),
                       onPressed: () {
-                        context.read<PlayerBloc>().add(const NextSongEvent());
+                        context.read<PlayerBloc>().add(const NextSongEvent(isManualSkip: true));
                       },
                     ),
                   ],

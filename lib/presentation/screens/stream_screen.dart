@@ -361,13 +361,17 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         if (mounted) _loadLastPlayedSongs();
       });
 
-      if (item.id.isNotEmpty) {
-        JioSaavnDecoder.fetchSongSuggestions(item.id, limit: 10).then((suggestions) {
-          if (mounted && suggestions.isNotEmpty) {
-            setState(() => _suggestedSongs = suggestions);
-          }
-        }).catchError((_) {});
-      }
+      UserTasteService.instance.getCandidateRecommendations(
+        context: RecommendationContext.home,
+        currentSong: song,
+        recentHistory: _lastPlayedStreamSongs,
+        lang: _currentLang,
+        limit: 10,
+      ).then((suggestions) {
+        if (mounted && suggestions.isNotEmpty) {
+          setState(() => _suggestedSongs = suggestions);
+        }
+      }).catchError((_) {});
 
       if (getIt<SettingsService>().autoDownloadStreamSongs) {
         _downloadSong(item, overrideUrl: streamUrl);

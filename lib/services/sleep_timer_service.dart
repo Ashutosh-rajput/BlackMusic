@@ -38,8 +38,8 @@ class SleepTimerService extends ChangeNotifier {
     }
 
     if (mode == SleepTimerMode.endOfSong) {
-      int? initialIndex = audioService.player.currentIndex;
-      Duration lastPosition = audioService.player.position;
+      int? initialIndex = audioService.currentIndex;
+      Duration lastPosition = audioService.position;
 
       void onSongEnded() {
         cancelTimer();
@@ -62,7 +62,7 @@ class SleepTimerService extends ChangeNotifier {
       });
 
       _positionSubscription = audioService.positionStream.listen((pos) {
-        final dur = audioService.player.duration;
+        final dur = audioService.duration;
         if (dur != null && dur > Duration.zero) {
           // Detect loop repeat in LoopMode.one
           if (lastPosition > Duration.zero &&
