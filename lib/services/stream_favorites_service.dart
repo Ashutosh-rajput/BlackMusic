@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pixel_player/core/utils/hash_utils.dart';
+import 'package:pixel_player/data/models/jiosaavn_item.dart';
 import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/services/user_taste_service.dart';
 
@@ -69,10 +71,13 @@ class StreamFavoritesService {
 
   int getSongIdForItem(dynamic item) {
     if (item == null) return 0;
+    if (item is JioSaavnItem) {
+      return item.stableId;
+    }
     final idStr = item.id?.toString() ?? '';
     final tokenStr = item.token?.toString() ?? '';
     final parsed = int.tryParse(idStr);
-    return parsed ?? (idStr.isNotEmpty ? idStr : tokenStr).hashCode.abs();
+    return parsed ?? generateStableId(idStr.isNotEmpty ? idStr : tokenStr);
   }
 
   bool isItemFavorite(dynamic item) {

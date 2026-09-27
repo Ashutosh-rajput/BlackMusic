@@ -112,9 +112,6 @@ class SongInteraction {
 
   void recordFavorite(DateTime now, bool fav) {
     _decayAccumulators(now);
-    if (!isFavorite && fav) {
-      positiveScore += 3.0;
-    }
     isFavorite = fav;
   }
 
@@ -123,9 +120,9 @@ class SongInteraction {
     final days = max(0.0, now.difference(lastInteraction).inSeconds / 86400.0);
     final factor = exp(-_lambda * days);
     final favBonus = isFavorite ? 3.0 : 0.0;
-    final decayedPos = (positiveScore + favBonus) * factor;
+    final decayedPos = positiveScore * factor;
     final decayedNeg = negativeScore * factor;
-    return max(0.0, decayedPos - decayedNeg);
+    return max(0.0, (decayedPos + favBonus) - decayedNeg);
   }
 
   Map<String, dynamic> toJson() => {
@@ -465,7 +462,11 @@ class UserTasteService {
 
   /// Scores a candidate song against the user's on-device taste profile.
   /// Normalizes individual signals and caps artist dominance (Findings 7, 8, 11).
-  double scoreCandidate(JioSaavnItem candidate, {String? preferredLang}) {
+  double scoreCandidate(
+    JioSaavnItem candidate, {
+    String? preferredLang,
+    int coOccurrences = 1,
+  }) {
     final now = _clock();
     double score = 1.0; // Base baseline
 
@@ -491,7 +492,12 @@ class UserTasteService {
       }
     }
 
-    // 3. Language preference score feature (Finding 8)
+    // 3. Multi-seed co-occurrence boost (Finding 5)
+    if (coOccurrences > 1) {
+      score += (coOccurrences - 1) * 3.0;
+    }
+
+    // 4. Language preference score feature (Finding 8)
     if (preferredLang != null && preferredLang.isNotEmpty) {
       final candLang = candidate.language?.trim().toLowerCase();
       if (candLang != null && candLang.isNotEmpty) {
@@ -514,12 +520,20 @@ class UserTasteService {
     int maxPerArtist = 2,
     int maxResults = 25,
     double explorationRate = 0.15,
+    Map<String, int>? coOccurrenceMap,
   }) {
     if (candidates.isEmpty) return const [];
 
-    // Calculate raw scores
+    // Calculate raw scores with co-occurrence boost
     final scored = candidates
-        .map((item) => (item, scoreCandidate(item, preferredLang: preferredLang)))
+        .map((item) => (
+              item,
+              scoreCandidate(
+                item,
+                preferredLang: preferredLang,
+                coOccurrences: coOccurrenceMap?[item.canonicalKey] ?? 1,
+              )
+            ))
         .toList();
 
     double minScore = double.infinity;
@@ -539,8 +553,14 @@ class UserTasteService {
     final artistCounts = <String, int>{};
     final remaining = List<JioSaavnItem>.from(candidates);
 
-    // Iterative MMR selection
-    while (selected.length < maxResults && remaining.isNotEmpty) {
+    // Reserve exploration slots so MMR does not saturate all slots before exploration runs (Finding 4)
+    final totalExplorationSlots = (explorationRate > 0 && candidates.length > 1)
+        ? (maxResults * explorationRate).round().clamp(1, max(1, maxResults ~/ 2))
+        : 0;
+    final targetMMRSlots = max(1, maxResults - totalExplorationSlots);
+
+    // Phase 1: Iterative MMR selection for relevance slots
+    while (selected.length < targetMMRSlots && remaining.isNotEmpty) {
       JioSaavnItem? bestCandidate;
       double bestMMR = -double.infinity;
 
@@ -574,24 +594,48 @@ class UserTasteService {
           artistCounts[primaryArtist] = (artistCounts[primaryArtist] ?? 0) + 1;
         }
       } else {
-        // Quota saturated for top artists; take next best remaining
+        // Quota saturated for top artists; break to exploration/fill
         break;
       }
     }
 
-    // Add exploration slots (10-20%) if candidates remain and slots exist
-    final explorationSlots = (maxResults * explorationRate).round();
-    if (selected.length < maxResults && remaining.isNotEmpty) {
-      // Pick novel artist candidates
+    // Phase 2: Fill exploration slots with novel artists not yet selected (Finding 4)
+    if (totalExplorationSlots > 0 && selected.length < maxResults && remaining.isNotEmpty) {
       final existingArtists = selected.map((s) => parseArtistTokens(s.subtitle).firstOrNull ?? '').toSet();
       final novelCandidates = remaining.where((c) {
         final artist = parseArtistTokens(c.subtitle).firstOrNull ?? '';
-        return !existingArtists.contains(artist);
-      }).take(explorationSlots).toList();
+        return artist.isNotEmpty && !existingArtists.contains(artist);
+      }).take(totalExplorationSlots).toList();
 
       for (final novel in novelCandidates) {
         if (selected.length >= maxResults) break;
         selected.add(novel);
+        remaining.remove(novel);
+        final primaryArtist = parseArtistTokens(novel.subtitle).firstOrNull ?? '';
+        if (primaryArtist.isNotEmpty) {
+          artistCounts[primaryArtist] = (artistCounts[primaryArtist] ?? 0) + 1;
+        }
+      }
+    }
+
+    // Phase 3: Fill any remaining slots up to maxResults with next best remaining candidates
+    while (selected.length < maxResults && remaining.isNotEmpty) {
+      JioSaavnItem? fallbackCandidate;
+      for (final candidate in remaining) {
+        final primaryArtist = parseArtistTokens(candidate.subtitle).firstOrNull ?? '';
+        final count = artistCounts[primaryArtist] ?? 0;
+        if (primaryArtist.isEmpty || count < maxPerArtist) {
+          fallbackCandidate = candidate;
+          break;
+        }
+      }
+      fallbackCandidate ??= remaining.first;
+
+      selected.add(fallbackCandidate);
+      remaining.remove(fallbackCandidate);
+      final primaryArtist = parseArtistTokens(fallbackCandidate.subtitle).firstOrNull ?? '';
+      if (primaryArtist.isNotEmpty) {
+        artistCounts[primaryArtist] = (artistCounts[primaryArtist] ?? 0) + 1;
       }
     }
 
@@ -821,6 +865,7 @@ class UserTasteService {
       }
 
       List<JioSaavnItem> pool = [];
+      final Map<String, int> coOccurrences = {};
 
       // 2. Candidate retrieval based on context
       if (context == RecommendationContext.autoplay || context == RecommendationContext.radio) {
@@ -876,11 +921,15 @@ class UserTasteService {
           final composerCandidates = combined[1] as List<JioSaavnItem>;
 
           final Map<String, JioSaavnItem> deduplicated = {};
-          for (final item in multiSeedMap.keys) {
-            deduplicated[item.canonicalKey] = item;
+          for (final entry in multiSeedMap.entries) {
+            final key = entry.key.canonicalKey;
+            deduplicated[key] = entry.key;
+            coOccurrences[key] = (coOccurrences[key] ?? 0) + entry.value;
           }
           for (final item in composerCandidates) {
-            deduplicated[item.canonicalKey] = item;
+            final key = item.canonicalKey;
+            deduplicated[key] = item;
+            coOccurrences[key] = (coOccurrences[key] ?? 0) + 1;
           }
           pool = deduplicated.values.toList();
         }
@@ -894,15 +943,20 @@ class UserTasteService {
         return true;
       }).toList();
 
-      final candidatesToScore = candidateList.isNotEmpty ? candidateList : pool;
+      if (candidateList.isEmpty) {
+        debugPrint('PulseIQ: All candidates excluded by queue/history filter.');
+        return const [];
+      }
+      final candidatesToScore = candidateList;
 
-      // 4. Re-rank with true iterative MMR and language weighting (Findings 6 & 8)
+      // 4. Re-rank with true iterative MMR, co-occurrence, and language weighting (Findings 4, 5, 6 & 8)
       final ranked = rankAndFilterWithMMR(
         candidatesToScore,
         preferredLang: lang,
         lambda: 0.7,
         maxPerArtist: 2,
         maxResults: limit,
+        coOccurrenceMap: coOccurrences,
       );
 
       debugPrint('PulseIQ: Recommended ${ranked.length} tracks for context $context.');

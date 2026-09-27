@@ -54,6 +54,12 @@ class JioSaavnItem extends Equatable {
     return 'jiosaavn:${generateStableId(title)}';
   }
 
+  /// Stable deterministic integer ID for caching, favorites, and databases.
+  int get stableId {
+    final parsed = int.tryParse(id);
+    return parsed ?? generateStableId(canonicalKey);
+  }
+
   /// Converts this JioSaavnItem into a playable online Song model.
   Song toSong({String? albumName, String? overrideStreamUrl}) {
     final streamUrl = overrideStreamUrl ??
@@ -61,10 +67,11 @@ class JioSaavnItem extends Equatable {
         JioSaavnDecoder.decryptMediaUrl(encryptedMediaUrl) ??
         '';
     final durSecs = int.tryParse(duration ?? '0') ?? 0;
-    final parsedId = int.tryParse(id);
-    final idHash = parsedId ?? generateStableId(canonicalKey);
+    final idHash = stableId;
+    final providerId = id.isNotEmpty ? id : (token.isNotEmpty ? token : null);
     return Song(
       id: idHash != 0 ? idHash : DateTime.now().millisecondsSinceEpoch,
+      mediaId: providerId,
       title: title.isNotEmpty ? title : 'Track',
       artist: subtitle.isNotEmpty ? subtitle : 'JioSaavn Artist',
       album: albumName ?? (isAlbum ? title : (subtitle.isNotEmpty ? subtitle : 'JioSaavn')),

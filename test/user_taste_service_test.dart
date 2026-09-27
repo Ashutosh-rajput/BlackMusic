@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pixel_player/data/models/jiosaavn_item.dart';
 import 'package:pixel_player/data/models/song_model.dart';
+import 'package:pixel_player/services/stream_favorites_service.dart';
 import 'package:pixel_player/services/user_taste_service.dart';
 
 void main() {
@@ -186,7 +187,16 @@ void main() {
 
       // Integer ID must be deterministic across calls (FNV-1a)
       expect(song1.id, equals(song2.id));
-      expect(song1.canonicalKey, equals('jiosaavn:${song1.id}'));
+      expect(song1.id, equals(item.stableId));
+      // Canonical key on Song must match item.canonicalKey exactly!
+      expect(song1.canonicalKey, equals(item.canonicalKey));
+      expect(song1.canonicalKey, equals('jiosaavn:$nonNumericId'));
+
+      // Skips and plays on Song must now match candidate scoring
+      service.onSongStarted(song1);
+      service.onSongSkipped(song1, isManual: true);
+      final score = service.scoreCandidate(item);
+      expect(score, lessThan(1.0)); // Skips penalized properly via matching canonical key
     });
 
     test('PlaybackSession: False completions are prevented on track transitions', () {
@@ -417,6 +427,180 @@ void main() {
       final topArtists = newService.getTopArtists();
       expect(topArtists, contains('persistent artist'));
       newService.dispose();
+    });
+
+    test('Favorite scoring adds exactly +3.0 and leaves no residual bonus after unfavoriting', () {
+      final song = Song(
+        id: 888,
+        title: 'Fav Track',
+        artist: 'Fav Artist',
+        album: 'Album',
+        filePath: 'https://example.com/fav.mp3',
+        duration: const Duration(seconds: 200),
+        dateModified: currentTime,
+        source: 'jiosaavn',
+        mediaId: 'fav_888',
+      );
+
+      const candidate = JioSaavnItem(
+        type: 'song',
+        id: 'fav_888',
+        token: 'fav_888',
+        title: 'Fav Track',
+        subtitle: 'Fav Artist',
+        imageUrl: '',
+      );
+
+      final baselineScore = service.scoreCandidate(candidate);
+
+      // 1. Toggle favorite ON
+      service.onSongFavoriteToggled(song, true);
+      final scoreWithFav = service.scoreCandidate(candidate);
+
+      // Must be boosted by exactly 3.0 (no double-counting)
+      expect(scoreWithFav, closeTo(baselineScore + 3.0, 0.001));
+
+      // 2. Toggle favorite OFF
+      service.onSongFavoriteToggled(song, false);
+      final scoreAfterUnfav = service.scoreCandidate(candidate);
+
+      // Must return cleanly to baseline score with no residual bonus
+      expect(scoreAfterUnfav, closeTo(baselineScore, 0.001));
+    });
+
+    test('Queue/history exclusions are not bypassed when all candidates are in exclusions', () async {
+      final current = Song(
+        id: 991,
+        title: 'Current Track',
+        artist: 'Artist',
+        album: 'Album',
+        filePath: 'https://example.com/c.mp3',
+        duration: const Duration(seconds: 200),
+        dateModified: currentTime,
+      );
+
+      // In mock searchSongs, candidates returned are 'Song 1', 'Song 2', 'Song 3'
+      final queue1 = Song(
+        id: 1,
+        title: 'Song 1',
+        artist: 'Arijit Singh',
+        album: 'Album',
+        filePath: 'https://example.com/1.mp3',
+        duration: const Duration(seconds: 200),
+        dateModified: currentTime,
+      );
+      final queue2 = Song(
+        id: 2,
+        title: 'Song 2',
+        artist: 'Arijit Singh',
+        album: 'Album',
+        filePath: 'https://example.com/2.mp3',
+        duration: const Duration(seconds: 200),
+        dateModified: currentTime,
+      );
+      final queue3 = Song(
+        id: 3,
+        title: 'Song 3',
+        artist: 'Arijit Singh',
+        album: 'Album',
+        filePath: 'https://example.com/3.mp3',
+        duration: const Duration(seconds: 200),
+        dateModified: currentTime,
+      );
+
+      final recs = await service.getCandidateRecommendations(
+        context: RecommendationContext.autoplay,
+        currentSong: current,
+        queue: [queue1, queue2, queue3],
+        limit: 10,
+      );
+
+      // When all candidates are excluded, it must return empty instead of bypassing exclusions
+      expect(recs, isEmpty);
+    });
+
+    test('MMR pre-allocates exploration slots and guarantees novel artist discovery', () {
+      final candidates = <JioSaavnItem>[];
+      // 10 songs from dominant artist
+      for (int i = 1; i <= 10; i++) {
+        candidates.add(JioSaavnItem(
+          type: 'song',
+          id: 'dom_$i',
+          token: 'dom_$i',
+          title: 'Dominant Hit $i',
+          subtitle: 'Dominant Artist',
+          imageUrl: '',
+        ));
+      }
+      // 2 songs from novel artists
+      candidates.add(const JioSaavnItem(
+        type: 'song',
+        id: 'nov_1',
+        token: 'nov_1',
+        title: 'Novel Hit 1',
+        subtitle: 'Novel Artist Alpha',
+        imageUrl: '',
+      ));
+      candidates.add(const JioSaavnItem(
+        type: 'song',
+        id: 'nov_2',
+        token: 'nov_2',
+        title: 'Novel Hit 2',
+        subtitle: 'Novel Artist Beta',
+        imageUrl: '',
+      ));
+
+      // maxPerArtist: 10 allows Dominant Artist to take up to 10 slots
+      // But explorationRate: 0.2 with maxResults: 5 pre-allocates exploration slots
+      final results = service.rankAndFilterWithMMR(
+        candidates,
+        maxPerArtist: 10,
+        maxResults: 5,
+        explorationRate: 0.2,
+      );
+
+      expect(results.length, equals(5));
+      final hasNovel = results.any((s) => s.subtitle.startsWith('Novel Artist'));
+      expect(hasNovel, isTrue, reason: 'Exploration slots must introduce novel artists');
+    });
+
+    test('Multi-seed co-occurrence strength gives score boost to overlapping candidates', () {
+      const candidate = JioSaavnItem(
+        type: 'song',
+        id: 'shared_1',
+        token: 'shared_1',
+        title: 'Shared Song',
+        subtitle: 'Artist Name',
+        imageUrl: '',
+      );
+
+      final scoreSingle = service.scoreCandidate(candidate, coOccurrences: 1);
+      final scoreTriple = service.scoreCandidate(candidate, coOccurrences: 3);
+
+      // (3 - 1) * 3.0 = +6.0 confidence boost
+      expect(scoreTriple, closeTo(scoreSingle + 6.0, 0.001));
+    });
+
+    test('Stream cache and favorites ID generation uses stable FNV hash for alphanumeric IDs', () {
+      const item = JioSaavnItem(
+        type: 'song',
+        id: 'alpha_x99y',
+        token: 'token_x99y',
+        title: 'Alphanumeric Track',
+        subtitle: 'Artist',
+        imageUrl: '',
+      );
+
+      final stableId = item.stableId;
+      expect(stableId, isNonZero);
+
+      // StreamFavoritesService.getSongIdForItem must match item.stableId
+      final favId = StreamFavoritesService.instance.getSongIdForItem(item);
+      expect(favId, equals(stableId));
+
+      // Song created from item must have id matching stableId
+      final song = item.toSong();
+      expect(song.id, equals(stableId));
     });
   });
 }

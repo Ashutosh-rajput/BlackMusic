@@ -1168,7 +1168,7 @@ class _StreamSongTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final songId = int.tryParse(item.id) ?? (item.id.isNotEmpty ? item.id : item.token).hashCode.abs();
+    final songId = item.stableId;
     final isCached = StreamCacheService.instance.isSongCached(songId);
 
     return ListTile(

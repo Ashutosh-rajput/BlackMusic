@@ -18,6 +18,8 @@ class Song extends Equatable {
   final DateTime? lastPlayedAt;
   /// 'local', 'youtube', 'jiosaavn'
   final String? source;
+  /// Provider media identifier (e.g. JioSaavn song ID / token or YouTube video ID)
+  final String? mediaId;
   /// e.g. '320 kbps', '128 kbps', 'HD Audio'
   final String? audioQuality;
 
@@ -36,6 +38,7 @@ class Song extends Equatable {
     this.playCount = 0,
     this.lastPlayedAt,
     this.source,
+    this.mediaId,
     this.audioQuality,
   });
 
@@ -59,9 +62,15 @@ class Song extends Equatable {
   String get canonicalKey {
     final src = effectiveSource;
     if (src == 'jiosaavn') {
+      if (mediaId != null && mediaId!.isNotEmpty) {
+        return 'jiosaavn:$mediaId';
+      }
       return 'jiosaavn:$id';
     }
     if (src == 'youtube') {
+      if (mediaId != null && mediaId!.isNotEmpty) {
+        return 'youtube:$mediaId';
+      }
       return 'youtube:$id';
     }
     return 'local:${filePath.toLowerCase().trim()}';
@@ -117,6 +126,7 @@ class Song extends Equatable {
     int? playCount,
     DateTime? lastPlayedAt,
     String? source,
+    String? mediaId,
     String? audioQuality,
   }) {
     return Song(
@@ -134,6 +144,7 @@ class Song extends Equatable {
       playCount: playCount ?? this.playCount,
       lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
       source: source ?? this.source,
+      mediaId: mediaId ?? this.mediaId,
       audioQuality: audioQuality ?? this.audioQuality,
     );
   }
@@ -154,6 +165,7 @@ class Song extends Equatable {
       'playCount': playCount,
       'lastPlayedAt': lastPlayedAt?.toIso8601String(),
       'source': source,
+      'mediaId': mediaId,
       'audioQuality': audioQuality,
     };
   }
@@ -176,6 +188,7 @@ class Song extends Equatable {
           ? DateTime.parse(json['lastPlayedAt'] as String)
           : null,
       source: json['source'] as String?,
+      mediaId: json['mediaId'] as String?,
       audioQuality: json['audioQuality'] as String?,
     );
   }
@@ -196,6 +209,7 @@ class Song extends Equatable {
         playCount,
         lastPlayedAt,
         source,
+        mediaId,
         audioQuality,
       ];
 }
