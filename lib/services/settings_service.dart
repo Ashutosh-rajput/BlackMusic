@@ -70,6 +70,9 @@ class SettingsService {
   static const _keyStreamLanguage = 'setting_stream_language';
   static const _keyAutoDownloadStreamSongs = 'setting_auto_download_stream_songs';
   static const _keyCacheStreamSongs = 'setting_cache_stream_songs';
+  static const _keyStreamCacheLimit = 'setting_stream_cache_limit';
+  static const _keyAppLaunchCount = 'setting_app_launch_count';
+  static const _keySupportBannerDismissed = 'setting_support_banner_dismissed';
 
   static const Map<String, String> supportedStreamLanguages = {
     'hindi': 'Hindi',
@@ -89,6 +92,11 @@ class SettingsService {
   String get streamLanguage => _prefs.getString(_keyStreamLanguage) ?? 'hindi';
   bool get autoDownloadStreamSongs => _prefs.getBool(_keyAutoDownloadStreamSongs) ?? false;
   bool get cacheStreamSongs => _prefs.getBool(_keyCacheStreamSongs) ?? true;
+  int get streamCacheLimit => _prefs.getInt(_keyStreamCacheLimit) ?? 50;
+  int get appLaunchCount => _prefs.getInt(_keyAppLaunchCount) ?? 0;
+  bool get supportBannerDismissed => _prefs.getBool(_keySupportBannerDismissed) ?? false;
+  bool get isSupportBannerEnabled => !supportBannerDismissed;
+  bool get shouldShowSupportBanner => !supportBannerDismissed && appLaunchCount >= 5;
   bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
   String get repeatMode => _prefs.getString(_keyRepeatMode) ?? 'Off';
   bool get shuffleByDefault => _prefs.getBool(_keyShuffleByDefault) ?? false;
@@ -163,6 +171,24 @@ class SettingsService {
   Future<void> setStreamLanguage(String value) => _prefs.setString(_keyStreamLanguage, value);
   Future<void> setAutoDownloadStreamSongs(bool value) => _prefs.setBool(_keyAutoDownloadStreamSongs, value);
   Future<void> setCacheStreamSongs(bool value) => _prefs.setBool(_keyCacheStreamSongs, value);
+  Future<void> setStreamCacheLimit(int value) async {
+    await _prefs.setInt(_keyStreamCacheLimit, value);
+    StreamCacheService.instance.pruneToLimit(value);
+  }
+  Future<void> clearStreamCache() async {
+    await StreamCacheService.instance.clearAllCache();
+  }
+  Future<int> incrementAppLaunchCount() async {
+    final next = appLaunchCount + 1;
+    await _prefs.setInt(_keyAppLaunchCount, next);
+    return next;
+  }
+  Future<void> dismissSupportBanner() async {
+    await _prefs.setBool(_keySupportBannerDismissed, true);
+  }
+  Future<void> setSupportBannerEnabled(bool enabled) async {
+    await _prefs.setBool(_keySupportBannerDismissed, !enabled);
+  }
   Future<void> setLastPlayedSongId(int? id) async {
     if (id != null) {
       await _prefs.setInt(_keyLastPlayedSongId, id);

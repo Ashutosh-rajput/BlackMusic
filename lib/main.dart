@@ -17,6 +17,7 @@ import 'package:pixel_player/services/download_service.dart';
 import 'package:pixel_player/services/stream_cache_service.dart';
 import 'package:pixel_player/services/user_taste_service.dart';
 import 'package:pixel_player/services/stream_favorites_service.dart';
+import 'package:pixel_player/services/settings_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -54,6 +55,11 @@ void main() async {
     await getIt<StreamFavoritesService>().init();
   } catch (e) {
     debugPrint('StreamFavoritesService init error: $e');
+  }
+  try {
+    await getIt<SettingsService>().incrementAppLaunchCount();
+  } catch (e) {
+    debugPrint('incrementAppLaunchCount error: $e');
   }
 
   final initialMedia = await ReceiveSharingIntent.instance.getInitialMedia();

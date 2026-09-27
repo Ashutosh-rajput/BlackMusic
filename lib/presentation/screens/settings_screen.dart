@@ -9,7 +9,10 @@ import 'package:pixel_player/presentation/bloc/library/library_event.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
+import 'package:pixel_player/presentation/screens/taste_profile_screen.dart';
+import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/folder_picker_dialog.dart';
+import 'package:pixel_player/services/user_taste_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -70,6 +73,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String _streamLanguage;
   late bool _autoDownloadStreamSongs;
   late bool _cacheStreamSongs;
+  late int _streamCacheLimit;
+  late bool _supportBannerEnabled;
+  bool _isExportingCache = false;
 
   // Storage Stats (Real File System Calculation)
   double _musicSizeMb = 0.0;
@@ -91,6 +97,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _streamLanguage = _settingsService.streamLanguage;
     _autoDownloadStreamSongs = _settingsService.autoDownloadStreamSongs;
     _cacheStreamSongs = _settingsService.cacheStreamSongs;
+    _streamCacheLimit = _settingsService.streamCacheLimit;
+    _supportBannerEnabled = _settingsService.isSupportBannerEnabled;
     _autoPlayNext = _settingsService.autoPlayNext;
     _repeatMode = _settingsService.repeatMode;
     _shuffleByDefault = _settingsService.shuffleByDefault;
@@ -327,12 +335,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _divider(),
               SwitchListTile(
                 title: _tileTitle('Cache Streamed Songs'),
-                subtitle: _tileSubtitle('Automatically cache the last 50 streamed songs for instant offline replay'),
+                subtitle: _tileSubtitle('Automatically cache streamed songs for instant offline replay'),
                 value: _cacheStreamSongs,
                 activeThumbColor: _accentColor,
                 onChanged: (val) {
                   setState(() => _cacheStreamSongs = val);
                   _settingsService.setCacheStreamSongs(val);
+                },
+              ),
+              if (_cacheStreamSongs) ...[
+                _divider(),
+                ListTile(
+                  title: _tileTitle('Stream Cache Limit'),
+                  subtitle: _tileSubtitle('Maximum songs retained in offline cache (LRU eviction)'),
+                  trailing: DropdownButton<int>(
+                    value: [25, 50, 100, 200].contains(_streamCacheLimit)
+                        ? _streamCacheLimit
+                        : 50,
+                    underline: const SizedBox(),
+                    dropdownColor: isDark ? const Color(0xFF232330) : Colors.white,
+                    items: const [
+                      DropdownMenuItem(value: 25, child: Text('25 songs')),
+                      DropdownMenuItem(value: 50, child: Text('50 songs (Default)')),
+                      DropdownMenuItem(value: 100, child: Text('100 songs')),
+                      DropdownMenuItem(value: 200, child: Text('200 songs')),
+                    ].map((item) {
+                      return DropdownMenuItem<int>(
+                        value: item.value,
+                        child: Text(
+                          (item.child as Text).data!,
+                          style: GoogleFonts.outfit(),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) async {
+                      if (val != null) {
+                        setState(() => _streamCacheLimit = val);
+                        await _settingsService.setStreamCacheLimit(val);
+                        _loadStorageStats();
+                        _showSnackBar('Stream cache limit set to $val songs');
+                      }
+                    },
+                  ),
+                ),
+              ],
+              _divider(),
+              SwitchListTile(
+                title: _tileTitle('GitHub Support Banner'),
+                subtitle: _tileSubtitle(
+                  _supportBannerEnabled
+                      ? 'Show project support card in stream feed (after 5th launch)'
+                      : 'Permanently hidden from stream feed',
+                ),
+                value: _supportBannerEnabled,
+                activeThumbColor: _accentColor,
+                onChanged: (val) async {
+                  setState(() => _supportBannerEnabled = val);
+                  await _settingsService.setSupportBannerEnabled(val);
+                  _showSnackBar(val
+                      ? 'GitHub support banner enabled'
+                      : 'GitHub support banner permanently disabled');
+                },
+              ),
+              _divider(),
+              ListTile(
+                title: _tileTitle('Suggestion Songs & Artists'),
+                subtitle: _tileSubtitle(
+                  '${UserTasteService.instance.trackedSongCount} songs • ${UserTasteService.instance.trackedArtistCount} artists in recommendation profile',
+                ),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 15),
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const TasteProfileScreen(),
+                    ),
+                  );
+                  setState(() {});
                 },
               ),
             ],
@@ -913,53 +992,162 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: EdgeInsets.all(20),
                     child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                   )
-                : Column(
-                    children: [
-                      _storageRow('Music Files', '${(_musicSizeMb / 1024).toStringAsFixed(2)} GB (${_musicSizeMb.toStringAsFixed(1)} MB)', Colors.blueAccent),
-                      const SizedBox(height: 12),
-                      _storageRow('Cache', '${_cacheSizeMb.toStringAsFixed(1)} MB', Colors.orangeAccent),
-                      const SizedBox(height: 12),
-                      _storageRow('Stream Cache (Last 50)', '${StreamCacheService.instance.cachedCount} tracks (${StreamCacheService.instance.totalSizeMb.toStringAsFixed(1)} MB)', const Color(0xFF2BC5B4)),
-                      const SizedBox(height: 12),
-                      _storageRow('Thumbnails', '${_thumbnailsSizeMb.toStringAsFixed(1)} MB', Colors.purpleAccent),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                              label: Text('Clear Cache', style: GoogleFonts.outfit()),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: () async {
-                                await _settingsService.clearCache();
-                                _showSnackBar('App cache cleared!');
-                                _loadStorageStats();
-                              },
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _storageRow('Music Files', '${(_musicSizeMb / 1024).toStringAsFixed(2)} GB (${_musicSizeMb.toStringAsFixed(1)} MB)', Colors.blueAccent),
+                        const SizedBox(height: 12),
+                        _storageRow('App Cache', '${_cacheSizeMb.toStringAsFixed(1)} MB', Colors.orangeAccent),
+                        const SizedBox(height: 12),
+                        _storageRow(
+                          'Stream Cache',
+                          '${StreamCacheService.instance.cachedCount} / $_streamCacheLimit tracks (${StreamCacheService.instance.totalSizeMb.toStringAsFixed(1)} MB)',
+                          const Color(0xFF2BC5B4),
+                        ),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: (_streamCacheLimit > 0)
+                                ? (StreamCacheService.instance.cachedCount / _streamCacheLimit).clamp(0.0, 1.0)
+                                : 0.0,
+                            backgroundColor: isDark ? const Color(0xFF2A2A38) : const Color(0xFFE5E5EB),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              (StreamCacheService.instance.cachedCount >= _streamCacheLimit)
+                                  ? Colors.amberAccent
+                                  : const Color(0xFF2BC5B4),
                             ),
+                            minHeight: 5,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.image_not_supported_outlined, size: 18),
-                              label: Text('Clear Art', style: GoogleFonts.outfit()),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        const SizedBox(height: 12),
+                        _storageRow('Thumbnails', '${_thumbnailsSizeMb.toStringAsFixed(1)} MB', Colors.purpleAccent),
+                        const SizedBox(height: 20),
+                        // 1. Export cached songs to Library
+                        ElevatedButton.icon(
+                          icon: _isExportingCache
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.library_add_check_rounded, size: 18),
+                          label: Text(
+                            _isExportingCache ? 'Exporting to Library...' : 'Export Cached Songs to Library',
+                            style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _accentColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: _isExportingCache
+                              ? null
+                              : () async {
+                                  if (StreamCacheService.instance.cachedCount == 0) {
+                                    _showSnackBar('No cached stream songs available to export.');
+                                    return;
+                                  }
+                                  setState(() => _isExportingCache = true);
+                                  try {
+                                    final count = await StreamCacheService.instance.exportCachedSongsToLibrary();
+                                    if (context.mounted) {
+                                      context.read<LibraryBloc>().add(const LoadLibraryEvent());
+                                    }
+                                    if (mounted) {
+                                      _showSnackBar(count > 0
+                                          ? 'Successfully exported $count songs to your Music Library!'
+                                          : 'All cached songs are already in your Library.');
+                                      _loadStorageStats();
+                                    }
+                                  } catch (e) {
+                                    _showSnackBar('Export failed: $e');
+                                  } finally {
+                                    if (mounted) setState(() => _isExportingCache = false);
+                                  }
+                                },
+                        ),
+                        const SizedBox(height: 12),
+                        // 2. View Cached Songs & Clear Stream Cache
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.queue_music_rounded, size: 18, color: Color(0xFF2BC5B4)),
+                                label: Text(
+                                  'View Tracks',
+                                  style: GoogleFonts.outfit(color: isDark ? Colors.white : Colors.black87),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  side: BorderSide(color: const Color(0xFF2BC5B4).withValues(alpha: 0.5)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: () => _showCachedSongsSheet(isDark),
                               ),
-                              onPressed: () async {
-                                await _settingsService.clearThumbnails();
-                                _showSnackBar('Thumbnails cache cleared!');
-                                _loadStorageStats();
-                              },
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.music_off_outlined, size: 18, color: Colors.orangeAccent),
+                                label: Text(
+                                  'Clear Stream',
+                                  style: GoogleFonts.outfit(color: isDark ? Colors.white : Colors.black87),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  side: BorderSide(color: Colors.orangeAccent.withValues(alpha: 0.5)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: () async {
+                                  await _settingsService.clearStreamCache();
+                                  _showSnackBar('Stream cache cleared!');
+                                  _loadStorageStats();
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        // 3. Clear App Cache & Clear Art
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                                label: Text('Clear Cache', style: GoogleFonts.outfit()),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: () async {
+                                  await _settingsService.clearCache();
+                                  _showSnackBar('App cache cleared!');
+                                  _loadStorageStats();
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.image_not_supported_outlined, size: 18),
+                                label: Text('Clear Art', style: GoogleFonts.outfit()),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: () async {
+                                  await _settingsService.clearThumbnails();
+                                  _showSnackBar('Thumbnails cache cleared!');
+                                  _loadStorageStats();
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
           ),
         ],
       ),
@@ -1047,6 +1235,146 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showCachedSongsSheet(bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF1E1E28) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final entries = StreamCacheService.instance.entries;
+            return SafeArea(
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.75,
+                padding: const EdgeInsets.only(top: 16, bottom: 16),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Offline Stream Cache',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${entries.length} / $_streamCacheLimit songs • ${StreamCacheService.instance.totalSizeMb.toStringAsFixed(1)} MB',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (entries.isNotEmpty)
+                            TextButton.icon(
+                              icon: const Icon(Icons.cleaning_services_rounded, size: 16, color: Colors.redAccent),
+                              label: Text('Clear All', style: GoogleFonts.outfit(color: Colors.redAccent)),
+                              onPressed: () async {
+                                await _settingsService.clearStreamCache();
+                                setSheetState(() {});
+                              if (sheetContext.mounted) {
+                                Navigator.pop(sheetContext);
+                              }
+                              if (mounted) {
+                                _loadStorageStats();
+                                _showSnackBar('Stream cache cleared.');
+                              }
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: entries.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.music_off_rounded, size: 48, color: Colors.grey.withValues(alpha: 0.5)),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No cached stream songs',
+                                    style: GoogleFonts.outfit(color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              itemCount: entries.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1, indent: 64),
+                              itemBuilder: (context, index) {
+                                final entry = entries[index];
+                                final sizeMb = (entry.sizeBytes / 1024 / 1024).toStringAsFixed(1);
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                  leading: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: AlbumArtWidget(
+                                      albumArt: entry.albumArt,
+                                      width: 48,
+                                      height: 48,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    entry.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                                  ),
+                                  subtitle: Text(
+                                    '${entry.artist} • $sizeMb MB',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.outfit(fontSize: 12, color: Colors.grey),
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.delete_outline_rounded, size: 20, color: Colors.redAccent),
+                                    tooltip: 'Delete track from cache',
+                                    onPressed: () async {
+                                      await StreamCacheService.instance.removeCachedSong(entry.songId);
+                                      setSheetState(() {});
+                                      _loadStorageStats();
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

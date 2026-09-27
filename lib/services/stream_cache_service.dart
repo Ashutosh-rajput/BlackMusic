@@ -5,7 +5,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pixel_player/core/di/injection_container.dart';
+import 'package:pixel_player/core/utils/hash_utils.dart';
+import 'package:pixel_player/data/models/jiosaavn_item.dart';
 import 'package:pixel_player/data/models/song_model.dart';
+import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/services/settings_service.dart';
 
 class StreamCacheEntry {
@@ -63,7 +66,15 @@ class StreamCacheEntry {
 /// Service that maintains a local audio cache of the last 50 streamed songs.
 /// Provides offline/instant playback of streamed songs without re-downloading.
 class StreamCacheService {
-  static const int maxCacheEntries = 50;
+  static const int defaultMaxCacheEntries = 50;
+  static int get maxCacheEntries {
+    try {
+      if (getIt.isRegistered<SettingsService>()) {
+        return getIt<SettingsService>().streamCacheLimit;
+      }
+    } catch (_) {}
+    return defaultMaxCacheEntries;
+  }
   static const String cacheDirName = 'stream_cache';
   static const String indexFileName = 'stream_cache_index.json';
 
@@ -171,6 +182,43 @@ class StreamCacheService {
   }
 
   List<StreamCacheEntry> get entries => _entries.values.toList();
+
+  @visibleForTesting
+  void addEntryForTesting(StreamCacheEntry entry) {
+    _entries[entry.songId] = entry;
+  }
+
+  /// Returns valid cached songs on disk, sorted by most recently accessed first (up to 50 songs).
+  List<Song> getCachedSongs() {
+    final validEntries = _entries.values.where((e) => File(e.filePath).existsSync()).toList()
+      ..sort((a, b) => b.lastAccessedAt.compareTo(a.lastAccessedAt));
+    return validEntries.map((e) => Song(
+      id: e.songId,
+      title: e.title,
+      artist: e.artist,
+      album: e.album ?? 'Cached Stream',
+      albumArt: e.albumArt,
+      filePath: e.filePath,
+      duration: const Duration(seconds: 180),
+      dateModified: e.cachedAt,
+      source: 'jiosaavn',
+    )).toList();
+  }
+
+  /// Converts valid cached entries into playable JioSaavnItem objects with direct local file URLs.
+  List<JioSaavnItem> getCachedItems() {
+    final validEntries = _entries.values.where((e) => File(e.filePath).existsSync()).toList()
+      ..sort((a, b) => b.lastAccessedAt.compareTo(a.lastAccessedAt));
+    return validEntries.map((e) => JioSaavnItem(
+      type: 'song',
+      id: e.songId.toString(),
+      token: e.songId.toString(),
+      title: e.title,
+      subtitle: e.artist,
+      imageUrl: e.albumArt ?? '',
+      directMediaUrl: e.filePath,
+    )).toList();
+  }
 
   final List<_CacheQueueItem> _queue = [];
   final Map<int, CancelToken> _activeCancelTokens = {};
@@ -322,14 +370,14 @@ class StreamCacheService {
     return null;
   }
 
-  /// Prunes oldest cached stream songs when exceeding maxCacheEntries (50).
-  void _pruneCacheIfNeeded() {
-    if (_entries.length <= maxCacheEntries) return;
+  /// Prunes oldest cached stream songs when exceeding the specified limit.
+  void pruneToLimit(int limit) {
+    if (_entries.length <= limit) return;
 
     final sorted = _entries.values.toList()
       ..sort((a, b) => a.lastAccessedAt.compareTo(b.lastAccessedAt));
 
-    final countToEvict = _entries.length - maxCacheEntries;
+    final countToEvict = _entries.length - limit;
     final toRemove = sorted.take(countToEvict).toList();
 
     for (final evict in toRemove) {
@@ -343,7 +391,144 @@ class StreamCacheService {
         debugPrint('StreamCache: Error deleting evicted file ${evict.filePath}: $e');
       }
     }
-    debugPrint('StreamCache: Evicted $countToEvict songs to enforce $maxCacheEntries limit.');
+    _scheduleSaveIndex();
+    debugPrint('StreamCache: Evicted $countToEvict songs to enforce $limit limit.');
+  }
+
+  /// Prunes oldest cached stream songs when exceeding maxCacheEntries.
+  void _pruneCacheIfNeeded() {
+    pruneToLimit(maxCacheEntries);
+  }
+
+  /// Removes a single song from the cache and deletes its file.
+  Future<bool> removeCachedSong(int songId) async {
+    final entry = _entries.remove(songId);
+    if (entry != null) {
+      try {
+        final f = File(entry.filePath);
+        if (await f.exists()) {
+          await f.delete();
+        }
+      } catch (e) {
+        debugPrint('StreamCache: Failed deleting song $songId: $e');
+      }
+      _scheduleSaveIndex();
+      return true;
+    }
+    return false;
+  }
+
+  Future<String> _getDestinationMusicDirectory() async {
+    if (Platform.isAndroid) {
+      try {
+        final publicDownloadDir =
+            Directory('/storage/emulated/0/Download/blackmusic');
+        if (!await publicDownloadDir.exists()) {
+          await publicDownloadDir.create(recursive: true);
+        }
+        return publicDownloadDir.path;
+      } catch (_) {}
+
+      try {
+        final extStorageDir = await getExternalStorageDirectory();
+        if (extStorageDir != null) {
+          final pathSegments = extStorageDir.path.split('/');
+          final androidIndex = pathSegments.indexOf('Android');
+          if (androidIndex > 0) {
+            final rootPath = pathSegments.sublist(0, androidIndex).join('/');
+            final target = Directory('$rootPath/Download/blackmusic');
+            if (!await target.exists()) {
+              await target.create(recursive: true);
+            }
+            return target.path;
+          }
+        }
+      } catch (_) {}
+    }
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final target = Directory('${appDir.path}/blackmusic');
+    if (!await target.exists()) {
+      await target.create(recursive: true);
+    }
+    return target.path;
+  }
+
+  /// Exports all valid cached stream songs into the permanent local music library.
+  /// Copies the .m4a audio file, creates a Song model, and registers it with MusicRepository.
+  /// Returns the number of newly exported songs.
+  Future<int> exportCachedSongsToLibrary({
+    Function(int current, int total)? onProgress,
+  }) async {
+    if (!getIt.isRegistered<MusicRepository>()) return 0;
+    final repository = getIt<MusicRepository>();
+    final destinationDir = await _getDestinationMusicDirectory();
+
+    final validEntries = _entries.values.where((e) => File(e.filePath).existsSync()).toList();
+    if (validEntries.isEmpty) return 0;
+
+    final existingSongs = await repository.getAllSongs();
+    final existingTitles = existingSongs.map((s) => s.title.toLowerCase().trim()).toSet();
+
+    int exportedCount = 0;
+    int index = 0;
+
+    for (final entry in validEntries) {
+      index++;
+      onProgress?.call(index, validEntries.length);
+
+      final cleanTitle = entry.title.trim();
+      if (existingTitles.contains(cleanTitle.toLowerCase())) {
+        continue;
+      }
+
+      final sourceFile = File(entry.filePath);
+      if (!sourceFile.existsSync()) continue;
+
+      final sanitizedTitle = cleanTitle.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final sanitizedArtist = entry.artist.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+      final targetFileName = '$sanitizedArtist - $sanitizedTitle.m4a';
+      final targetPath = '$destinationDir/$targetFileName';
+
+      final targetFile = File(targetPath);
+      if (!await targetFile.exists()) {
+        try {
+          await sourceFile.copy(targetPath);
+        } catch (e) {
+          debugPrint('StreamCache: Failed copying ${entry.title} to library: $e');
+          continue;
+        }
+      }
+
+      final stat = await targetFile.stat();
+      final stableId = generateStableId(targetPath);
+
+      final exportedSong = Song(
+        id: stableId,
+        title: entry.title,
+        artist: entry.artist,
+        album: entry.album ?? 'JioSaavn Export',
+        filePath: targetPath,
+        duration: const Duration(seconds: 180),
+        fileSize: stat.size,
+        dateModified: DateTime.now(),
+        genre: 'Downloaded',
+        albumArtist: entry.artist,
+        albumArt: entry.albumArt,
+        source: 'jiosaavn',
+        audioQuality: '320 kbps',
+      );
+
+      try {
+        await repository.addSong(exportedSong, notify: true);
+        existingTitles.add(cleanTitle.toLowerCase());
+        exportedCount++;
+      } catch (e) {
+        debugPrint('StreamCache: Failed registering song in repository: $e');
+      }
+    }
+
+    return exportedCount;
   }
 
   void _scheduleSaveIndex() {

@@ -9,6 +9,7 @@ import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
+import 'package:pixel_player/presentation/screens/home_screen.dart';
 import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
 import 'package:pixel_player/services/download_service.dart';
@@ -16,6 +17,7 @@ import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/services/stream_cache_service.dart';
 import 'package:pixel_player/services/user_taste_service.dart';
 import 'package:pixel_player/services/stream_favorites_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class StreamScreen extends StatefulWidget {
   const StreamScreen({super.key});
@@ -29,7 +31,8 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   bool _isLoading = true;
   String? _errorMessage;
   String? _loadingSongId;
-  int _selectedFilter = 0; // 0: All, 1: Songs, 2: Albums, 3: Playlists, 4: Favorites, 5: Last Played
+  int _selectedFilter = 0; // 0: All, 1: Songs, 2: Albums, 3: Playlists, 4: Favorites, 5: Last Played, 6: Offline Cache
+  bool _showSupportBanner = false;
 
   // Search state
   bool _isSearching = false;
@@ -53,7 +56,9 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   @override
   void initState() {
     super.initState();
-    _currentLang = getIt<SettingsService>().streamLanguage;
+    final settings = getIt<SettingsService>();
+    _currentLang = settings.streamLanguage;
+    _showSupportBanner = settings.shouldShowSupportBanner;
     _loadStreamData();
   }
 
@@ -371,7 +376,13 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Unable to retrieve stream for "${item.title}"', style: GoogleFonts.outfit()),
+              content: Text('Stream proxy could not load "${item.title}". You can download it from YouTube in Library.', style: GoogleFonts.outfit()),
+              action: SnackBarAction(
+                label: 'YouTube',
+                textColor: const Color(0xFF2BC5B4),
+                onPressed: () => HomeScreen.switchToTab(0),
+              ),
+              duration: const Duration(seconds: 5),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -447,7 +458,13 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error preparing stream: $e', style: GoogleFonts.outfit()),
+            content: Text('Stream proxy error: $e. You can search & download this from YouTube in Library.', style: GoogleFonts.outfit()),
+            action: SnackBarAction(
+              label: 'Library',
+              textColor: const Color(0xFF2BC5B4),
+              onPressed: () => HomeScreen.switchToTab(0),
+            ),
+            duration: const Duration(seconds: 5),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -735,25 +752,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               ),
             )
           : _errorMessage != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline_rounded, size: 48, color: Colors.orange),
-                        const SizedBox(height: 12),
-                        Text(_errorMessage!, textAlign: TextAlign.center, style: GoogleFonts.outfit()),
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('Try Again'),
-                          onPressed: _loadStreamData,
-                        ),
-                      ],
-                    ),
-                  ),
-                )
+              ? _buildStreamFailureView()
               : RefreshIndicator(
                   color: const Color(0xFF2BC5B4),
                   onRefresh: _loadStreamData,
@@ -763,7 +762,16 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   }
 
   Widget _buildFilterChips() {
-    final filters = ['All', 'Songs', 'Albums', 'Playlists', 'Favorites', 'Last Played'];
+    final cachedCount = StreamCacheService.instance.cachedCount;
+    final filters = [
+      'All',
+      'Songs',
+      'Albums',
+      'Playlists',
+      'Favorites',
+      'Last Played',
+      if (cachedCount > 0) 'Offline Cache ($cachedCount)' else 'Offline Cache',
+    ];
 
     return SizedBox(
       height: 40,
@@ -814,13 +822,19 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     } else if (_selectedFilter == 5) {
       // LAST PLAYED (HISTORY) VIEW
       return _buildLastPlayedView();
+    } else if (_selectedFilter == 6) {
+      // OFFLINE CACHE VIEW
+      return _buildCachedSongsView();
     }
 
     // ALL (Default overview)
     return ListView(
       padding: const EdgeInsets.only(bottom: 120),
       children: [
-        // 0. Last Played Stream History (if any)
+        // 0. Support Project GitHub Banner
+        _buildSupportBanner(),
+
+        // 2. Last Played Stream History (if any)
         if (_lastPlayedStreamSongs.isNotEmpty) ...[
           _buildSectionHeader(
             title: 'Last Played',
@@ -1049,6 +1063,470 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           },
         );
       },
+    );
+  }
+
+  Widget _buildSupportBanner() {
+    if (!_showSupportBanner) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [
+                    const Color(0xFF1E2A38),
+                    const Color(0xFF18202A),
+                  ]
+                : [
+                    const Color(0xFFE8F4FD),
+                    const Color(0xFFF0F8FF),
+                  ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFF2BC5B4).withValues(alpha: 0.35),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2BC5B4).withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.star_rounded,
+                    color: Color(0xFF2BC5B4),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Support This Project',
+                            style: GoogleFonts.outfit(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2BC5B4).withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'GitHub',
+                              style: GoogleFonts.outfit(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF2BC5B4),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Enjoying Pixel Player? Star our GitHub repo to support development, track updates, and help the project grow!',
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          height: 1.35,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: 'Dismiss banner',
+                  onPressed: () {
+                    setState(() => _showSupportBanner = false);
+                    getIt<SettingsService>().dismissSupportBanner();
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2BC5B4),
+                    foregroundColor: Colors.black,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(Icons.star_rate_rounded, size: 16),
+                  label: Text(
+                    'Star on GitHub',
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  onPressed: _openGitHubRepo,
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  ),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                  label: Text(
+                    'View Repo',
+                    style: GoogleFonts.outfit(fontSize: 12),
+                  ),
+                  onPressed: _openGitHubRepo,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openGitHubRepo() async {
+    getIt<SettingsService>().dismissSupportBanner();
+    setState(() => _showSupportBanner = false);
+    const urlString = 'https://github.com/Ashutosh-rajput/flutter_application_1';
+    final url = Uri.parse(urlString);
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        await launchUrl(url);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open $urlString: $e', style: GoogleFonts.outfit()),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildCachedSongsView() {
+    final cachedItems = StreamCacheService.instance.getCachedItems();
+    final cachedSongs = StreamCacheService.instance.getCachedSongs();
+
+    if (cachedItems.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.cached_rounded, size: 48, color: Colors.orange),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No Cached Stream Songs Yet',
+                style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Songs you stream are automatically saved here (up to 50 songs) for instant offline playback without proxy APIs.\n\nYou can also search and download any song from YouTube via the Library tab.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF2BC5B4),
+                  foregroundColor: Colors.black,
+                ),
+                icon: const Icon(Icons.library_music_rounded, size: 18),
+                label: const Text('Go to Library & YouTube'),
+                onPressed: () => HomeScreen.switchToTab(0),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final totalMb = StreamCacheService.instance.totalSizeMb.toStringAsFixed(1);
+
+    return ListView(
+      padding: const EdgeInsets.only(top: 8, bottom: 120),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF2BC5B4).withValues(alpha: 0.15),
+                  Colors.green.withValues(alpha: 0.08),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFF2BC5B4).withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2BC5B4).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.offline_pin_rounded, color: Color(0xFF2BC5B4), size: 28),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${cachedItems.length} Cached Songs ($totalMb MB)',
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Saved locally • Plays 100% offline without proxy API',
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton.filled(
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFF2BC5B4),
+                    foregroundColor: Colors.black,
+                  ),
+                  icon: const Icon(Icons.play_arrow_rounded, size: 26),
+                  tooltip: 'Play All Cached Songs',
+                  onPressed: () {
+                    context.read<PlayerBloc>().add(PlayQueueEvent(cachedSongs, initialIndex: 0));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Playing ${cachedSongs.length} offline cached songs', style: GoogleFonts.outfit()),
+                        duration: const Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...cachedItems.map((item) => _StreamSongTile(
+              item: item,
+              isLoading: _loadingSongId == item.id,
+              onPlay: () => _streamSingleSong(
+                item,
+                contextQueue: cachedItems,
+              ),
+              onDownload: () => _downloadSong(item),
+              onAddToQueue: () => _addSongToQueue(item),
+            )),
+      ],
+    );
+  }
+
+  Widget _buildStreamFailureView() {
+    final cachedSongs = StreamCacheService.instance.getCachedSongs();
+    final cachedItems = StreamCacheService.instance.getCachedItems();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      children: [
+        // Error & Proxy Alert Card
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF2C1E1A) : const Color(0xFFFFF0EC),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.wifi_off_rounded, color: Colors.redAccent, size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Streaming Service Unavailable',
+                          style: GoogleFonts.outfit(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.redAccent,
+                          ),
+                        ),
+                        Text(
+                          'Proxy API is down or connection timed out',
+                          style: GoogleFonts.outfit(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Streaming APIs connect to public proxies which may stop working at any moment. In the meantime, use the Library to search & download tracks from YouTube, or play your saved offline songs below.',
+                style: GoogleFonts.outfit(
+                  fontSize: 13,
+                  height: 1.4,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.85),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      icon: const Icon(Icons.download_rounded, size: 18),
+                      label: const Text('Download on YouTube'),
+                      onPressed: () => HomeScreen.switchToTab(0),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                    ),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('Retry'),
+                    onPressed: _loadStreamData,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 24),
+
+        // If user has cached songs, show them immediately so music never stops!
+        if (cachedItems.isNotEmpty) ...[
+          _buildSectionHeader(
+            title: 'Offline Stream Cache (${cachedItems.length})',
+            subtitle: 'Saved on your device • Plays without proxy API',
+            icon: Icons.offline_pin_rounded,
+            actionLabel: 'Play All',
+            onAction: () {
+              context.read<PlayerBloc>().add(PlayQueueEvent(cachedSongs, initialIndex: 0));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Playing ${cachedSongs.length} offline cached songs', style: GoogleFonts.outfit()),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+          ),
+          ...cachedItems.map((item) => _StreamSongTile(
+                item: item,
+                isLoading: _loadingSongId == item.id,
+                onPlay: () => _streamSingleSong(
+                  item,
+                  contextQueue: cachedItems,
+                ),
+                onDownload: () => _downloadSong(item),
+                onAddToQueue: () => _addSongToQueue(item),
+              )),
+        ] else ...[
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Column(
+                children: [
+                  Icon(Icons.library_music_rounded, size: 48, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No songs cached yet',
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Switch to the Library tab to search and download high-quality tracks directly from YouTube.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 

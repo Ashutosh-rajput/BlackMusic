@@ -544,6 +544,139 @@ class UserTasteService {
 
   // --- Taste Metrics & Candidate Scoring ---
 
+  int get trackedSongCount => _interactions.length;
+  int get trackedArtistCount {
+    _recalculateArtistAffinities();
+    return _artistAffinities.length;
+  }
+
+  /// Returns tracked songs sorted by affinity score descending.
+  List<SongInteraction> getTrackedSongs({String? query}) {
+    final now = _clock();
+    var list = _interactions.values.toList()
+      ..sort((a, b) => b.computeAffinityScore(now).compareTo(a.computeAffinityScore(now)));
+
+    if (query != null && query.trim().isNotEmpty) {
+      final q = query.trim().toLowerCase();
+      list = list.where((i) =>
+        i.title.toLowerCase().contains(q) ||
+        i.artist.toLowerCase().contains(q)
+      ).toList();
+    }
+    return list;
+  }
+
+  /// Returns tracked artists paired with their affinity score.
+  List<MapEntry<String, double>> getTrackedArtists({String? query}) {
+    _recalculateArtistAffinities();
+    var list = _artistAffinities.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    if (query != null && query.trim().isNotEmpty) {
+      final q = query.trim().toLowerCase();
+      list = list.where((e) => e.key.toLowerCase().contains(q)).toList();
+    }
+    return list;
+  }
+
+  bool isSearchPlayedArtist(String artistToken) {
+    return _searchPlayedArtists.contains(artistToken.toLowerCase().trim());
+  }
+
+  /// Removes an individual song interaction from taste recommendations.
+  Future<bool> removeTrackedSong(String trackKey) async {
+    final removed = _interactions.remove(trackKey);
+    if (removed != null) {
+      if (removed.songId != 0) {
+        _songIdToTrackKey.remove(removed.songId);
+      }
+      _recalculateArtistAffinities();
+      await flush();
+      return true;
+    }
+    return false;
+  }
+
+  /// Removes all tracked interactions and affinity for an artist.
+  Future<int> removeTrackedArtist(String artistName) async {
+    final tokens = parseArtistTokens(artistName);
+    if (tokens.isEmpty) return 0;
+
+    int removedCount = 0;
+    final keysToRemove = <String>[];
+
+    for (final inter in _interactions.values) {
+      final songTokens = parseArtistTokens(inter.artist);
+      if (songTokens.any((t) => tokens.contains(t))) {
+        keysToRemove.add(inter.trackKey);
+      }
+    }
+
+    for (final key in keysToRemove) {
+      final inter = _interactions.remove(key);
+      if (inter != null && inter.songId != 0) {
+        _songIdToTrackKey.remove(inter.songId);
+      }
+      removedCount++;
+    }
+
+    for (final token in tokens) {
+      _artistAffinities.remove(token);
+      _searchPlayedArtists.remove(token);
+    }
+
+    _recalculateArtistAffinities();
+    await flush();
+    return removedCount;
+  }
+
+  /// Manually adds or boosts a preferred artist in the taste profile.
+  Future<void> addPreferredArtist(String artistName) async {
+    final tokens = parseArtistTokens(artistName);
+    if (tokens.isEmpty) return;
+
+    final primaryToken = tokens.first;
+    final dummyKey = 'artist_pref:$primaryToken';
+    final now = _clock();
+
+    _interactions[dummyKey] = SongInteraction(
+      trackKey: dummyKey,
+      songId: 0,
+      title: 'Top Artist Selection',
+      artist: artistName.trim(),
+      playCount: 10,
+      completeCount: 8,
+      searchPlayCount: 3,
+      lastInteraction: now,
+      positiveScore: 35.0,
+      negativeScore: 0.0,
+    );
+
+    for (final token in tokens) {
+      _searchPlayedArtists.add(token);
+      _artistAffinities[token] = (_artistAffinities[token] ?? 0.0) + 15.0;
+    }
+
+    _recalculateArtistAffinities();
+    await flush();
+  }
+
+  /// Completely clears all tracked taste history, resetting recommendations.
+  Future<void> clearTasteProfile() async {
+    _interactions.clear();
+    _songIdToTrackKey.clear();
+    _artistAffinities.clear();
+    _searchPlayedArtists.clear();
+    _activeSession = null;
+    try {
+      final file = await _resolveStorageFile();
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
+    debugPrint('PulseIQ: Taste profile cleared completely.');
+  }
+
   /// Returns top artists sorted by dynamic affinity score.
   List<String> getTopArtists({int limit = 10}) {
     _recalculateArtistAffinities();

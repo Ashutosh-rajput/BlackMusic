@@ -18,12 +18,40 @@ import 'package:pixel_player/services/audio_service.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
+  /// Global notifier to allow programmatic tab navigation from anywhere in the app.
+  static final ValueNotifier<int> tabNotifier = ValueNotifier<int>(0);
+
+  /// Switch the active tab on the home navigation bar (0: Library, 1: Stream, 2: Playlists, 3: Settings).
+  static void switchToTab(int index) {
+    tabNotifier.value = index;
+  }
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    HomeScreen.tabNotifier.addListener(_handleTabChange);
+  }
+
+  @override
+  void dispose() {
+    HomeScreen.tabNotifier.removeListener(_handleTabChange);
+    super.dispose();
+  }
+
+  void _handleTabChange() {
+    if (mounted && _selectedIndex != HomeScreen.tabNotifier.value) {
+      setState(() {
+        _selectedIndex = HomeScreen.tabNotifier.value;
+      });
+    }
+  }
 
   final List<Widget> _pages = [
     const LibraryScreen(),
@@ -49,9 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationBar(
             selectedIndex: _selectedIndex,
             onDestinationSelected: (index) {
-              setState(() {
-                _selectedIndex = index;
-              });
+              HomeScreen.switchToTab(index);
             },
             backgroundColor: isDark ? const Color(0xFF181820) : Colors.white,
             destinations: const [

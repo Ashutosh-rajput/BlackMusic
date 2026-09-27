@@ -59,6 +59,7 @@ dependencies:
   flutter_background_service: ^5.1.0
   fluttertoast: ^9.1.0
   dart_des: ^1.0.2
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

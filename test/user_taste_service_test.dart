@@ -720,5 +720,58 @@ void main() {
       expect(score, greaterThan(30.0));
       freshService.dispose();
     });
+
+    test('Taste Profile Editing: removeTrackedSong, removeTrackedArtist, addPreferredArtist, and clearTasteProfile', () async {
+      await service.init();
+
+      final song1 = Song(
+        id: 301,
+        title: 'Song One',
+        artist: 'Special Artist',
+        album: 'Album',
+        filePath: 'mock/path1',
+        duration: const Duration(seconds: 200),
+        dateModified: DateTime.now(),
+      );
+      final song2 = Song(
+        id: 302,
+        title: 'Song Two',
+        artist: 'Other Artist',
+        album: 'Album',
+        filePath: 'mock/path2',
+        duration: const Duration(seconds: 200),
+        dateModified: DateTime.now(),
+      );
+
+      service.onSongStarted(song1);
+      service.onPlaybackProgress(song1, const Duration(seconds: 190), song1.duration);
+      service.onSongStarted(song2);
+      service.onPlaybackProgress(song2, const Duration(seconds: 190), song2.duration);
+
+      expect(service.trackedSongCount, equals(2));
+      expect(service.trackedArtistCount, equals(2));
+
+      // Test removeTrackedSong
+      final removed = await service.removeTrackedSong(song1.canonicalKey);
+      expect(removed, isTrue);
+      expect(service.trackedSongCount, equals(1));
+      expect(service.getTrackedSongs().any((s) => s.title == 'Song One'), isFalse);
+
+      // Test addPreferredArtist
+      await service.addPreferredArtist('Legendary Singer');
+      expect(service.isSearchPlayedArtist('legendary singer'), isTrue);
+      final topArtists = service.getTrackedArtists();
+      expect(topArtists.any((a) => a.key == 'legendary singer'), isTrue);
+
+      // Test removeTrackedArtist
+      final pruned = await service.removeTrackedArtist('Other Artist');
+      expect(pruned, greaterThanOrEqualTo(1));
+      expect(service.getTrackedArtists().any((a) => a.key == 'other artist'), isFalse);
+
+      // Test clearTasteProfile
+      await service.clearTasteProfile();
+      expect(service.trackedSongCount, equals(0));
+      expect(service.trackedArtistCount, equals(0));
+    });
   });
 }
