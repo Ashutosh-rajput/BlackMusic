@@ -121,10 +121,14 @@ class _MiniPlayerDock extends StatelessWidget {
       buildWhen: (previous, current) {
         if (previous.runtimeType != current.runtimeType) return true;
         if (previous is PlayerPlaying && current is PlayerPlaying) {
-          return previous.song.id != current.song.id;
+          return previous.song.id != current.song.id ||
+              previous.duration != current.duration ||
+              previous.song.duration != current.song.duration;
         }
         if (previous is PlayerPaused && current is PlayerPaused) {
-          return previous.song.id != current.song.id;
+          return previous.song.id != current.song.id ||
+              previous.duration != current.duration ||
+              previous.song.duration != current.song.duration;
         }
         return true;
       },
@@ -250,11 +254,18 @@ class _MiniPlayerDock extends StatelessWidget {
               StreamBuilder<Duration>(
                 stream: getIt<AudioPlayerService>().positionStream,
                 builder: (context, snapshot) {
-                  final livePos = snapshot.data ?? Duration.zero;
-                  final durationMs = song.duration.inMilliseconds.toDouble();
+                  final isChanging = state is PlayerLoading;
+                  final livePos = isChanging ? Duration.zero : (snapshot.data ?? Duration.zero);
+                  final effDur = (state is PlayerPlaying && state.duration > Duration.zero)
+                      ? state.duration
+                      : (state is PlayerPaused && state.duration > Duration.zero
+                          ? state.duration
+                          : (song.duration > Duration.zero
+                              ? song.duration
+                              : (getIt<AudioPlayerService>().player.duration ?? Duration.zero)));
+                  final durationMs = effDur.inMilliseconds.toDouble();
                   final progress = durationMs > 0
-                      ? (livePos.inMilliseconds.toDouble() / durationMs)
-                          .clamp(0.0, 1.0)
+                      ? (livePos.inMilliseconds.toDouble() / durationMs).clamp(0.0, 1.0)
                       : 0.0;
 
                   return LinearProgressIndicator(

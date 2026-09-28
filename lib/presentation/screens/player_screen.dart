@@ -119,6 +119,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (previous.runtimeType != current.runtimeType) return true;
         if (previous is PlayerPlaying && current is PlayerPlaying) {
           return previous.song.id != current.song.id ||
+              previous.duration != current.duration ||
+              previous.song.duration != current.song.duration ||
               previous.isShuffle != current.isShuffle ||
               previous.isRepeat != current.isRepeat ||
               previous.repeatMode != current.repeatMode ||
@@ -126,6 +128,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         }
         if (previous is PlayerPaused && current is PlayerPaused) {
           return previous.song.id != current.song.id ||
+              previous.duration != current.duration ||
+              previous.song.duration != current.song.duration ||
               previous.isShuffle != current.isShuffle ||
               previous.isRepeat != current.isRepeat ||
               previous.repeatMode != current.repeatMode;
@@ -167,6 +171,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           if (state.song != null) {
             currentSong = state.song!;
           }
+          position = Duration.zero;
           duration = currentSong.duration;
           isLoading = isActuallyLoading;
           isPlaying = false;
@@ -443,12 +448,18 @@ class _PlayerScreenState extends State<PlayerScreen>
               StreamBuilder<Duration>(
                 stream: getIt<AudioPlayerService>().positionStream,
                 builder: (context, snapshot) {
-                  final livePos = snapshot.data ?? position;
+                  final isChanging = state is PlayerLoading;
+                  final livePos = isChanging ? Duration.zero : (snapshot.data ?? position);
                   final currentPos = _isDragging
                       ? Duration(milliseconds: _dragPosition.toInt())
                       : livePos;
-                  final liveSliderMax = duration.inMilliseconds.toDouble() > 0
-                      ? duration.inMilliseconds.toDouble()
+                  final liveDuration = (duration > Duration.zero)
+                      ? duration
+                      : (currentSong.duration > Duration.zero
+                          ? currentSong.duration
+                          : (getIt<AudioPlayerService>().player.duration ?? Duration.zero));
+                  final liveSliderMax = liveDuration.inMilliseconds.toDouble() > 0
+                      ? liveDuration.inMilliseconds.toDouble()
                       : 1.0;
                   final liveSliderValue = currentPos.inMilliseconds.toDouble().clamp(0.0, liveSliderMax);
 
@@ -516,7 +527,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                 ),
                               ),
                               Text(
-                                formatDuration(duration),
+                                formatDuration(liveDuration),
                                 style: GoogleFonts.outfit(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,

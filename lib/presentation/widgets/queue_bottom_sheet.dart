@@ -39,13 +39,16 @@ class QueueBottomSheet extends StatelessWidget {
       ),
       child: BlocBuilder<PlayerBloc, PlayerState>(
         buildWhen: (previous, current) {
-          if (previous.runtimeType != current.runtimeType) return true;
           if (previous is PlayerPlaying && current is PlayerPlaying) {
             return previous.song.id != current.song.id ||
                 previous.queue != current.queue;
           }
           if (previous is PlayerPaused && current is PlayerPaused) {
             return previous.song.id != current.song.id ||
+                previous.queue != current.queue;
+          }
+          if (previous is PlayerLoading && current is PlayerLoading) {
+            return previous.song?.id != current.song?.id ||
                 previous.queue != current.queue;
           }
           return true;
@@ -58,6 +61,9 @@ class QueueBottomSheet extends StatelessWidget {
             queue = state.queue;
             currentSong = state.song;
           } else if (state is PlayerPaused) {
+            queue = state.queue;
+            currentSong = state.song;
+          } else if (state is PlayerLoading) {
             queue = state.queue;
             currentSong = state.song;
           }

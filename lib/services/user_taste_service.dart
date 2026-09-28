@@ -1073,7 +1073,7 @@ class UserTasteService {
 
     return candidateItems
         .map((item) => item.toSong())
-        .where((s) => s.filePath.trim().isNotEmpty)
+        .where((s) => s.filePath.trim().isNotEmpty || s.source == 'jiosaavn')
         .toList();
   }
 
@@ -1114,13 +1114,24 @@ class UserTasteService {
       if (context == RecommendationContext.autoplay || context == RecommendationContext.radio) {
         // Single-seed mode around currentSong with fallback
         if (currentSong != null) {
-          final query = '${currentSong.title} ${currentSong.artist}'.trim();
-          final searchResults = await _searchSongs(query);
-          final seedMatch = findBestSeedMatch(currentSong, searchResults);
-          final seedId = seedMatch != null ? (seedMatch.id.isNotEmpty ? seedMatch.id : seedMatch.token) : null;
+          // Direct ID lookup if mediaId exists (or if source is jiosaavn)
+          final directId = (currentSong.mediaId != null && currentSong.mediaId!.isNotEmpty)
+              ? currentSong.mediaId!
+              : (currentSong.source == 'jiosaavn' && currentSong.id != 0 ? currentSong.id.toString() : null);
 
-          if (seedId != null && seedId.isNotEmpty) {
-            pool = await _fetchSuggestions(seedId, limit: max(30, limit * 2));
+          if (directId != null && directId.isNotEmpty) {
+            pool = await _fetchSuggestions(directId, limit: max(30, limit * 2));
+          }
+
+          if (pool.isEmpty) {
+            final query = '${currentSong.title} ${currentSong.artist}'.trim();
+            final searchResults = await _searchSongs(query);
+            final seedMatch = findBestSeedMatch(currentSong, searchResults);
+            final seedId = seedMatch != null ? (seedMatch.id.isNotEmpty ? seedMatch.id : seedMatch.token) : null;
+
+            if (seedId != null && seedId.isNotEmpty) {
+              pool = await _fetchSuggestions(seedId, limit: max(30, limit * 2));
+            }
           }
         }
 
@@ -1134,6 +1145,13 @@ class UserTasteService {
             final artistResults = await _searchSongs(fallbackArtist);
             pool.addAll(artistResults.where((i) => i.isSong));
           }
+        }
+
+        // Fallback to preferred language songs if pool is still empty
+        if (pool.isEmpty) {
+          final effectiveLang = lang.isNotEmpty ? lang : 'hindi';
+          final langResults = await _searchSongs(effectiveLang);
+          pool.addAll(langResults.where((i) => i.isSong));
         }
       } else {
         // Home multi-seed mode (Search-played songs highest priority, then favorites, then top history)
@@ -1189,8 +1207,7 @@ class UserTasteService {
         }
       }
 
-      // 3. Filter candidates against exclusions (Finding 10)
-      final candidateList = pool.where((item) {
+      var candidateList = pool.where((item) {
         if (!item.isSong || item.title.trim().isEmpty) return false;
         final inter = _getInteraction(item.canonicalKey, item.id);
         final isSearchPlayed = (inter?.searchPlayCount ?? 0) > 0;
@@ -1203,6 +1220,22 @@ class UserTasteService {
         if (excludedTitles.contains(item.title.trim().toLowerCase())) return false;
         return true;
       }).toList();
+
+      // If autoplay or radio has no candidates after history filter, fallback to only queue exclusions
+      if (candidateList.isEmpty && (context == RecommendationContext.autoplay || context == RecommendationContext.radio)) {
+        final queueKeys = queue.map((s) => s.canonicalKey).toSet();
+        final queueTitles = queue.map((s) => s.title.trim().toLowerCase()).toSet();
+        if (currentSong != null) {
+          queueKeys.add(currentSong.canonicalKey);
+          queueTitles.add(currentSong.title.trim().toLowerCase());
+        }
+        candidateList = pool.where((item) {
+          if (!item.isSong || item.title.trim().isEmpty) return false;
+          if (queueKeys.contains(item.canonicalKey)) return false;
+          if (queueTitles.contains(item.title.trim().toLowerCase())) return false;
+          return true;
+        }).toList();
+      }
 
       if (candidateList.isEmpty) {
         debugPrint('PulseIQ: All candidates excluded by queue/history filter.');

@@ -52,7 +52,7 @@ void main() {
       build: () => playerBloc,
       act: (bloc) => bloc.add(PlaySongEvent(testSong)),
       expect: () => [
-        PlayerLoading(song: testSong),
+        PlayerLoading(song: testSong, queue: [testSong]),
         PlayerPlaying(
           song: testSong,
           position: Duration.zero,

@@ -205,5 +205,65 @@ void main() {
       final state = playerBloc.state as PlayerPlaying;
       expect(state.queue.length, greaterThan(3));
     });
+
+    test('PlayerLoading state preserves entire queue when user clicks song in queue (prevents 0 tracks flash)', () async {
+      final queue = List.generate(10, (i) => createSong(i + 1, 'Song ${i + 1}'));
+      playerBloc.add(PlayQueueEvent(queue, initialIndex: 0));
+
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == 1)),
+      );
+
+      // User clicks song 5 from queue
+      playerBloc.add(const PlaySongAtIndexEvent(4));
+
+      // Must emit PlayerLoading carrying the full 10-song queue, NOT empty queue
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) {
+          if (s is PlayerLoading) {
+            expect(s.queue.length, equals(10));
+            expect(s.song?.id, equals(5));
+            return true;
+          }
+          return false;
+        })),
+      );
+    });
+
+    test('UserTasteService returns JioSaavn recommendations even when filePath is initially unpopulated', () async {
+      final seedSong = createSong(1, 'Seed Song').copyWith(mediaId: 'direct_seed_123');
+
+      final tasteService = UserTasteService(
+        clock: () => DateTime.now(),
+        fetchSuggestions: (id, {limit = 10}) async {
+          expect(id, equals('direct_seed_123'));
+          return [
+            JioSaavnItem(
+              type: 'song',
+              id: 'stream_999',
+              token: 'stream_999',
+              title: 'Online Stream Track',
+              subtitle: 'Online Artist',
+              imageUrl: '',
+              // filePath will be empty string initially
+              directMediaUrl: null,
+              encryptedMediaUrl: null,
+            ),
+          ];
+        },
+      );
+
+      final recs = await tasteService.getRecommendations(
+        context: RecommendationContext.autoplay,
+        currentSong: seedSong,
+        queue: [seedSong],
+      );
+
+      expect(recs, isNotEmpty);
+      expect(recs.first.title, equals('Online Stream Track'));
+      expect(recs.first.source, equals('jiosaavn'));
+    });
   });
 }

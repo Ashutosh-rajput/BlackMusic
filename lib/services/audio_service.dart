@@ -160,7 +160,6 @@ class AudioPlayerService {
         final audioSources = window.map(_buildAudioSource).toList();
 
         await player.setAudioSources(audioSources, initialIndex: indexInWindow);
-        await player.setLoopMode(LoopMode.all);
         await player.play();
         return;
       }
@@ -199,7 +198,6 @@ class AudioPlayerService {
       final (window, indexInWindow) = _buildWindowWithIndex(validQueue, safeIndex);
       final audioSources = window.map(_buildAudioSource).toList();
       await player.setAudioSources(audioSources, initialIndex: indexInWindow);
-      await player.setLoopMode(LoopMode.all);
       await player.play();
     } on PlayerInterruptedException {
       _logger.i('Queue playback interrupted by new request.');
@@ -211,7 +209,12 @@ class AudioPlayerService {
   }
 
   /// Appends songs dynamically to the running ConcatenatingAudioSource.
+  /// JioSaavn songs with empty filePath are skipped here — they will be
+  /// resolved and appended individually by PlayerBloc once their stream URL
+  /// is fetched (see _preResolveNextTrack and _expandQueueInternal).
   Future<void> addSongsToQueue(List<Song> songs) async {
+    // Only add songs that already have a resolved URL — JioSaavn tracks with
+    // empty filePath will be added later via updateQueueSong once resolved.
     final validSongs = songs.where((s) => s.filePath.trim().isNotEmpty).toList();
     if (validSongs.isEmpty) return;
     try {

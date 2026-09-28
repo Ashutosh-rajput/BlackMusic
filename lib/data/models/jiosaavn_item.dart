@@ -60,13 +60,31 @@ class JioSaavnItem extends Equatable {
     return parsed ?? generateStableId(canonicalKey);
   }
 
+  static int _parseDurationSeconds(String? dur) {
+    if (dur == null || dur.trim().isEmpty) return 0;
+    final trimmed = dur.trim();
+    final direct = int.tryParse(trimmed);
+    if (direct != null) return direct;
+    if (trimmed.contains(':')) {
+      final parts = trimmed.split(':');
+      if (parts.length == 2) {
+        return (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+      } else if (parts.length == 3) {
+        return (int.tryParse(parts[0]) ?? 0) * 3600 +
+            (int.tryParse(parts[1]) ?? 0) * 60 +
+            (int.tryParse(parts[2]) ?? 0);
+      }
+    }
+    return 0;
+  }
+
   /// Converts this JioSaavnItem into a playable online Song model.
   Song toSong({String? albumName, String? overrideStreamUrl}) {
     final streamUrl = overrideStreamUrl ??
         directMediaUrl ??
         JioSaavnDecoder.decryptMediaUrl(encryptedMediaUrl) ??
         '';
-    final durSecs = int.tryParse(duration ?? '0') ?? 0;
+    final durSecs = _parseDurationSeconds(duration);
     final idHash = stableId;
     final providerId = id.isNotEmpty ? id : (token.isNotEmpty ? token : null);
     return Song(
@@ -92,6 +110,7 @@ class JioSaavnItem extends Equatable {
     final direct = JioSaavnDecoder.decryptMediaUrl(encUrl);
     final is320 = moreInfo['320kbps']?.toString() != 'false';
     final q = is320 ? '320 kbps' : '160 kbps';
+    final dur = (json['duration'] ?? moreInfo['duration'])?.toString();
     return JioSaavnItem(
       type: 'song',
       id: json['id']?.toString() ?? '',
@@ -104,7 +123,7 @@ class JioSaavnItem extends Equatable {
       music: moreInfo['music']?.toString(),
       encryptedMediaUrl: encUrl,
       directMediaUrl: direct,
-      duration: moreInfo['duration']?.toString(),
+      duration: dur,
       quality: q,
     );
   }

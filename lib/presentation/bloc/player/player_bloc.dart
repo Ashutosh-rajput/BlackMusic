@@ -187,7 +187,18 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     });
   }
 
+  bool _isPlayerOnCurrentSong() {
+    if (_currentSong == null) return false;
+    final tag = _audioService.player.sequenceState.currentSource?.tag;
+    if (tag is MediaItem) {
+      return tag.id == _currentSong!.id.toString();
+    }
+    return true;
+  }
+
   void _onPositionChanged(PositionChangedEvent event, Emitter<PlayerState> emit) {
+    if (_isChangingSong || !_isPlayerOnCurrentSong()) return;
+
     if (state is PlayerPlaying) {
       final current = state as PlayerPlaying;
       _currentSong = current.song;
@@ -214,48 +225,28 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _settingsService?.setLastPlayedSongId(current.song.id);
       _settingsService?.setLastPlayedPositionMs(event.position.inMilliseconds);
       emit(current.copyWith(position: event.position));
-    } else if (state is PlayerLoading && _currentSong != null) {
-      final current = state as PlayerLoading;
-      if (_audioService.isPlaying) {
-        emit(PlayerPlaying(
-          song: _currentSong!,
-          position: event.position,
-          duration: _audioService.player.duration ?? _currentSong!.duration,
-          isShuffle: current.isShuffle,
-          isRepeat: current.isRepeat,
-          queue: _queue,
-        ));
-      } else {
-        emit(PlayerPaused(
-          song: _currentSong!,
-          position: event.position,
-          duration: _audioService.player.duration ?? _currentSong!.duration,
-          isShuffle: current.isShuffle,
-          isRepeat: current.isRepeat,
-          repeatMode: _repeatMode,
-          queue: _queue,
-        ));
-      }
     }
   }
 
   void _onDurationChanged(DurationChangedEvent event, Emitter<PlayerState> emit) {
+    if (event.duration <= Duration.zero) return;
+    if (_isChangingSong || !_isPlayerOnCurrentSong()) return;
+
+    if (_currentSong != null && _currentSong!.duration != event.duration) {
+      _currentSong = _currentSong!.copyWith(duration: event.duration);
+      final idx = _queue.indexWhere((s) => s.id == _currentSong!.id);
+      if (idx != -1) {
+        _queue[idx] = _currentSong!;
+      }
+      _repository?.updateSong(_currentSong!, notify: false);
+    }
+
     if (state is PlayerPlaying) {
       final current = state as PlayerPlaying;
       emit(current.copyWith(song: _currentSong, duration: event.duration));
     } else if (state is PlayerPaused) {
       final current = state as PlayerPaused;
       emit(current.copyWith(song: _currentSong, duration: event.duration));
-    } else if (state is PlayerLoading && _currentSong != null) {
-      final current = state as PlayerLoading;
-      emit(PlayerPlaying(
-        song: _currentSong!,
-        position: _audioService.player.position,
-        duration: event.duration,
-        isShuffle: current.isShuffle,
-        isRepeat: current.isRepeat,
-        queue: _queue,
-      ));
     }
   }
 
@@ -278,8 +269,10 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _currentSong = song;
       emit(PlayerLoading(
         song: song,
+        queue: List.from(_queue),
         isShuffle: _isShuffle,
         isRepeat: _isRepeat,
+        repeatMode: _repeatMode,
       ));
       Song songToPlay = song;
       if (songToPlay.filePath.isEmpty && songToPlay.source == 'jiosaavn') {
@@ -314,9 +307,21 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       await _updateAudioPlayerRepeatMode();
       if (generation != _playGeneration) return;
 
-      final dur = _audioService.player.duration ?? song.duration;
+      Duration dur = song.duration;
+      final playerTag = _audioService.player.sequenceState.currentSource?.tag;
+      final playerSongId = (playerTag is MediaItem) ? playerTag.id : null;
+      final isPlayerReadyWithSong = (playerSongId == null || playerSongId == song.id.toString()) &&
+          _audioService.player.processingState != ProcessingState.loading &&
+          _audioService.player.processingState != ProcessingState.idle;
+
+      if (isPlayerReadyWithSong &&
+          _audioService.player.duration != null &&
+          _audioService.player.duration! > Duration.zero) {
+        dur = _audioService.player.duration!;
+      }
+
       Song activeSong = song;
-      if (dur > Duration.zero && (song.duration == Duration.zero || (song.duration - dur).inSeconds.abs() > 1)) {
+      if (dur > Duration.zero && song.duration != dur) {
         activeSong = song.copyWith(duration: dur);
         _currentSong = activeSong;
         _repository?.updateSong(activeSong, notify: false);
@@ -617,6 +622,15 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         isRepeat: _isRepeat,
         repeatMode: _repeatMode,
       ));
+    } else if (state is PlayerLoading) {
+      final loading = state as PlayerLoading;
+      emit(PlayerLoading(
+        song: loading.song,
+        queue: List.from(_queue),
+        isShuffle: _isShuffle,
+        isRepeat: _isRepeat,
+        repeatMode: _repeatMode,
+      ));
     }
   }
 
@@ -848,6 +862,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _repository?.recordSongPlay(event.song);
     UserTasteService.instance.onSongStarted(event.song);
     add(const AutoExpandQueueEvent());
+    _preResolveNextTrack();
 
     final dur = event.song.duration;
     if (state is PlayerPlaying) {
@@ -921,16 +936,26 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   void _preResolveNextTrack() {
     if (_currentSong == null) return;
-    final next = _getNextSong(_currentSong!);
-    if (next != null && next.filePath.isEmpty && next.source == 'jiosaavn') {
-      final lookupKey = (next.mediaId != null && next.mediaId!.isNotEmpty)
-          ? next.mediaId!
-          : next.id.toString();
+    // Resolve the next 3 upcoming tracks in parallel to avoid mid-song buffering
+    final currentIndex = _queue.indexWhere((s) => s.id == _currentSong!.id);
+    if (currentIndex == -1) return;
+    final upcomingIndexes = [
+      currentIndex + 1,
+      currentIndex + 2,
+      currentIndex + 3,
+    ].where((i) => i < _queue.length).toList();
+
+    for (final idx in upcomingIndexes) {
+      final upcoming = _queue[idx];
+      if (upcoming.filePath.isNotEmpty || upcoming.source != 'jiosaavn') continue;
+      final lookupKey = (upcoming.mediaId != null && upcoming.mediaId!.isNotEmpty)
+          ? upcoming.mediaId!
+          : upcoming.id.toString();
       JioSaavnDecoder.fetchSongDetails(lookupKey).then((details) {
         final streamUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
         if (streamUrl != null && streamUrl.isNotEmpty) {
-          final qIndex = _queue.indexWhere((s) => s.id == next.id);
-          if (qIndex != -1) {
+          final qIndex = _queue.indexWhere((s) => s.id == upcoming.id);
+          if (qIndex != -1 && _queue[qIndex].filePath.isEmpty) {
             final resolved = _queue[qIndex].copyWith(filePath: streamUrl);
             _queue[qIndex] = resolved;
             _audioService.addSongsToQueue([resolved]);
@@ -967,6 +992,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
     _isExpandingQueue = true;
     try {
+      // Use the seed with highest quality: current song if at last position, else last in queue
       final seedSong = (_queue.isNotEmpty && _queue.last.title.trim().isNotEmpty) ? _queue.last : _currentSong;
       if (seedSong == null) return;
 
@@ -979,10 +1005,11 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         currentSong: seedSong,
         queue: _queue,
         recentHistory: recent,
+        lang: 'hindi',
         limit: 15,
       );
 
-      // Fallback 1: Stream cache
+      // Fallback 1: Stream cache (already have resolved URLs)
       if (recs.isEmpty) {
         final cached = StreamCacheService.instance.getCachedSongs();
         if (cached.isNotEmpty) {
@@ -991,7 +1018,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         }
       }
 
-      // Fallback 2: Local library songs
+      // Fallback 2: Local library songs (already have file paths)
       if (recs.isEmpty && _repository != null) {
         final localSongs = await _repository.getAllSongs();
         if (localSongs.isNotEmpty) {
@@ -1018,12 +1045,27 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         }).toList();
 
         if (newTracks.isNotEmpty) {
+          // Pre-resolve stream URLs for JioSaavn tracks in parallel (up to 6 at once)
+          // so they can be added directly to ExoPlayer's ConcatenatingAudioSource.
+          final resolvedTracks = await _resolveStreamUrls(newTracks);
+
+          // Update in-memory queue with resolved URLs
+          for (final resolved in resolvedTracks) {
+            final idx = newTracks.indexWhere((s) => s.id == resolved.id);
+            if (idx != -1) newTracks[idx] = resolved;
+          }
+
+          // Only add tracks that now have a valid filePath to ExoPlayer
+          final playableTracks = newTracks.where((s) => s.filePath.trim().isNotEmpty).toList();
+
           _queue.addAll(newTracks);
           _originalQueue.addAll(newTracks);
 
-          await _audioService.addSongsToQueue(newTracks);
+          if (playableTracks.isNotEmpty) {
+            await _audioService.addSongsToQueue(playableTracks);
+          }
           _emitUpdatedQueueState(emit);
-          debugPrint('PulseIQ: Auto-expanded queue with ${newTracks.length} tracks (Total: ${_queue.length})');
+          debugPrint('PulseIQ: Auto-expanded queue with ${newTracks.length} tracks (${playableTracks.length} playable, Total: ${_queue.length})');
         }
       }
     } catch (e) {
@@ -1031,6 +1073,33 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     } finally {
       _isExpandingQueue = false;
     }
+  }
+
+  /// Resolves stream URLs for JioSaavn tracks in parallel (at most 6 concurrent).
+  /// Returns the same list with filePath populated where resolution succeeded.
+  Future<List<Song>> _resolveStreamUrls(List<Song> songs) async {
+    const maxConcurrent = 6;
+    final results = <Song>[];
+    for (int i = 0; i < songs.length; i += maxConcurrent) {
+      final batch = songs.sublist(i, (i + maxConcurrent).clamp(0, songs.length));
+      final resolved = await Future.wait(batch.map((song) async {
+        if (song.filePath.trim().isNotEmpty) return song;
+        if (song.source != 'jiosaavn') return song;
+        try {
+          final lookupKey = (song.mediaId != null && song.mediaId!.isNotEmpty)
+              ? song.mediaId!
+              : song.id.toString();
+          final details = await JioSaavnDecoder.fetchSongDetails(lookupKey);
+          final streamUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
+          if (streamUrl != null && streamUrl.isNotEmpty) {
+            return song.copyWith(filePath: streamUrl);
+          }
+        } catch (_) {}
+        return song;
+      }));
+      results.addAll(resolved);
+    }
+    return results;
   }
 
   @override
