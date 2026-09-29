@@ -1,5 +1,8 @@
 # 🎵 blackmusic
 
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D3B527VH3X)
+
 > A premium, privacy-first offline audio player and high-performance YouTube downloader built with Flutter & BLoC.
 
 ---
