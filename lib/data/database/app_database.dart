@@ -178,10 +178,16 @@ class AppDatabase extends _$AppDatabase {
     String? audioQuality,
   }) async {
     final now = DateTime.now();
-    final existing = await (select(songs)..where((t) => t.id.equals(id))).getSingleOrNull() ??
-        await (select(songs)..where((t) => t.filePath.equals(filePath))).getSingleOrNull();
+    Song? existing;
+    try {
+      existing = await (select(songs)..where((t) => t.id.equals(id))..limit(1)).getSingleOrNull();
+      if (existing == null && filePath.isNotEmpty) {
+        existing = await (select(songs)..where((t) => t.filePath.equals(filePath))..limit(1)).getSingleOrNull();
+      }
+    } catch (_) {}
 
-    if (existing == null) {
+    final existingSong = existing;
+    if (existingSong == null) {
       await into(songs).insert(
         SongsCompanion.insert(
           id: Value(id),
@@ -200,28 +206,29 @@ class AppDatabase extends _$AppDatabase {
         mode: InsertMode.insertOrReplace,
       );
     } else {
-      await (update(songs)..where((t) => t.id.equals(existing.id))).write(
+      await (update(songs)..where((t) => t.id.equals(existingSong.id))).write(
         SongsCompanion(
-          playCount: Value(existing.playCount + 1),
+          playCount: Value(existingSong.playCount + 1),
           lastPlayedAt: Value(now),
-          source: Value(existing.source ?? source),
-          audioQuality: Value(existing.audioQuality ?? audioQuality),
-          albumArt: Value(existing.albumArt ?? albumArt),
+          source: Value(existingSong.source ?? source),
+          audioQuality: Value(existingSong.audioQuality ?? audioQuality),
+          albumArt: Value(existingSong.albumArt ?? albumArt),
+          filePath: filePath.isNotEmpty ? Value(filePath) : const Value.absent(),
         ),
       );
     }
 
-    await into(playHistory).insert(
-      PlayHistoryCompanion.insert(songId: existing?.id ?? id, playedAt: now),
-    );
+    try {
+      await into(playHistory).insert(
+        PlayHistoryCompanion.insert(songId: existing?.id ?? id, playedAt: now),
+      );
+    } catch (_) {}
   }
 
   /// Get stream songs that were played, ordered by lastPlayedAt descending
   Future<List<Song>> getLastPlayedStreamSongs({int limit = 50}) {
     return (select(songs)
-          ..where((t) =>
-              t.lastPlayedAt.isNotNull() &
-              (t.source.equals('jiosaavn') | t.filePath.like('https://%') | t.filePath.like('http://%')))
+          ..where((t) => t.lastPlayedAt.isNotNull())
           ..orderBy([(t) => OrderingTerm.desc(t.lastPlayedAt)])
           ..limit(limit))
         .get();

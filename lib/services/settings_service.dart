@@ -96,7 +96,7 @@ class SettingsService {
   int get appLaunchCount => _prefs.getInt(_keyAppLaunchCount) ?? 0;
   bool get supportBannerDismissed => _prefs.getBool(_keySupportBannerDismissed) ?? false;
   bool get isSupportBannerEnabled => !supportBannerDismissed;
-  bool get shouldShowSupportBanner => !supportBannerDismissed && appLaunchCount >= 5;
+  bool get shouldShowSupportBanner => !supportBannerDismissed;
   bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
   String get repeatMode => _prefs.getString(_keyRepeatMode) ?? 'Off';
   bool get shuffleByDefault => _prefs.getBool(_keyShuffleByDefault) ?? false;

@@ -205,7 +205,7 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> with WidgetsBindingObse
 
           return MaterialApp(
             navigatorKey: _navigatorKey,
-            title: 'BlackMusic',
+            title: 'Vinyl',
             debugShowCheckedModeBanner: false,
             theme: light,
             darkTheme: dark,

@@ -9,6 +9,7 @@ import 'package:pixel_player/data/models/song_model.dart';
 import 'package:pixel_player/data/repositories/music_repository.dart';
 import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
+import 'package:pixel_player/presentation/bloc/player/player_state.dart';
 import 'package:pixel_player/presentation/screens/home_screen.dart';
 import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
@@ -17,7 +18,8 @@ import 'package:pixel_player/services/settings_service.dart';
 import 'package:pixel_player/services/stream_cache_service.dart';
 import 'package:pixel_player/services/user_taste_service.dart';
 import 'package:pixel_player/services/stream_favorites_service.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:pixel_player/presentation/widgets/support_banner_widget.dart';
+import 'package:pixel_player/presentation/widgets/song_options_bottom_sheet.dart';
 
 class StreamScreen extends StatefulWidget {
   const StreamScreen({super.key});
@@ -32,7 +34,6 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   String? _errorMessage;
   String? _loadingSongId;
   int _selectedFilter = 0; // 0: All, 1: Songs, 2: Albums, 3: Playlists, 4: Favorites, 5: Last Played, 6: Offline Cache
-  bool _showSupportBanner = false;
 
   // Search state
   bool _isSearching = false;
@@ -59,7 +60,6 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     super.initState();
     final settings = getIt<SettingsService>();
     _currentLang = settings.streamLanguage;
-    _showSupportBanner = settings.shouldShowSupportBanner;
     _loadStreamData();
   }
 
@@ -735,24 +735,31 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           child: _buildFilterChips(),
         ),
       ),
-      body: _isLoading
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: theme.colorScheme.primary),
-                  const SizedBox(height: 16),
-                  const Text('Loading recommendations...'),
-                ],
-              ),
-            )
-          : _errorMessage != null
-              ? _buildStreamFailureView()
-              : RefreshIndicator(
-                  color: theme.colorScheme.primary,
-                  onRefresh: _loadStreamData,
-                  child: _buildBodyContent(langName, allSongs),
+      body: BlocListener<PlayerBloc, PlayerState>(
+        listener: (context, state) {
+          if (state is PlayerPlaying) {
+            _loadLastPlayedSongs();
+          }
+        },
+        child: _isLoading
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: theme.colorScheme.primary),
+                    const SizedBox(height: 16),
+                    const Text('Loading recommendations...'),
+                  ],
                 ),
+              )
+            : _errorMessage != null
+                ? _buildStreamFailureView()
+                : RefreshIndicator(
+                    color: theme.colorScheme.primary,
+                    onRefresh: _loadStreamData,
+                    child: _buildBodyContent(langName, allSongs),
+                  ),
+      ),
     );
   }
 
@@ -793,6 +800,9 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             onSelected: (val) {
               if (val) {
                 setState(() => _selectedFilter = index);
+                if (index == 0 || index == 5) {
+                  _loadLastPlayedSongs();
+                }
               }
             },
           );
@@ -843,10 +853,16 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
             return _StreamSongTile(
               item: item,
               isLoading: _loadingSongId == item.id,
-              onPlay: () => _streamSingleSong(
-                item,
-                contextSongQueue: _lastPlayedStreamSongs,
-              ),
+              onPlay: () {
+                if (song.filePath.isNotEmpty && !song.filePath.startsWith('http')) {
+                  context.read<PlayerBloc>().add(PlaySongEvent(song, queue: _lastPlayedStreamSongs));
+                } else {
+                  _streamSingleSong(
+                    item,
+                    contextSongQueue: _lastPlayedStreamSongs,
+                  );
+                }
+              },
               onDownload: () => _downloadSong(item),
               onAddToQueue: () => _addSongToQueue(item),
             );
@@ -990,10 +1006,16 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         return _StreamSongTile(
           item: item,
           isLoading: _loadingSongId == item.id,
-          onPlay: () => _streamSingleSong(
-            item,
-            contextSongQueue: _lastPlayedStreamSongs,
-          ),
+          onPlay: () {
+            if (song.filePath.isNotEmpty && !song.filePath.startsWith('http')) {
+              context.read<PlayerBloc>().add(PlaySongEvent(song, queue: _lastPlayedStreamSongs));
+            } else {
+              _streamSingleSong(
+                item,
+                contextSongQueue: _lastPlayedStreamSongs,
+              );
+            }
+          },
           onDownload: () => _downloadSong(item),
           onAddToQueue: () => _addSongToQueue(item),
         );
@@ -1061,183 +1083,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     );
   }
 
-  Widget _buildSupportBanner() {
-    if (!_showSupportBanner) return const SizedBox.shrink();
-
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isDark
-                ? [
-                    theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                    theme.colorScheme.surface.withValues(alpha: 0.8),
-                  ]
-                : [
-                    theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                    theme.colorScheme.surface.withValues(alpha: 0.7),
-                  ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: theme.colorScheme.primary.withValues(alpha: 0.35),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.star_rounded,
-                    color: theme.colorScheme.primary,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            'Support This Project',
-                            style: GoogleFonts.outfit(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primary.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              'GitHub',
-                              style: GoogleFonts.outfit(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: theme.colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Enjoying Pixel Player? Star our GitHub repo to support development, track updates, and help the project grow!',
-                        style: GoogleFonts.outfit(
-                          fontSize: 12,
-                          height: 1.35,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  tooltip: 'Dismiss banner',
-                  onPressed: () {
-                    setState(() => _showSupportBanner = false);
-                    getIt<SettingsService>().dismissSupportBanner();
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: theme.colorScheme.primary,
-                    foregroundColor: theme.colorScheme.onPrimary,
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  icon: const Icon(Icons.star_rate_rounded, size: 16),
-                  label: Text(
-                    'Star on GitHub',
-                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 12),
-                  ),
-                  onPressed: _openGitHubRepo,
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.primary,
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  ),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 14),
-                  label: Text(
-                    'View Repo',
-                    style: GoogleFonts.outfit(fontSize: 12),
-                  ),
-                  onPressed: _openGitHubRepo,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openGitHubRepo() async {
-    getIt<SettingsService>().dismissSupportBanner();
-    setState(() => _showSupportBanner = false);
-    const urlString = 'https://github.com/Ashutosh-rajput/flutter_application_1';
-    final url = Uri.parse(urlString);
-    try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        await launchUrl(url);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not open $urlString: $e', style: GoogleFonts.outfit()),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
+  Widget _buildSupportBanner() => const SupportBannerWidget();
 
   Widget _buildCachedSongsView() {
     final cachedItems = StreamCacheService.instance.getCachedItems();
@@ -1794,20 +1640,18 @@ class _StreamSongTile extends StatelessWidget {
                   color: theme.colorScheme.primary,
                 ),
               ),
-            ),
-          if (onAddToQueue != null)
+            )
+          else
             IconButton(
-              icon: const Icon(Icons.playlist_add_rounded, size: 22),
-              tooltip: 'Add to queue',
+              icon: const Icon(Icons.more_vert_rounded, size: 20),
+              tooltip: 'Song options',
               visualDensity: VisualDensity.compact,
-              onPressed: onAddToQueue,
+              onPressed: () => SongOptionsBottomSheet.show(
+                context,
+                song: item.toSong(),
+                onDownload: onDownload,
+              ),
             ),
-          IconButton(
-            icon: const Icon(Icons.download_rounded, size: 20),
-            tooltip: 'Download',
-            visualDensity: VisualDensity.compact,
-            onPressed: isLoading ? null : onDownload,
-          ),
         ],
       ),
       onTap: isLoading ? null : onPlay,
@@ -1984,18 +1828,6 @@ class _SuggestedSongsSheet extends StatelessWidget {
     }
   }
 
-  void _addTrackToQueue(BuildContext context, JioSaavnItem track) {
-    final song = track.toSong(albumName: 'Song Suggestions');
-    context.read<PlayerBloc>().add(AddToQueueEvent(song));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Added "${track.title}" to queue', style: GoogleFonts.outfit()),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
   void _downloadTrack(BuildContext context, JioSaavnItem track) {
     final downloadService = getIt<DownloadService>();
     final directUrl = track.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
@@ -2143,22 +1975,15 @@ class _SuggestedSongsSheet extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.outfit(fontSize: 12),
                           ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.playlist_add_rounded, size: 22),
-                                tooltip: 'Add to queue',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () => _addTrackToQueue(context, track),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.download_rounded, size: 20),
-                                tooltip: 'Download',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () => _downloadTrack(context, track),
-                              ),
-                            ],
+                          trailing: IconButton(
+                            icon: const Icon(Icons.more_vert_rounded, size: 20),
+                            tooltip: 'Song options',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => SongOptionsBottomSheet.show(
+                              context,
+                              song: track.toSong(albumName: 'Song Suggestions'),
+                              onDownload: () => _downloadTrack(context, track),
+                            ),
                           ),
                           onTap: () => _streamTrack(context, index),
                         );
@@ -2246,18 +2071,6 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
     if (getIt<SettingsService>().autoDownloadStreamSongs && index < _tracks.length) {
       _downloadTrack(_tracks[index]);
     }
-  }
-
-  void _addTrackToQueue(JioSaavnItem track) {
-    final song = track.toSong(albumName: widget.item.title);
-    context.read<PlayerBloc>().add(AddToQueueEvent(song));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Added "${track.title}" to queue', style: GoogleFonts.outfit()),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   void _downloadTrack(JioSaavnItem track) {
@@ -2408,22 +2221,15 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
                                 overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.outfit(fontSize: 12),
                               ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.playlist_add_rounded, size: 22),
-                                    tooltip: 'Add to queue',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => _addTrackToQueue(track),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.download_rounded, size: 20),
-                                    tooltip: 'Download',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => _downloadTrack(track),
-                                  ),
-                                ],
+                              trailing: IconButton(
+                                icon: const Icon(Icons.more_vert_rounded, size: 20),
+                                tooltip: 'Song options',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => SongOptionsBottomSheet.show(
+                                  context,
+                                  song: track.toSong(albumName: widget.item.title),
+                                  onDownload: () => _downloadTrack(track),
+                                ),
                               ),
                               onTap: () => _streamTrack(index),
                             );

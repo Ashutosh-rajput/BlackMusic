@@ -6,6 +6,7 @@ import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
 import 'package:pixel_player/presentation/bloc/player/player_event.dart';
 import 'package:pixel_player/presentation/screens/player_screen.dart';
 import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
+import 'package:pixel_player/presentation/widgets/song_options_bottom_sheet.dart';
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
 
 class CategoryDetailScreen extends StatelessWidget {
@@ -176,7 +177,12 @@ class CategoryDetailScreen extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.more_vert_rounded, size: 20),
+                          tooltip: 'Song options',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => SongOptionsBottomSheet.show(context, song: song),
+                        ),
                         onTap: () {
                           context.read<PlayerBloc>().add(
                                 PlaySongEvent(song, queue: songs),

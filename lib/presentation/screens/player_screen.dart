@@ -20,6 +20,8 @@ import 'package:pixel_player/presentation/widgets/sleep_timer_dialog.dart';
 import 'package:pixel_player/presentation/widgets/player_background_pattern.dart';
 import 'package:pixel_player/services/stream_favorites_service.dart';
 import 'package:pixel_player/presentation/widgets/lyrics_view.dart';
+import 'package:pixel_player/presentation/widgets/add_to_playlist_sheet.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 class PlayerScreen extends StatefulWidget {
   final Song song;
@@ -701,6 +703,54 @@ class _PlayerScreenState extends State<PlayerScreen>
                     }).toList(),
                   ),
                   const Divider(height: 28),
+
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.playlist_add_rounded, color: Color(0xFF2BC5B4)),
+                    title: Text(
+                      'Add to Playlist',
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Save this track to one of your playlists',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      AddToPlaylistSheet.show(context, currentSong);
+                    },
+                  ),
+                  const Divider(height: 16),
+
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.queue_music_rounded, color: Color(0xFF2BC5B4)),
+                    title: Text(
+                      'Add to Queue',
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Play this track next in the current queue',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      context.read<PlayerBloc>().add(AddToQueueEvent(currentSong));
+                      Fluttertoast.showToast(
+                        msg: 'Added "${currentSong.title}" to queue',
+                        toastLength: Toast.LENGTH_SHORT,
+                      );
+                    },
+                  ),
+                  const Divider(height: 16),
 
                   ListTile(
                     contentPadding: EdgeInsets.zero,

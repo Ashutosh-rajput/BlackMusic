@@ -195,23 +195,31 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
   Future<List<Song>> getLastPlayedStreamSongs({int limit = 50}) async {
     try {
       final rows = await _db.getLastPlayedStreamSongs(limit: limit);
-      return rows.map((row) => Song(
-        id: row.id,
-        title: row.title,
-        artist: row.artist,
-        album: row.album,
-        filePath: row.filePath,
-        duration: Duration(milliseconds: row.duration),
-        fileSize: row.fileSize,
-        dateModified: row.dateModified,
-        genre: row.genre,
-        albumArtist: row.albumArtist,
-        albumArt: row.albumArt,
-        playCount: row.playCount,
-        lastPlayedAt: row.lastPlayedAt,
-        source: row.source,
-        audioQuality: row.audioQuality,
-      )).toList();
+      final seen = <String>{};
+      final result = <Song>[];
+      for (final row in rows) {
+        final key = '${row.title.toLowerCase().trim()}_${row.artist.toLowerCase().trim()}';
+        if (seen.add(key)) {
+          result.add(Song(
+            id: row.id,
+            title: row.title,
+            artist: row.artist,
+            album: row.album,
+            filePath: row.filePath,
+            duration: Duration(milliseconds: row.duration),
+            fileSize: row.fileSize,
+            dateModified: row.dateModified,
+            genre: row.genre,
+            albumArtist: row.albumArtist,
+            albumArt: row.albumArt,
+            playCount: row.playCount,
+            lastPlayedAt: row.lastPlayedAt,
+            source: row.source,
+            audioQuality: row.audioQuality,
+          ));
+        }
+      }
+      return result;
     } catch (e) {
       logger.e('Error fetching last played stream songs: $e');
       return [];
@@ -361,7 +369,24 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
     try {
       final rows = await _db.getAllPlaylists();
       List<PlaylistModel> result = [];
-      final allSongs = await getAllSongs();
+      final dbRows = await _db.getAllSongs();
+      final allSongs = dbRows.map((row) => Song(
+        id: row.id,
+        title: row.title,
+        artist: row.artist,
+        album: row.album,
+        filePath: row.filePath,
+        duration: Duration(milliseconds: row.duration),
+        fileSize: row.fileSize,
+        dateModified: row.dateModified,
+        genre: row.genre,
+        albumArtist: row.albumArtist,
+        albumArt: row.albumArt,
+        playCount: row.playCount,
+        lastPlayedAt: row.lastPlayedAt,
+        source: row.source,
+        audioQuality: row.audioQuality,
+      )).toList();
       final songMap = {for (var s in allSongs) s.id: s};
 
       for (var row in rows) {
@@ -424,6 +449,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
   @override
   Future<void> addSongToPlaylist(int playlistId, Song song) async {
     try {
+      await saveSongsBatch([song]);
       await _db.addSongToPlaylist(playlistId, song.id);
     } catch (e) {
       logger.e('Error adding song to playlist in database: $e');

@@ -23,6 +23,8 @@ import 'package:pixel_player/presentation/widgets/folder_picker_dialog.dart';
 import 'package:pixel_player/presentation/widgets/download_queue_sheet.dart';
 import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
 import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
+import 'package:pixel_player/presentation/widgets/support_banner_widget.dart';
+import 'package:pixel_player/presentation/widgets/song_options_bottom_sheet.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -215,6 +217,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ],
               ),
             ),
+
+            if (!_showHistory && _searchController.text.trim().isEmpty)
+              const SupportBannerWidget(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+              ),
 
             // Main Content Area
             Expanded(
@@ -820,6 +827,13 @@ class _SongListTile extends StatelessWidget {
                   : theme.colorScheme.onSurface.withValues(alpha: 0.6),
               fontWeight: isCurrentSong ? FontWeight.bold : FontWeight.normal,
             ),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.more_vert_rounded, size: 20),
+            tooltip: 'Song options',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => SongOptionsBottomSheet.show(context, song: song),
           ),
         ],
       ),

@@ -14,6 +14,7 @@ import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
 import 'package:pixel_player/presentation/widgets/folder_picker_dialog.dart';
 import 'package:pixel_player/services/user_taste_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -384,8 +385,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: _tileTitle('GitHub Support Banner'),
                 subtitle: _tileSubtitle(
                   _supportBannerEnabled
-                      ? 'Show project support card in stream feed (after 5th launch)'
-                      : 'Permanently hidden from stream feed',
+                      ? 'Show project support card on Library page'
+                      : 'Permanently hidden from Library page',
                 ),
                 value: _supportBannerEnabled,
                 activeThumbColor: _accentColor,
@@ -427,7 +428,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ListTile(
                 title: _tileTitle('Download Location'),
                 subtitle: Text(
-                  '/storage/emulated/0/Download/blackmusic',
+                  '/storage/emulated/0/Download/vinyl',
                   style: GoogleFonts.outfit(
                     fontSize: 12,
                     color: _accentColor,
@@ -435,7 +436,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 trailing: const Icon(Icons.folder_special_rounded),
-                onTap: () => _showSnackBar('Saved to: Internal Storage > Download > blackmusic'),
+                onTap: () => _showSnackBar('Saved to: Internal Storage > Download > vinyl'),
               ),
               _divider(),
               ListTile(
@@ -1150,6 +1151,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
           ),
+
+          const SizedBox(height: 20),
+
+          // ABOUT SECTION
+          _buildSectionHeader('About'),
+          _buildCardContainer(
+            isDark: isDark,
+            children: [
+              ListTile(
+                leading: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: _accentColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.album_rounded, color: _accentColor, size: 24),
+                ),
+                title: _tileTitle('Vinyl'),
+                subtitle: _tileSubtitle('Version 1.0.0 • Music Player'),
+              ),
+              _divider(),
+              ListTile(
+                leading: const Icon(Icons.code_rounded),
+                title: _tileTitle('Source Code'),
+                subtitle: _tileSubtitle('View on GitHub'),
+                trailing: const Icon(Icons.open_in_new_rounded, size: 16),
+                onTap: () async {
+                  const url = 'https://github.com/Ashutosh-rajput/flutter_application_1';
+                  final uri = Uri.parse(url);
+                  try {
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    } else {
+                      await launchUrl(uri);
+                    }
+                  } catch (_) {
+                    _showSnackBar('Could not open GitHub');
+                  }
+                },
+              ),
+              _divider(),
+              ListTile(
+                leading: const Icon(Icons.favorite_rounded, color: Colors.redAccent),
+                title: _tileTitle('Support Development'),
+                subtitle: _tileSubtitle('Donate via GitHub to keep Vinyl growing'),
+                trailing: const Icon(Icons.open_in_new_rounded, size: 16),
+                onTap: () async {
+                  const url = 'https://github.com/Ashutosh-rajput/flutter_application_1';
+                  final uri = Uri.parse(url);
+                  try {
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    } else {
+                      await launchUrl(uri);
+                    }
+                  } catch (_) {
+                    _showSnackBar('Could not open GitHub');
+                  }
+                },
+              ),
+              _divider(),
+              ListTile(
+                leading: const Icon(Icons.privacy_tip_outlined),
+                title: _tileTitle('Privacy'),
+                subtitle: _tileSubtitle('No data collected. Everything stays on your device.'),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 32),
         ],
       ),
     );

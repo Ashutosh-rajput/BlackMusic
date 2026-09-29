@@ -320,12 +320,12 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         dur = _audioService.player.duration!;
       }
 
-      Song activeSong = song;
-      if (dur > Duration.zero && song.duration != dur) {
-        activeSong = song.copyWith(duration: dur);
-        _currentSong = activeSong;
-        _repository?.updateSong(activeSong, notify: false);
+      Song activeSong = songToPlay;
+      if (dur > Duration.zero && songToPlay.duration != dur) {
+        activeSong = songToPlay.copyWith(duration: dur);
       }
+      _currentSong = activeSong;
+      _repository?.updateSong(activeSong, notify: false);
 
       emit(PlayerPlaying(
         song: activeSong,
