@@ -8,15 +8,20 @@
 Maintaining **Vinyl**, implementing new features (like PulseIQ and high-fidelity streaming), and keeping up with API updates takes continuous effort. Your support helps keep this project independent, ad-free, and privacy-focused!
 
 
-**International**
+### International
 
 [![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D3B527VH3X)
 
-**India**
 
-[![UPI](https://img.shields.io/badge/🇮🇳%20Pay%20via%20UPI-ashutosh%40upi-FFB000?style=for-the-badge)](upi://pay?pa=ashutosh@upi&pn=Ashutosh&cu=INR)
+### India
 
-<sub>Scan the QR code or pay using any UPI app.</sub>
+[![Pay via UPI](https://img.shields.io/badge/🇮🇳%20Pay%20via%20UPI-sliceashutoshrajput%40ybl-FFB000?style=for-the-badge)](upi://pay?pa=sliceashutoshrajput@ybl&mode=02)
+
+<p align="left">
+  <img src=".github/assets/UPI_QR.jpeg" alt="UPI QR Code" width="250">
+</p>
+
+---
 
 ### ⭐ Other Ways to Support
 
@@ -26,8 +31,6 @@ Financial support isn't the only way to help! You can also support the project f
 - **Report Bugs & Suggest Features**: Open an [Issue](https://github.com/Ashutosh-rajput/flutter_application_1/issues) if you spot any bugs or have ideas for new features.
 - **Spread the Word**: Share Vinyl with friends and on social media!
 - **Contribute Code**: Pull requests are always welcome! Check out our contribution guidelines to get started.
-
-> *"Thank you for being part of the Vinyl journey and supporting open-source software!"* ❤️
 
 ## ✨ Features Overview
 
@@ -122,6 +125,9 @@ Financial support isn't the only way to help! You can also support the project f
    ```
 
 ---
+
+> *"Thank you for being part of the Vinyl journey and supporting open-source software!"* ❤️
+
 
 
 ## 📄 License
