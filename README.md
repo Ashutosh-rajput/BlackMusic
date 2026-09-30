@@ -22,7 +22,7 @@ Maintaining **Vinyl**, implementing new features (like PulseIQ and high-fidelity
 
 
 <p align="left">
-  <img src=".github/assets/UPI_QR.jpeg" alt="UPI QR Code" width="250">
+  <img src=".github/assets/UPI_QR.png" alt="UPI QR Code" width="250">
 </p>
 
 ---
