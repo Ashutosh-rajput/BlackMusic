@@ -41,6 +41,10 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   bool _isChangingSong = false;
   int _consecutiveFailures = 0;
   int _playGeneration = 0;
+  // Generation of the play request that currently owns [_isChangingSong].
+  // Only that request may clear the flag, so a stale request can't unlock a
+  // newer load, and a request cancelled by pause/stop can't leave it stuck.
+  int _changingSongOwner = 0;
   bool _isExpandingQueue = false;
 
   void _showToast(String message) {
@@ -151,8 +155,11 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       final procState = playerState.processingState;
       final isPlaying = playerState.playing;
 
+      // Ignore every intermediate event (including a stale "completed" from the
+      // previous source) while a new song is being loaded.
+      if (_isChangingSong) return;
+
       if (procState == ProcessingState.completed) {
-        _isChangingSong = false;
         if (_currentSong != null) {
           UserTasteService.instance.onSongCompleted(_currentSong!);
         }
@@ -166,9 +173,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         }
         return;
       }
-
-      // Do not process intermediate buffering/loading states while a song is transitioning
-      if (_isChangingSong) return;
 
       if (!isPlaying) {
         if (state is PlayerPlaying || state is PlayerLoading) {
@@ -248,20 +252,22 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   /// Shared internal play method
   Future<void> _playSongInternal(Song song, Emitter<PlayerState> emit) async {
-    final generation = ++_playGeneration;
-
+    // Tapping the song that is already playing is a no-op; it must not cancel
+    // or unlock anything, so bail out before claiming a generation.
     if (_currentSong?.id == song.id &&
         state is PlayerPlaying &&
         _audioService.player.playing &&
         _audioService.player.processingState != ProcessingState.completed) {
-      _isChangingSong = false;
       return;
     }
 
+    final generation = ++_playGeneration;
+
     final previousSong = _currentSong;
 
+    _isChangingSong = true;
+    _changingSongOwner = generation;
     try {
-      _isChangingSong = true;
       _currentSong = song;
       emit(PlayerLoading(
         song: song,
@@ -297,7 +303,12 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         }
       }
 
-      await _audioService.play(songToPlay.filePath, songInfo: songToPlay, queue: _queue);
+      await _audioService.play(
+        songToPlay.filePath,
+        songInfo: songToPlay,
+        queue: _queue,
+        isCancelled: () => generation != _playGeneration,
+      );
       if (generation != _playGeneration) return;
 
       await _updateAudioPlayerRepeatMode();
@@ -343,10 +354,9 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         });
       }
       _consecutiveFailures = 0;
-      _isChangingSong = false;
+      _releaseChangingSong(generation);
       _preResolveNextTrack();
     } catch (e) {
-      _isChangingSong = false;
       if (generation != _playGeneration ||
           e is PlayerInterruptedException ||
           e.toString().contains('Loading interrupted')) {
@@ -383,7 +393,17 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         repeatMode: _repeatMode,
         queue: _queue,
       ));
+    } finally {
+      _releaseChangingSong(generation);
     }
+  }
+
+  /// Clears [_isChangingSong] if the request with [generation] still owns it.
+  /// A request cancelled by pause/stop (rather than by a newer play) still owns
+  /// the flag and must release it, otherwise Next/Previous stay disabled.
+  void _releaseChangingSong(int generation) {
+    if (_changingSongOwner != generation) return;
+    _isChangingSong = false;
   }
 
   Song? _getNextSong(Song current) {
@@ -717,8 +737,14 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     final lastId = _settingsService?.lastPlayedSongId;
     if (lastId == null || _repository == null) return;
 
+    // The restore runs concurrently with user actions. If the user starts a
+    // song before it finishes, it must not load, seek or overwrite anything.
+    final startGeneration = _playGeneration;
+    bool superseded() => _playGeneration != startGeneration || state is! PlayerInitial;
+
     try {
       final allSongs = await _repository.getAllSongs();
+      if (superseded()) return;
       final songMatches = allSongs.where((s) => s.id == lastId);
       if (songMatches.isEmpty) return;
       final song = songMatches.first;
@@ -726,14 +752,16 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       final posMs = _settingsService?.lastPlayedPositionMs ?? 0;
       final pos = Duration(milliseconds: posMs);
 
+      await _audioService.prepare(song);
+      if (superseded()) return;
+      if (pos > Duration.zero) {
+        await _audioService.seek(pos);
+        if (superseded()) return;
+      }
+
       _currentSong = song;
       _queue = [song];
       _originalQueue = [song];
-
-      await _audioService.prepare(song);
-      if (pos > Duration.zero) {
-        await _audioService.seek(pos);
-      }
 
       emit(PlayerPaused(
         song: song,
@@ -1042,7 +1070,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
         if (newTracks.isNotEmpty) {
           // Pre-resolve stream URLs for JioSaavn tracks in parallel (up to 6 at once)
-          // so they can be added directly to ExoPlayer's ConcatenatingAudioSource.
+          // so they can be appended directly to the player's playlist.
           final resolvedTracks = await _resolveStreamUrls(newTracks);
 
           // Update in-memory queue with resolved URLs

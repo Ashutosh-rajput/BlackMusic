@@ -112,6 +112,14 @@ class AudioPlayerService {
     return (window, halfWindow);
   }
 
+  /// just_audio's play() only completes when playback pauses or ends, so it
+  /// must not be awaited or callers would stay in "loading" for the whole song.
+  void _startPlayback() {
+    player.play().catchError((Object e) {
+      _logger.w('Playback ended with error: $e');
+    });
+  }
+
   Future<void> prepare(Song song) async {
     try {
       final source = _buildAudioSource(song);
@@ -129,7 +137,15 @@ class AudioPlayerService {
     Song? songInfo,
     List<Song>? queue,
     int? initialIndex,
+    bool Function()? isCancelled,
   }) async {
+    // Loading can take seconds; if the request was cancelled meanwhile (user
+    // paused, stopped or picked another song), don't start it anyway.
+    void startIfWanted() {
+      if (isCancelled?.call() ?? false) return;
+      _startPlayback();
+    }
+
     try {
       if (!path.startsWith('http://') && !path.startsWith('https://')) {
         final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
@@ -158,7 +174,7 @@ class AudioPlayerService {
         final audioSources = window.map(_buildAudioSource).toList();
 
         await player.setAudioSources(audioSources, initialIndex: indexInWindow);
-        await player.play();
+        startIfWanted();
         return;
       }
 
@@ -175,7 +191,7 @@ class AudioPlayerService {
       }
       await player.setAudioSource(source);
       await player.setLoopMode(LoopMode.off);
-      await player.play();
+      startIfWanted();
     } on PlayerInterruptedException {
       _logger.i('Audio loading interrupted by user/new playback request.');
     } catch (e) {
@@ -196,7 +212,7 @@ class AudioPlayerService {
       final (window, indexInWindow) = _buildWindowWithIndex(validQueue, safeIndex);
       final audioSources = window.map(_buildAudioSource).toList();
       await player.setAudioSources(audioSources, initialIndex: indexInWindow);
-      await player.play();
+      _startPlayback();
     } on PlayerInterruptedException {
       _logger.i('Queue playback interrupted by new request.');
     } catch (e) {
@@ -206,33 +222,28 @@ class AudioPlayerService {
     }
   }
 
-  /// Appends songs dynamically to the running ConcatenatingAudioSource.
+  /// Appends songs to the end of the player's playlist so the player (and the
+  /// notification / lock-screen controls) can advance to them.
   /// JioSaavn songs with empty filePath are skipped here — they will be
   /// resolved and appended individually by PlayerBloc once their stream URL
   /// is fetched (see _preResolveNextTrack and _expandQueueInternal).
   Future<void> addSongsToQueue(List<Song> songs) async {
-    // Only add songs that already have a resolved URL — JioSaavn tracks with
-    // empty filePath will be added later via updateQueueSong once resolved.
     final validSongs = songs.where((s) => s.filePath.trim().isNotEmpty).toList();
     if (validSongs.isEmpty) return;
+    // Nothing loaded yet: the next play() call builds the playlist.
+    if (_audioPlayer == null || player.sequence.isEmpty) return;
     try {
-      final source = _audioPlayer?.audioSource;
-      // ignore: deprecated_member_use
-      if (source is ConcatenatingAudioSource) {
-        final existingSequence = player.sequence;
-        final existingIds = existingSequence.map((s) {
-          final tag = s.tag;
-          return tag is MediaItem ? tag.id : null;
-        }).whereType<String>().toSet();
+      // just_audio 0.10 manages the playlist on the player itself;
+      // `player.audioSource` is only the first item, never a concatenation.
+      final existingIds = player.sequence.map((s) {
+        final tag = s.tag;
+        return tag is MediaItem ? tag.id : null;
+      }).whereType<String>().toSet();
 
-        final toAdd = validSongs.where((s) => !existingIds.contains(s.id.toString())).toList();
-        if (toAdd.isNotEmpty) {
-          final newSources = toAdd.map(_buildAudioSource).toList();
-          await source.addAll(newSources);
-          _logger.i('AudioPlayerService: Added ${newSources.length} songs to ConcatenatingAudioSource.');
-        }
-      } else {
-        _logger.w('AudioPlayerService: Current audioSource is not ConcatenatingAudioSource ($source).');
+      final toAdd = validSongs.where((s) => !existingIds.contains(s.id.toString())).toList();
+      if (toAdd.isNotEmpty) {
+        await player.addAudioSources(toAdd.map(_buildAudioSource).toList());
+        _logger.i('AudioPlayerService: Added ${toAdd.length} songs to the player playlist.');
       }
     } catch (e) {
       _logger.w('AudioPlayerService: Error adding songs to queue: $e');
@@ -243,7 +254,7 @@ class AudioPlayerService {
 
   Future<void> pause() => player.pause();
 
-  Future<void> resume() => player.play();
+  Future<void> resume() async => _startPlayback();
 
   Future<void> stop() => player.stop();
 

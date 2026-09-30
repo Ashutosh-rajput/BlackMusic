@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:vinyl/data/models/song_model.dart';
@@ -206,6 +207,64 @@ void main() {
       final state = playerBloc.state as PlayerPlaying;
       expect(state.song.id, equals(testSong2.id));
       expect(state.queue.length, equals(2));
+    });
+
+    test('first play reaches PlayerPlaying and Next advances immediately', () async {
+      playerBloc.add(PlaySongEvent(testSong, queue: [testSong, testSong2]));
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(playerBloc.state, isA<PlayerPlaying>());
+
+      playerBloc.add(const NextSongEvent(isManualSkip: true));
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      expect((playerBloc.state as PlayerPlaying).song.id, equals(testSong2.id));
+    });
+
+    test('pausing while a song is loading does not leave Next permanently disabled', () async {
+      final gate = Completer<void>();
+      audioService.playGate = gate;
+
+      playerBloc.add(PlaySongEvent(testSong, queue: [testSong, testSong2]));
+      await Future.delayed(const Duration(milliseconds: 20));
+      expect(playerBloc.state, isA<PlayerLoading>());
+
+      // User pauses before the source finishes loading.
+      playerBloc.add(const PauseEvent());
+      await Future.delayed(const Duration(milliseconds: 20));
+      expect(playerBloc.state, isA<PlayerPaused>());
+
+      // Load finishes afterwards; the cancelled request must release the lock
+      // and must not leave audio playing behind a "paused" UI.
+      audioService.playGate = null;
+      gate.complete();
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(playerBloc.state, isA<PlayerPaused>());
+      expect(audioService.isPlaying, isFalse);
+
+      playerBloc.add(const NextSongEvent(isManualSkip: true));
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      expect((playerBloc.state as PlayerPlaying).song.id, equals(testSong2.id));
+    });
+
+    test('a stale "completed" event during a new load does not skip the new song', () async {
+      playerBloc.add(PlaySongEvent(testSong, queue: [testSong, testSong2]));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      final gate = Completer<void>();
+      audioService.playGate = gate;
+      playerBloc.add(PlaySongEvent(testSong2, queue: [testSong, testSong2]));
+      await Future.delayed(const Duration(milliseconds: 20));
+
+      // Old source reports completion while testSong2 is still loading.
+      audioService.emitPlayerState(ja.PlayerState(false, ja.ProcessingState.completed));
+      await Future.delayed(const Duration(milliseconds: 20));
+
+      audioService.playGate = null;
+      gate.complete();
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      expect((playerBloc.state as PlayerPlaying).song.id, equals(testSong2.id));
     });
   });
 }

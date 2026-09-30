@@ -62,16 +62,23 @@ class MockAudioPlayerService implements AudioPlayerService {
 
   String? failPath;
 
+  /// When set, play() waits on it before "loading" finishes, to simulate a
+  /// slow source load.
+  Completer<void>? playGate;
+
   @override
   Future<void> play(
     String path, {
     Song? songInfo,
     List<Song>? queue,
     int? initialIndex,
+    bool Function()? isCancelled,
   }) async {
+    if (playGate != null) await playGate!.future;
     if (failPath != null && path == failPath) {
       throw Exception('(0) Source error');
     }
+    if (isCancelled?.call() ?? false) return;
     _isPlaying = true;
     _playingController.add(true);
     if (queue != null) {
