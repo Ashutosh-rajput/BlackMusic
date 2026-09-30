@@ -17,7 +17,7 @@ Maintaining **Vinyl**, implementing new features (like PulseIQ and high-fidelity
 
 ***👇Click Here***
 
-[![Pay via UPI](https://img.shields.io/badge/🇮🇳%20Pay%20via%20UPI-sliceashutoshrajput%40ybl-FFB000?style=for-the-badge)](https://upilinks.in/payment-link/upi1338032236)
+[![Pay via UPI](https://img.shields.io/badge/🇮🇳%20Pay%20via%20UPI-sliceashutoshrajput%40ybl-FFB000?style=for-the-badge)](https://tinyurl.com/Vinyl-support-upi)
 
 
 
