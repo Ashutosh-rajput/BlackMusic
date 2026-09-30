@@ -736,7 +736,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     final theme = Theme.of(context);
 
     if (_isSearching) {
-      return Scaffold(
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) _stopSearch();
+        },
+        child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_rounded),
@@ -770,6 +775,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           ),
         ),
         body: _buildSearchResults(),
+        ),
       );
     }
 
@@ -1018,7 +1024,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildSectionHeader(
-                  title: 'My Stream Playlists',
+                  title: 'My Playlists',
                   subtitle: 'Your custom streaming collections',
                   icon: Icons.playlist_add_check_circle_rounded,
                   actionLabel: 'See All',
@@ -1579,7 +1585,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
           children: [
             // User Stream Playlists Header
             _buildSectionHeader(
-              title: 'My Stream Playlists (${userPlaylists.length})',
+              title: 'My Playlists (${userPlaylists.length})',
               subtitle: 'Your personal streaming collections',
               icon: Icons.playlist_add_check_circle_rounded,
               actionLabel: '+ New Playlist',

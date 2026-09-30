@@ -39,7 +39,7 @@ class AddToPlaylistSheet extends StatelessWidget {
       isStream ??
       (song.filePath.startsWith('http://') ||
           song.filePath.startsWith('https://') ||
-          song.source == 'jiosaavn');
+          (song.source == 'jiosaavn' && song.genre != 'Downloaded'));
 
   void _createNewPlaylistAndAdd(BuildContext context) {
     final controller = TextEditingController();

@@ -17,6 +17,7 @@ import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
 import 'package:vinyl/presentation/bloc/player/player_event.dart';
 import 'package:vinyl/presentation/bloc/player/player_state.dart';
 import 'package:vinyl/presentation/screens/player_screen.dart';
+import 'package:vinyl/presentation/screens/playlists_screen.dart';
 import 'package:vinyl/presentation/screens/category_detail_screen.dart';
 import 'package:vinyl/presentation/widgets/album_art_widget.dart';
 import 'package:vinyl/presentation/widgets/folder_picker_dialog.dart';
@@ -173,7 +174,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         'All',
                         'Folders',
                         'Albums',
-                        'Artists'
+                        'Artists',
+                        'Playlists',
                       ];
                       return Row(
                         children: categories.map((cat) {
@@ -236,6 +238,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   if (state is LibraryLoaded) {
                     if (state.searchQuery.trim().isNotEmpty) {
                       return _buildSearchResultsView(context, state, theme);
+                    }
+
+                    if (state.selectedCategory == 'Playlists') {
+                      return const PlaylistsScreen(embedded: true);
                     }
 
                     final songs = state.displayedSongs;

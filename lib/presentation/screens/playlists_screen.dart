@@ -14,7 +14,10 @@ import 'package:vinyl/presentation/screens/player_screen.dart';
 import 'package:vinyl/presentation/bloc/theme/theme_cubit.dart';
 
 class PlaylistsScreen extends StatelessWidget {
-  const PlaylistsScreen({super.key});
+  /// When true, renders inside the Library tab (no app bar, transparent bg).
+  final bool embedded;
+
+  const PlaylistsScreen({super.key, this.embedded = false});
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +25,10 @@ class PlaylistsScreen extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
+      backgroundColor: embedded ? Colors.transparent : null,
+      appBar: embedded
+          ? null
+          : AppBar(
         title: Text(
           'Playlists',
           style: GoogleFonts.outfit(

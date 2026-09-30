@@ -9,7 +9,6 @@ import 'package:vinyl/presentation/widgets/album_art_widget.dart';
 import 'package:vinyl/presentation/screens/library_screen.dart';
 import 'package:vinyl/presentation/screens/stream_screen.dart';
 import 'package:vinyl/presentation/screens/player_screen.dart';
-import 'package:vinyl/presentation/screens/playlists_screen.dart';
 import 'package:vinyl/presentation/screens/settings_screen.dart';
 
 import 'package:vinyl/core/di/injection_container.dart';
@@ -22,7 +21,7 @@ class HomeScreen extends StatefulWidget {
   /// Global notifier to allow programmatic tab navigation from anywhere in the app.
   static final ValueNotifier<int> tabNotifier = ValueNotifier<int>(0);
 
-  /// Switch the active tab on the home navigation bar (0: Library, 1: Stream, 2: Playlists, 3: Settings).
+  /// Switch the active tab on the home navigation bar (0: Library, 1: Stream, 2: Settings).
   static void switchToTab(int index) {
     tabNotifier.value = index;
   }
@@ -62,7 +61,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Widget> _pages = [
     const LibraryScreen(),
     const StreamScreen(),
-    const PlaylistsScreen(),
     const SettingsScreen(),
   ];
 
@@ -80,36 +78,113 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           const _MiniPlayerDock(),
-          NavigationBar(
-            selectedIndex: _selectedIndex,
-            onDestinationSelected: (index) {
-              HomeScreen.switchToTab(index);
-            },
-            backgroundColor: isDark ? const Color(0xFF181820) : Colors.white,
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.library_music_outlined),
-                selectedIcon: Icon(Icons.library_music_rounded),
-                label: 'Library',
+          Container(
+            color: isDark ? const Color(0xFF181820) : Colors.white,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    _NavItem(
+                      icon: Icons.library_music_outlined,
+                      selectedIcon: Icons.library_music_rounded,
+                      label: 'Library',
+                      selected: _selectedIndex == 0,
+                      onTap: () => HomeScreen.switchToTab(0),
+                    ),
+                    _NavItem(
+                      icon: Icons.podcasts_outlined,
+                      selectedIcon: Icons.podcasts_rounded,
+                      label: 'Stream',
+                      selected: _selectedIndex == 1,
+                      onTap: () => HomeScreen.switchToTab(1),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 32,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                    ),
+                    _NavItem(
+                      icon: Icons.settings_outlined,
+                      selectedIcon: Icons.settings_rounded,
+                      label: 'Settings',
+                      selected: _selectedIndex == 2,
+                      flex: 2,
+                      onTap: () => HomeScreen.switchToTab(2),
+                    ),
+                  ],
+                ),
               ),
-              NavigationDestination(
-                icon: Icon(Icons.podcasts_outlined),
-                selectedIcon: Icon(Icons.podcasts_rounded),
-                label: 'Stream',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.playlist_play_outlined),
-                selectedIcon: Icon(Icons.playlist_play_rounded),
-                label: 'Playlists',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.settings_outlined),
-                selectedIcon: Icon(Icons.settings_rounded),
-                label: 'Settings',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bottom bar item with a large rounded selection background behind the
+/// icon and label (regular-sized icon).
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  /// Relative width in the bar; a smaller [flex] makes the item narrower.
+  final int flex;
+
+  const _NavItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.flex = 4,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final color = selected
+        ? primary
+        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65);
+
+    return Expanded(
+      flex: flex,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? primary.withValues(alpha: 0.18)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(selected ? selectedIcon : icon, color: color, size: 24),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: GoogleFonts.outfit(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                  color: color,
+                ),
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }

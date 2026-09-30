@@ -84,6 +84,8 @@ class SongOptionsBottomSheet extends StatelessWidget {
     // Explicit source flags take priority
     if (song.source == 'local' || song.source == 'youtube') return true;
     if (song.genre == 'Downloaded' || song.album == 'YouTube Downloads') return true;
+    // Stream songs (even when cached to disk) are never library songs
+    if (song.source == 'jiosaavn') return false;
     // A stream URL can never be local
     final fp = song.filePath.trim();
     if (fp.isEmpty) return false;
