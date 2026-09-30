@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:vinyl/core/di/injection_container.dart';
-import 'package:vinyl/services/settings_service.dart';
 import 'package:vinyl/services/download_service.dart';
 import 'package:vinyl/data/models/song_model.dart';
 import 'package:vinyl/data/models/youtube_video_item.dart';
@@ -37,17 +36,13 @@ class LibraryScreen extends StatefulWidget {
 class _LibraryScreenState extends State<LibraryScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  bool _showHistory = false;
 
   @override
   void initState() {
     super.initState();
+    // Rebuild on focus change so back-press handling stays in sync
     _searchFocusNode.addListener(() {
-      if (mounted) {
-        setState(() {
-          _showHistory = _searchFocusNode.hasFocus;
-        });
-      }
+      if (mounted) setState(() {});
     });
   }
 
@@ -64,12 +59,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return PopScope(
-      canPop: !_searchFocusNode.hasFocus,
+      // Back closes search (focus and/or results) instead of exiting the app
+      canPop: !_searchFocusNode.hasFocus &&
+          _searchController.text.trim().isEmpty,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && _searchFocusNode.hasFocus) {
-          _searchFocusNode.unfocus();
-          if (mounted) setState(() => _showHistory = false);
+        if (didPop) return;
+        _searchFocusNode.unfocus();
+        if (_searchController.text.trim().isNotEmpty) {
+          _searchController.clear();
+          context.read<LibraryBloc>().add(const SearchSongsEvent(''));
         }
+        if (mounted) setState(() {});
       },
       child: Scaffold(
       body: SafeArea(
@@ -104,8 +104,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                             }
                           },
                           decoration: InputDecoration(
-                            hintText:
-                                'Search songs, artists, albums, YouTube...',
+                            hintText: 'Search songs, artists, albums',
                             prefixIcon: IconButton(
                               icon: const Icon(Icons.search_rounded),
                               tooltip: 'Search',
@@ -160,7 +159,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       ),
                     ],
                   ),
-                  if (_showHistory) _buildSearchHistoryOverlay(context),
                   const SizedBox(height: 14),
                   // Category Chips
                   BlocBuilder<LibraryBloc, LibraryState>(
@@ -168,6 +166,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       String selectedCategory = 'All';
                       if (state is LibraryLoaded) {
                         selectedCategory = state.selectedCategory;
+                        // Categories don't apply to search results
+                        if (state.searchQuery.trim().isNotEmpty) {
+                          return const SizedBox.shrink();
+                        }
                       }
 
                       final categories = [
@@ -177,42 +179,45 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         'Artists',
                         'Playlists',
                       ];
-                      return Row(
-                        children: categories.map((cat) {
-                          final isSelected = selectedCategory == cat;
-                          return Expanded(
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 3),
-                              child: ChoiceChip(
-                                label: Center(
-                                  child: Text(
-                                    cat,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                selected: isSelected,
-                                selectedColor: theme.colorScheme.primary,
-                                showCheckmark: false,
-                                labelStyle: GoogleFonts.outfit(
-                                  fontSize: 13,
-                                  color: isSelected
-                                      ? Colors.white
-                                      : theme.colorScheme.onSurface,
+                      // Same chip style as the Stream section's filter row
+                      return SizedBox(
+                        height: 40,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: categories.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (context, index) {
+                            final cat = categories[index];
+                            final isSelected = selectedCategory == cat;
+                            return ChoiceChip(
+                              showCheckmark: false,
+                              label: Text(
+                                cat,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
                                   fontWeight: isSelected
                                       ? FontWeight.bold
-                                      : FontWeight.normal,
+                                      : FontWeight.w600,
+                                  color: isSelected
+                                      ? theme.colorScheme.onPrimary
+                                      : null,
                                 ),
-                                onSelected: (_) {
+                              ),
+                              selected: isSelected,
+                              selectedColor: theme.colorScheme.primary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              onSelected: (val) {
+                                if (val) {
                                   context.read<LibraryBloc>().add(
                                         SelectCategoryEvent(cat),
                                       );
-                                },
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                                }
+                              },
+                            );
+                          },
+                        ),
                       );
                     },
                   ),
@@ -220,7 +225,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
 
-            if (!_showHistory && _searchController.text.trim().isEmpty)
+            if (_searchController.text.trim().isEmpty)
               const SupportBannerWidget(
                 padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
               ),
@@ -333,89 +338,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   );
 }
 
-  Widget _buildSearchHistoryOverlay(BuildContext context) {
-    final settings = getIt<SettingsService>();
-    final history = settings.getSearchHistory();
-    if (history.isEmpty || !settings.saveSearchHistory) return const SizedBox();
-
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Container(
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF262632) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          )
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.history_rounded,
-                      size: 18, color: Colors.grey),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Recent Searches',
-                    style: GoogleFonts.outfit(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade600),
-                  ),
-                ],
-              ),
-              InkWell(
-                onTap: () async {
-                  await settings.clearSearchHistory();
-                  setState(() {});
-                },
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  child: Text('Clear All',
-                      style: GoogleFonts.outfit(
-                          fontSize: 12,
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: history.take(8).map((query) {
-              return ActionChip(
-                avatar: const Icon(Icons.history_rounded, size: 14),
-                label: Text(query, style: GoogleFonts.outfit(fontSize: 12)),
-                backgroundColor:
-                    isDark ? const Color(0xFF1E1E28) : Colors.grey.shade100,
-                onPressed: () {
-                  _searchController.text = query;
-                  _searchFocusNode.unfocus();
-                  context.read<LibraryBloc>().add(SearchSongsEvent(query));
-                },
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSearchResultsView(
       BuildContext context, LibraryLoaded state, ThemeData theme) {
     final localSongs = state.displayedSongs;
@@ -448,19 +370,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
         if (localSongs.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              '🎵 Local Songs (${localSongs.length})',
-              style: GoogleFonts.outfit(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.primary,
-              ),
-            ),
+          _resultsHeader(
+            theme,
+            icon: Icons.phone_android_rounded,
+            title: 'On this device',
+            detail: '${localSongs.length} ${localSongs.length == 1 ? 'song' : 'songs'}',
+            color: theme.colorScheme.primary,
           ),
           ...localSongs.map((song) => _SongListTile(
                 song: song,
+                card: true,
                 onTap: () {
                   context
                       .read<PlayerBloc>()
@@ -472,99 +391,93 @@ class _LibraryScreenState extends State<LibraryScreen> {
               )),
           const SizedBox(height: 16),
         ],
-        if (isSearchingOnline || onlineItems.isNotEmpty || jiosaavnItems.isNotEmpty) ...[
+        if (isSearchingOnline && jiosaavnItems.isEmpty && onlineItems.isEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.symmetric(vertical: 16),
             child: Row(
               children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 12),
                 Text(
-                  '🌐 Online Results',
+                  'Searching online...',
                   style: GoogleFonts.outfit(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.secondary,
+                    fontSize: 13,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
-                if (isSearchingOnline) ...[
-                  const SizedBox(width: 10),
-                  const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ],
               ],
             ),
           ),
-        ],
         if (jiosaavnItems.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF6B35).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '🎶 JioSaavn',
-                    style: GoogleFonts.outfit(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFFFF6B35),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${jiosaavnItems.length} results • 320 kbps HQ',
-                  style: GoogleFonts.outfit(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ),
-              ],
-            ),
+          _resultsHeader(
+            theme,
+            icon: Icons.music_note_rounded,
+            title: 'JioSaavn',
+            detail: '${jiosaavnItems.length} results • 320 kbps',
+            color: const Color(0xFFFF6B35),
           ),
           ...jiosaavnItems.map((item) => _JioSaavnResultTile(item: item)),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
         ],
         if (onlineItems.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '▶ YouTube',
-                    style: GoogleFonts.outfit(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${onlineItems.length} results • 128 kbps',
-                  style: GoogleFonts.outfit(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ),
-              ],
-            ),
+          _resultsHeader(
+            theme,
+            icon: Icons.smart_display_rounded,
+            title: 'YouTube',
+            detail: '${onlineItems.length} results • 128 kbps',
+            color: Colors.red,
           ),
           ...onlineItems.map((item) => _OnlineResultTile(item: item)),
         ],
       ],
+    );
+  }
+
+  Widget _resultsHeader(
+    ThemeData theme, {
+    required IconData icon,
+    required String title,
+    required String detail,
+    required Color color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: color),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            title,
+            style: GoogleFonts.outfit(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              detail,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.outfit(
+                fontSize: 12,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -751,17 +664,24 @@ class _SongListTile extends StatelessWidget {
   final Song song;
   final VoidCallback onTap;
 
+  /// Render as a rounded card (same as the online result tiles), used in
+  /// search results.
+  final bool card;
+
   const _SongListTile({
     required this.song,
     required this.onTap,
+    this.card = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final artDimension = context.select<ThemeCubit, double>(
-      (cubit) => cubit.state.albumArtDimension,
-    );
+    final artDimension = card
+        ? 50.0
+        : context.select<ThemeCubit, double>(
+            (cubit) => cubit.state.albumArtDimension,
+          );
 
     final isCurrentSong = context.select<PlayerBloc, bool>((bloc) {
       final s = bloc.state;
@@ -776,8 +696,10 @@ class _SongListTile extends StatelessWidget {
     final titleColor =
         isCurrentSong ? theme.colorScheme.primary : theme.colorScheme.onSurface;
 
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+    final tile = ListTile(
+      contentPadding: card
+          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 4)
+          : const EdgeInsets.symmetric(vertical: 4),
       leading: AlbumArtWidget(
         albumArt: song.albumArt,
         width: artDimension,
@@ -844,6 +766,15 @@ class _SongListTile extends StatelessWidget {
         ],
       ),
       onTap: onTap,
+    );
+
+    if (!card) return tile;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: theme.colorScheme.surfaceContainerLow,
+      child: tile,
     );
   }
 }
@@ -922,7 +853,9 @@ class _OnlineResultTile extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: ValueListenableBuilder<List<ActiveDownload>>(
         valueListenable: downloadService.downloadQueueNotifier,
         builder: (context, queue, _) {
@@ -930,8 +863,8 @@ class _OnlineResultTile extends StatelessWidget {
 
           Widget trailingWidget;
           if (active == null) {
-            trailingWidget = IconButton.filledTonal(
-              icon: const Icon(Icons.download_rounded, size: 20),
+            trailingWidget = IconButton(
+              icon: const Icon(Icons.download_rounded, size: 22),
               tooltip: 'Download Track',
               onPressed: () => _triggerDownload(context, downloadService),
             );
@@ -980,6 +913,8 @@ class _OnlineResultTile extends StatelessWidget {
           }
 
           return ListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: CachedNetworkImage(
@@ -1204,8 +1139,8 @@ class _JioSaavnResultTileState extends State<_JioSaavnResultTile> {
               : null;
 
           if (active == null) {
-            return IconButton.filledTonal(
-              icon: const Icon(Icons.download_rounded, size: 20),
+            return IconButton(
+              icon: const Icon(Icons.download_rounded, size: 22),
               tooltip: 'Download from JioSaavn',
               onPressed: () =>
                   _triggerJioSaavnDownload(context, downloadService),
@@ -1256,8 +1191,8 @@ class _JioSaavnResultTileState extends State<_JioSaavnResultTile> {
       trailingWidget = Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton.filledTonal(
-            icon: const Icon(Icons.download_rounded, size: 18),
+          IconButton(
+            icon: const Icon(Icons.download_rounded, size: 22),
             tooltip: 'Download all songs',
             onPressed: () =>
                 _triggerJioSaavnDownload(context, downloadService),

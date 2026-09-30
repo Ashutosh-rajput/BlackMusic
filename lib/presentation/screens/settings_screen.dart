@@ -32,11 +32,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _shuffleByDefault;
   late bool _resumeLastSong;
   late bool _showPlayerWaveform;
-  late int _playerBackgroundPattern;
-  late double _defaultVolume;
 
   // Download Settings State
-  late String _downloadQuality;
   late String _downloadFormat;
   late bool _autoDownloadPlaylistMetadata;
   late bool _skipAlreadyDownloaded;
@@ -53,21 +50,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String _albumArtSize;
 
   // Library State
-  late bool _autoScanMusicFolder;
   late bool _ignoreShortAudio;
   late bool _showHiddenFiles;
 
   // Search State
   late bool _includeOnlineResults;
-  late bool _saveSearchHistory;
 
   // Network State
   late bool _retryFailedDownloads;
   late int _downloadTimeoutSeconds;
 
   // Notifications State
-  late bool _showPlaybackNotification;
-  late bool _lockScreenControls;
   late bool _downloadNotifications;
 
   // Streaming State
@@ -105,10 +98,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _shuffleByDefault = _settingsService.shuffleByDefault;
     _resumeLastSong = _settingsService.resumeLastSong;
     _showPlayerWaveform = _settingsService.showPlayerWaveform;
-    _playerBackgroundPattern = _settingsService.playerBackgroundPattern;
-    _defaultVolume = _settingsService.defaultVolume;
 
-    _downloadQuality = _settingsService.downloadQuality;
     _downloadFormat = _settingsService.downloadFormat;
     _autoDownloadPlaylistMetadata = _settingsService.autoDownloadPlaylistMetadata;
     _skipAlreadyDownloaded = _settingsService.skipAlreadyDownloaded;
@@ -123,18 +113,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _fontSize = _settingsService.fontSize;
     _albumArtSize = _settingsService.albumArtSize;
 
-    _autoScanMusicFolder = _settingsService.autoScanMusicFolder;
     _ignoreShortAudio = _settingsService.ignoreShortAudio;
     _showHiddenFiles = _settingsService.showHiddenFiles;
 
     _includeOnlineResults = _settingsService.includeOnlineResults;
-    _saveSearchHistory = _settingsService.saveSearchHistory;
 
     _retryFailedDownloads = _settingsService.retryFailedDownloads;
     _downloadTimeoutSeconds = _settingsService.downloadTimeoutSeconds;
 
-    _showPlaybackNotification = _settingsService.showPlaybackNotification;
-    _lockScreenControls = _settingsService.lockScreenControls;
     _downloadNotifications = _settingsService.downloadNotifications;
   }
 
@@ -246,32 +232,99 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _settingsService.setResumeLastSong(val);
                 },
               ),
+            ],
+          ),
+
+          const SizedBox(height: 20),
+
+          // LIBRARY SECTION
+          _buildSectionHeader('Library'),
+          _buildCardContainer(
+            isDark: isDark,
+            children: [
+              ListTile(
+                title: _tileTitle('Add Music Folder'),
+                subtitle: _tileSubtitle('Select a specific folder to add its music to library'),
+                trailing: const Icon(Icons.create_new_folder_rounded),
+                onTap: () async {
+                  final bloc = context.read<LibraryBloc>();
+                  final selected = await showDialog<String>(
+                    context: context,
+                    builder: (_) => const FolderPickerDialog(),
+                  );
+                  if (selected != null && selected.isNotEmpty) {
+                    bloc.add(ScanStorageEvent(
+                      customPaths: [selected],
+                      ignoreShortAudio: _ignoreShortAudio,
+                      showHiddenFiles: _showHiddenFiles,
+                    ));
+                    if (mounted) {
+                      _showSnackBar('Scanning folder: $selected');
+                    }
+                  }
+                },
+              ),
+              _divider(),
+              SwitchListTile(
+                title: _tileTitle('Ignore Short Audio (<30 sec)'),
+                subtitle: _tileSubtitle('Filter out ringtones & voice notes'),
+                value: _ignoreShortAudio,
+                activeThumbColor: _accentColor,
+                onChanged: (val) {
+                  setState(() => _ignoreShortAudio = val);
+                  _settingsService.setIgnoreShortAudio(val);
+                  context.read<LibraryBloc>().add(ScanStorageEvent(
+                    ignoreShortAudio: val,
+                    showHiddenFiles: _showHiddenFiles,
+                  ));
+                },
+              ),
               _divider(),
               ListTile(
-                title: _tileTitle('Default Volume'),
-                subtitle: Slider(
-                  value: _defaultVolume,
-                  min: 0.0,
-                  max: 1.0,
-                  activeColor: _accentColor,
-                  onChanged: (val) {
-                    setState(() => _defaultVolume = val);
-                    _settingsService.setDefaultVolume(val);
-                    context.read<PlayerBloc>().add(SetVolumeEvent(val));
-                  },
-                ),
-                trailing: Text(
-                  '${(_defaultVolume * 100).toInt()}%',
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-                ),
+                title: _tileTitle('Clear Missing Songs'),
+                subtitle: _tileSubtitle('Remove deleted files from database'),
+                trailing: const Icon(Icons.cleaning_services_rounded),
+                onTap: () async {
+                  final bloc = context.read<LibraryBloc>();
+                  final removed = await _settingsService.clearMissingSongs();
+                  bloc.add(const LoadLibraryEvent());
+                  _showSnackBar('Cleaned $removed missing tracks from library.');
+                  _loadStorageStats();
+                },
+              ),
+              _divider(),
+              SwitchListTile(
+                title: _tileTitle('Show Hidden Files'),
+                subtitle: _tileSubtitle('Include hidden system audio files'),
+                value: _showHiddenFiles,
+                activeThumbColor: _accentColor,
+                onChanged: (val) {
+                  setState(() => _showHiddenFiles = val);
+                  _settingsService.setShowHiddenFiles(val);
+                  context.read<LibraryBloc>().add(ScanStorageEvent(
+                    ignoreShortAudio: _ignoreShortAudio,
+                    showHiddenFiles: val,
+                  ));
+                },
+              ),
+              _divider(),
+              SwitchListTile(
+                title: _tileTitle('Include Online Results'),
+                subtitle: _tileSubtitle('Also search YouTube and JioSaavn from the Library search bar'),
+                value: _includeOnlineResults,
+                activeThumbColor: _accentColor,
+                onChanged: (val) {
+                  setState(() => _includeOnlineResults = val);
+                  _settingsService.setIncludeOnlineResults(val);
+                },
               ),
             ],
           ),
 
           const SizedBox(height: 20),
 
-          // STREAMING & RECOMMENDATIONS SECTION
-          _buildSectionHeader('Streaming & Recommendations'),
+          // STREAM SECTION
+          _buildSectionHeader('Stream'),
           _buildCardContainer(
             isDark: isDark,
             children: [
@@ -325,7 +378,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _divider(),
               SwitchListTile(
                 title: _tileTitle('Auto-download Streamed Songs'),
-                subtitle: _tileSubtitle('Automatically download online songs to device when played'),
+                subtitle: _tileSubtitle('Save songs you stream to your Library (device storage) when played'),
                 value: _autoDownloadStreamSongs,
                 activeThumbColor: _accentColor,
                 onChanged: (val) {
@@ -385,8 +438,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: _tileTitle('GitHub Support Banner'),
                 subtitle: _tileSubtitle(
                   _supportBannerEnabled
-                      ? 'Show project support card on Library page'
-                      : 'Permanently hidden from Library page',
+                      ? 'Show project support card on Library and Stream pages'
+                      : 'Permanently hidden from Library and Stream pages',
                 ),
                 value: _supportBannerEnabled,
                 activeThumbColor: _accentColor,
@@ -437,28 +490,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 trailing: const Icon(Icons.folder_special_rounded),
                 onTap: () => _showSnackBar('Saved to: Internal Storage > Download > vinyl'),
-              ),
-              _divider(),
-              ListTile(
-                title: _tileTitle('Default Audio Quality'),
-                subtitle: _tileSubtitle('Selected: $_downloadQuality'),
-                trailing: DropdownButton<String>(
-                  value: _downloadQuality,
-                  underline: const SizedBox(),
-                  dropdownColor: isDark ? const Color(0xFF232330) : Colors.white,
-                  items: ['Best', 'Medium', 'Low'].map((q) {
-                    return DropdownMenuItem(
-                      value: q,
-                      child: Text(q, style: GoogleFonts.outfit()),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() => _downloadQuality = val);
-                      _settingsService.setDownloadQuality(val);
-                    }
-                  },
-                ),
               ),
               _divider(),
               ListTile(
@@ -546,6 +577,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   '${_maxSimultaneousDownloads.toInt()}',
                   style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
                 ),
+              ),
+              _divider(),
+              SwitchListTile(
+                title: _tileTitle('Retry Failed Downloads'),
+                subtitle: _tileSubtitle('Auto-retry on network disconnects'),
+                value: _retryFailedDownloads,
+                activeThumbColor: _accentColor,
+                onChanged: (val) {
+                  setState(() => _retryFailedDownloads = val);
+                  _settingsService.setRetryFailedDownloads(val);
+                },
+              ),
+              _divider(),
+              ListTile(
+                title: _tileTitle('Download Timeout'),
+                trailing: DropdownButton<int>(
+                  value: _downloadTimeoutSeconds,
+                  underline: const SizedBox(),
+                  dropdownColor: isDark ? const Color(0xFF232330) : Colors.white,
+                  items: [30, 60, 120].map((sec) {
+                    return DropdownMenuItem(
+                      value: sec,
+                      child: Text('${sec}s', style: GoogleFonts.outfit()),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _downloadTimeoutSeconds = val);
+                      _settingsService.setDownloadTimeoutSeconds(val);
+                    }
+                  },
+                ),
+              ),
+              _divider(),
+              SwitchListTile(
+                title: _tileTitle('Download Notifications'),
+                subtitle: _tileSubtitle('Show download progress & completion alerts'),
+                value: _downloadNotifications,
+                activeThumbColor: _accentColor,
+                onChanged: (val) {
+                  setState(() => _downloadNotifications = val);
+                  _settingsService.setDownloadNotifications(val);
+                },
               ),
             ],
           ),
@@ -675,298 +749,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   setState(() => _showPlayerWaveform = val);
                   _settingsService.setShowPlayerWaveform(val);
-                },
-              ),
-              _divider(),
-              ListTile(
-                title: _tileTitle('Player Background Pattern'),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _tileSubtitle('Animated visual pattern behind the player'),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        {'label': 'None', 'tag': ''},
-                        {'label': 'Floating Orbs', 'tag': '✦ Live'},
-                        {'label': 'Sound Waves', 'tag': '✦ Live'},
-                        {'label': 'Geometric Grid', 'tag': '✦ Live'},
-                        {'label': 'Aurora Glow', 'tag': '✦ Live'},
-                        {'label': 'Honeycomb', 'tag': '◈ Static'},
-                        {'label': 'Diagonal Stripes', 'tag': '◈ Static'},
-                        {'label': 'Circuit Board', 'tag': '◈ Static'},
-                        {'label': 'Starburst', 'tag': '◈ Static'},
-                      ].asMap().entries.map((e) {
-                        final isSelected = _playerBackgroundPattern == e.key;
-                        final label = e.value['label'] as String;
-                        final tag = e.value['tag'] as String;
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() => _playerBackgroundPattern = e.key);
-                            _settingsService.setPlayerBackgroundPattern(e.key);
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? _accentColor
-                                  : _accentColor.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: isSelected
-                                    ? _accentColor
-                                    : _accentColor.withValues(alpha: 0.3),
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  label,
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: isSelected ? Colors.white : null,
-                                  ),
-                                ),
-                                if (tag.isNotEmpty)
-                                  Text(
-                                    tag,
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w600,
-                                      color: isSelected
-                                          ? Colors.white.withValues(alpha: 0.75)
-                                          : _accentColor.withValues(alpha: 0.6),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          // LIBRARY SECTION
-          _buildSectionHeader('Library'),
-          _buildCardContainer(
-            isDark: isDark,
-            children: [
-              SwitchListTile(
-                title: _tileTitle('Auto Scan Music Folder'),
-                subtitle: _tileSubtitle('Detect new files automatically'),
-                value: _autoScanMusicFolder,
-                activeThumbColor: _accentColor,
-                onChanged: (val) {
-                  setState(() => _autoScanMusicFolder = val);
-                  _settingsService.setAutoScanMusicFolder(val);
-                  if (val) {
-                    context.read<LibraryBloc>().add(ScanStorageEvent(
-                      ignoreShortAudio: _ignoreShortAudio,
-                      showHiddenFiles: _showHiddenFiles,
-                    ));
-                  }
-                },
-              ),
-              _divider(),
-              ListTile(
-                title: _tileTitle('Add Music Folder'),
-                subtitle: _tileSubtitle('Select a specific folder to add its music to library'),
-                trailing: const Icon(Icons.create_new_folder_rounded),
-                onTap: () async {
-                  final bloc = context.read<LibraryBloc>();
-                  final selected = await showDialog<String>(
-                    context: context,
-                    builder: (_) => const FolderPickerDialog(),
-                  );
-                  if (selected != null && selected.isNotEmpty) {
-                    bloc.add(ScanStorageEvent(
-                      customPaths: [selected],
-                      ignoreShortAudio: _ignoreShortAudio,
-                      showHiddenFiles: _showHiddenFiles,
-                    ));
-                    if (mounted) {
-                      _showSnackBar('Scanning folder: $selected');
-                    }
-                  }
-                },
-              ),
-              _divider(),
-              SwitchListTile(
-                title: _tileTitle('Ignore Short Audio (<30 sec)'),
-                subtitle: _tileSubtitle('Filter out ringtones & voice notes'),
-                value: _ignoreShortAudio,
-                activeThumbColor: _accentColor,
-                onChanged: (val) {
-                  setState(() => _ignoreShortAudio = val);
-                  _settingsService.setIgnoreShortAudio(val);
-                  context.read<LibraryBloc>().add(ScanStorageEvent(
-                    ignoreShortAudio: val,
-                    showHiddenFiles: _showHiddenFiles,
-                  ));
-                },
-              ),
-              _divider(),
-              ListTile(
-                title: _tileTitle('Clear Missing Songs'),
-                subtitle: _tileSubtitle('Remove deleted files from database'),
-                trailing: const Icon(Icons.cleaning_services_rounded),
-                onTap: () async {
-                  final bloc = context.read<LibraryBloc>();
-                  final removed = await _settingsService.clearMissingSongs();
-                  bloc.add(const LoadLibraryEvent());
-                  _showSnackBar('Cleaned $removed missing tracks from library.');
-                  _loadStorageStats();
-                },
-              ),
-              _divider(),
-              SwitchListTile(
-                title: _tileTitle('Show Hidden Files'),
-                subtitle: _tileSubtitle('Include hidden system audio files'),
-                value: _showHiddenFiles,
-                activeThumbColor: _accentColor,
-                onChanged: (val) {
-                  setState(() => _showHiddenFiles = val);
-                  _settingsService.setShowHiddenFiles(val);
-                  context.read<LibraryBloc>().add(ScanStorageEvent(
-                    ignoreShortAudio: _ignoreShortAudio,
-                    showHiddenFiles: val,
-                  ));
-                },
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          // SEARCH SECTION
-          _buildSectionHeader('Search'),
-          _buildCardContainer(
-            isDark: isDark,
-            children: [
-              SwitchListTile(
-                title: _tileTitle('Include Online Results'),
-                subtitle: _tileSubtitle('Search YouTube and online sources'),
-                value: _includeOnlineResults,
-                activeThumbColor: _accentColor,
-                onChanged: (val) {
-                  setState(() => _includeOnlineResults = val);
-                  _settingsService.setIncludeOnlineResults(val);
-                },
-              ),
-              _divider(),
-              SwitchListTile(
-                title: _tileTitle('Save Search History'),
-                subtitle: _tileSubtitle('Keep track of recent search queries'),
-                value: _saveSearchHistory,
-                activeThumbColor: _accentColor,
-                onChanged: (val) {
-                  setState(() => _saveSearchHistory = val);
-                  _settingsService.setSaveSearchHistory(val);
-                },
-              ),
-              _divider(),
-              ListTile(
-                title: _tileTitle('Clear Search History'),
-                subtitle: _tileSubtitle('Remove all saved search suggestions'),
-                trailing: const Icon(Icons.history_toggle_off_rounded),
-                onTap: () async {
-                  await _settingsService.clearSearchHistory();
-                  _showSnackBar('Search history cleared.');
-                },
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          // NETWORK & ADVANCED
-          _buildSectionHeader('Network & Advanced'),
-          _buildCardContainer(
-            isDark: isDark,
-            children: [
-              SwitchListTile(
-                title: _tileTitle('Retry Failed Downloads'),
-                subtitle: _tileSubtitle('Auto-retry on network disconnects'),
-                value: _retryFailedDownloads,
-                activeThumbColor: _accentColor,
-                onChanged: (val) {
-                  setState(() => _retryFailedDownloads = val);
-                  _settingsService.setRetryFailedDownloads(val);
-                },
-              ),
-              _divider(),
-              ListTile(
-                title: _tileTitle('Download Timeout'),
-                trailing: DropdownButton<int>(
-                  value: _downloadTimeoutSeconds,
-                  underline: const SizedBox(),
-                  dropdownColor: isDark ? const Color(0xFF232330) : Colors.white,
-                  items: [30, 60, 120].map((sec) {
-                    return DropdownMenuItem(
-                      value: sec,
-                      child: Text('${sec}s', style: GoogleFonts.outfit()),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() => _downloadTimeoutSeconds = val);
-                      _settingsService.setDownloadTimeoutSeconds(val);
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          // NOTIFICATIONS SECTION
-          _buildSectionHeader('Notifications'),
-          _buildCardContainer(
-            isDark: isDark,
-            children: [
-              SwitchListTile(
-                title: _tileTitle('Show Playback Notification'),
-                subtitle: _tileSubtitle('Display media controls in system status bar'),
-                value: _showPlaybackNotification,
-                activeThumbColor: _accentColor,
-                onChanged: (val) {
-                  setState(() => _showPlaybackNotification = val);
-                  _settingsService.setShowPlaybackNotification(val);
-                },
-              ),
-              _divider(),
-              SwitchListTile(
-                title: _tileTitle('Lock Screen Controls'),
-                subtitle: _tileSubtitle('Enable music playback widget on lock screen'),
-                value: _lockScreenControls,
-                activeThumbColor: _accentColor,
-                onChanged: (val) {
-                  setState(() => _lockScreenControls = val);
-                  _settingsService.setLockScreenControls(val);
-                },
-              ),
-              _divider(),
-              SwitchListTile(
-                title: _tileTitle('Download Notifications'),
-                subtitle: _tileSubtitle('Show download progress & completion alerts'),
-                value: _downloadNotifications,
-                activeThumbColor: _accentColor,
-                onChanged: (val) {
-                  setState(() => _downloadNotifications = val);
-                  _settingsService.setDownloadNotifications(val);
                 },
               ),
             ],

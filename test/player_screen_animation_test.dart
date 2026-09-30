@@ -55,7 +55,6 @@ void main() {
     setUp(() async {
       SharedPreferences.setMockInitialValues({
         'show_player_waveform': true,
-        'player_background_pattern': 0,
       });
       final prefs = await SharedPreferences.getInstance();
 

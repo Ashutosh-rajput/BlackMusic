@@ -190,6 +190,49 @@ class DownloadService {
     return null;
   }
 
+  /// Returns a save path for [baseName].[ext] that never collides with a
+  /// different song's file. If a file already exists at the plain path and
+  /// belongs to another song (different title/artist), the artist (and then a
+  /// counter) is appended, so downloading a same-named song never overwrites
+  /// or replaces the existing one. If the existing file is the very same song,
+  /// or an orphan with no library entry, the plain path is reused.
+  Future<String> _uniqueSavePath(
+    String dir,
+    String baseName,
+    String ext, {
+    required String title,
+    required String artist,
+  }) async {
+    final plain = '$dir/$baseName.$ext';
+    try {
+      final songs = await _repository.getAllSongs();
+      final cleanT = title.trim().toLowerCase();
+      final cleanA = artist.trim().toLowerCase();
+
+      Future<bool> isFree(String path) async {
+        final f = File(path);
+        if (!await f.exists() || await f.length() == 0) return true;
+        final owners = songs.where((s) => s.filePath == path);
+        if (owners.isEmpty) return true; // orphan file, reuse as before
+        return owners.any((s) =>
+            s.title.trim().toLowerCase() == cleanT &&
+            s.artist.trim().toLowerCase() == cleanA);
+      }
+
+      if (await isFree(plain)) return plain;
+
+      final safeArtist = _sanitizeFileName(artist);
+      for (var n = 0; n < 100; n++) {
+        final suffix = n == 0 ? safeArtist : '$safeArtist ($n)';
+        final candidate = '$dir/$baseName - $suffix.$ext';
+        if (await isFree(candidate)) return candidate;
+      }
+    } catch (e) {
+      _logger.w('Could not resolve unique save path: $e');
+    }
+    return plain;
+  }
+
   final ValueNotifier<List<ActiveDownload>> downloadQueueNotifier =
       ValueNotifier([]);
 
@@ -1081,7 +1124,13 @@ class DownloadService {
       final ext = (containerName == 'mp4' || containerName == 'm4a')
           ? 'm4a'
           : containerName;
-      final savePath = '$musicDirPath/$title.$ext';
+      final savePath = await _uniqueSavePath(
+        musicDirPath,
+        title,
+        ext,
+        title: video.title,
+        artist: artist,
+      );
       activeFile = File(savePath);
 
       final totalBytes = selectedStream.size.totalBytes;
@@ -1527,10 +1576,19 @@ class DownloadService {
       final displayFileName = itemTitle != null ? '$itemTitle.$actualExt' : rawFileName;
       final sanitizedFileName =
           _sanitizeFileName(displayFileName.isEmpty ? 'audio_track.$actualExt' : displayFileName);
-      final savePath = '$musicDir/$sanitizedFileName';
-      final notifId = generateStableId(savePath);
       final titleWithoutExt =
           itemTitle ?? sanitizedFileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+      final fileExt = sanitizedFileName.contains('.')
+          ? sanitizedFileName.split('.').last
+          : actualExt;
+      final savePath = await _uniqueSavePath(
+        musicDir,
+        sanitizedFileName.replaceAll(RegExp(r'\.[^.]+$'), ''),
+        fileExt,
+        title: titleWithoutExt,
+        artist: itemArtist ?? 'Unknown Artist',
+      );
+      final notifId = generateStableId(savePath);
 
       if (_settingsService?.skipAlreadyDownloaded ?? true) {
         final existingInDb = await _findExistingSongInLibrary(
@@ -1647,7 +1705,13 @@ class DownloadService {
       String? localArtPath;
       if (itemAlbumArt != null && itemAlbumArt.startsWith('http')) {
         try {
-          final artFileName = _sanitizeFileName('${titleWithoutExt}_art.jpg');
+          // Derive from the (unique) audio file name so same-titled songs
+          // never overwrite each other's artwork.
+          final audioBase = savePath
+              .split(RegExp(r'[/\\]'))
+              .last
+              .replaceAll(RegExp(r'\.[^.]+$'), '');
+          final artFileName = _sanitizeFileName('${audioBase}_art.jpg');
           final artSavePath = '$musicDir/$artFileName';
           await _dio.download(itemAlbumArt, artSavePath);
           if (await File(artSavePath).exists()) {

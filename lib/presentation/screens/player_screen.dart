@@ -17,7 +17,6 @@ import 'package:vinyl/services/settings_service.dart';
 import 'package:vinyl/presentation/widgets/album_art_widget.dart';
 import 'package:vinyl/presentation/widgets/queue_bottom_sheet.dart';
 import 'package:vinyl/presentation/widgets/sleep_timer_dialog.dart';
-import 'package:vinyl/presentation/widgets/player_background_pattern.dart';
 import 'package:vinyl/services/stream_favorites_service.dart';
 import 'package:vinyl/presentation/widgets/lyrics_view.dart';
 import 'package:vinyl/presentation/widgets/add_to_playlist_sheet.dart';
@@ -264,14 +263,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
           body: Stack(
             children: [
-              // Animated background pattern
-              Positioned.fill(
-                child: PlayerBackgroundPattern(
-                  patternIndex: getIt<SettingsService>().playerBackgroundPattern,
-                  animation: _waveController,
-                  accentColor: theme.colorScheme.primary,
-                ),
-              ),
               Column(
             children: [
               SizedBox(height: _showLyrics ? 4 : 20),

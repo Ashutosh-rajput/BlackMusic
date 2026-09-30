@@ -74,9 +74,15 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
       }
       if (state is LibraryLoaded) {
         final current = state as LibraryLoaded;
+        // Keep an active search filtered (e.g. after a download completes)
+        // instead of resetting the displayed list to the whole library.
+        final activeQuery = current.searchQuery.trim();
+        final displayed = activeQuery.isEmpty
+            ? songs
+            : await _repository.searchSongs(activeQuery);
         emit(current.copyWith(
           allSongs: songs,
-          displayedSongs: songs,
+          displayedSongs: displayed,
           playlists: playlists,
         ));
       } else {
@@ -135,8 +141,6 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         ));
         return;
       }
-
-      _settingsService?.addSearchQuery(q);
 
       final filteredLocal = await _repository.searchSongs(q);
 

@@ -54,7 +54,6 @@ class SettingsService {
   static const _keyIgnoreShortAudio = 'setting_ignore_short';
   static const _keyShowHiddenFiles = 'setting_show_hidden';
   static const _keyIncludeOnlineResults = 'setting_online_results';
-  static const _keySaveSearchHistory = 'setting_save_history';
   static const _keyRetryFailedDownloads = 'setting_retry_failed';
   static const _keyDownloadTimeoutSeconds = 'setting_download_timeout';
   static const _keyShowPlaybackNotification = 'setting_show_notification';
@@ -63,10 +62,8 @@ class SettingsService {
   static const _keyAutoAddSharedSongs = 'setting_auto_add_shared_songs';
   static const _keyLastPlayedSongId = 'setting_last_played_song_id';
   static const _keyLastPlayedPositionMs = 'setting_last_played_position_ms';
-  static const _keySearchHistoryList = 'setting_search_history_list';
 
   static const _keyShowPlayerWaveform = 'setting_show_player_waveform';
-  static const _keyPlayerBackgroundPattern = 'setting_player_bg_pattern';
   static const _keyStreamLanguage = 'setting_stream_language';
   static const _keyAutoDownloadStreamSongs = 'setting_auto_download_stream_songs';
   static const _keyCacheStreamSongs = 'setting_cache_stream_songs';
@@ -126,12 +123,9 @@ class SettingsService {
       _prefs.getBool(_keyAutoScanMusicFolder) ?? false;
   bool get showPlayerWaveform =>
       _prefs.getBool(_keyShowPlayerWaveform) ?? true;
-  int get playerBackgroundPattern =>
-      _prefs.getInt(_keyPlayerBackgroundPattern) ?? 0;
   bool get ignoreShortAudio => _prefs.getBool(_keyIgnoreShortAudio) ?? true;
   bool get showHiddenFiles => _prefs.getBool(_keyShowHiddenFiles) ?? false;
   bool get includeOnlineResults => _prefs.getBool(_keyIncludeOnlineResults) ?? true;
-  bool get saveSearchHistory => _prefs.getBool(_keySaveSearchHistory) ?? true;
   bool get retryFailedDownloads => _prefs.getBool(_keyRetryFailedDownloads) ?? true;
   int get downloadTimeoutSeconds => _prefs.getInt(_keyDownloadTimeoutSeconds) ?? 60;
   bool get showPlaybackNotification => _prefs.getBool(_keyShowPlaybackNotification) ?? true;
@@ -160,11 +154,9 @@ class SettingsService {
   Future<void> setAlbumArtSize(String value) => _prefs.setString(_keyAlbumArtSize, value);
   Future<void> setAutoScanMusicFolder(bool value) => _prefs.setBool(_keyAutoScanMusicFolder, value);
   Future<void> setShowPlayerWaveform(bool value) => _prefs.setBool(_keyShowPlayerWaveform, value);
-  Future<void> setPlayerBackgroundPattern(int value) => _prefs.setInt(_keyPlayerBackgroundPattern, value);
   Future<void> setIgnoreShortAudio(bool value) => _prefs.setBool(_keyIgnoreShortAudio, value);
   Future<void> setShowHiddenFiles(bool value) => _prefs.setBool(_keyShowHiddenFiles, value);
   Future<void> setIncludeOnlineResults(bool value) => _prefs.setBool(_keyIncludeOnlineResults, value);
-  Future<void> setSaveSearchHistory(bool value) => _prefs.setBool(_keySaveSearchHistory, value);
   Future<void> setRetryFailedDownloads(bool value) => _prefs.setBool(_keyRetryFailedDownloads, value);
   Future<void> setDownloadTimeoutSeconds(int value) => _prefs.setInt(_keyDownloadTimeoutSeconds, value);
   Future<void> setShowPlaybackNotification(bool value) => _prefs.setBool(_keyShowPlaybackNotification, value);
@@ -200,25 +192,6 @@ class SettingsService {
     }
   }
   Future<void> setLastPlayedPositionMs(int ms) => _prefs.setInt(_keyLastPlayedPositionMs, ms);
-
-  // Search History Management
-  List<String> getSearchHistory() => _prefs.getStringList(_keySearchHistoryList) ?? [];
-
-  Future<void> addSearchQuery(String query) async {
-    final q = query.trim();
-    if (q.isEmpty || !saveSearchHistory) return;
-    final list = getSearchHistory();
-    list.removeWhere((item) => item.toLowerCase() == q.toLowerCase());
-    list.insert(0, q);
-    if (list.length > 20) {
-      list.removeRange(20, list.length);
-    }
-    await _prefs.setStringList(_keySearchHistoryList, list);
-  }
-
-  Future<void> clearSearchHistory() async {
-    await _prefs.remove(_keySearchHistoryList);
-  }
 
   // Real Storage & File Operations
   Future<StorageStats> calculateStorageSizes() async {
