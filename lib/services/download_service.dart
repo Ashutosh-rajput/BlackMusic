@@ -3,17 +3,17 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/data/models/playlist_model.dart';
-import 'package:pixel_player/data/repositories/music_repository.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/data/models/playlist_model.dart';
+import 'package:vinyl/data/repositories/music_repository.dart';
 import 'package:logger/logger.dart';
 
 import 'package:flutter/foundation.dart';
-import 'package:pixel_player/core/utils/hash_utils.dart';
-import 'package:pixel_player/services/download_background_service.dart';
-import 'package:pixel_player/services/download_notification_service.dart';
-import 'package:pixel_player/services/settings_service.dart';
-import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
+import 'package:vinyl/core/utils/hash_utils.dart';
+import 'package:vinyl/services/download_background_service.dart';
+import 'package:vinyl/services/download_notification_service.dart';
+import 'package:vinyl/services/settings_service.dart';
+import 'package:vinyl/core/utils/jiosaavn_decoder.dart';
 
 final _logger = Logger();
 
@@ -870,19 +870,19 @@ class DownloadService {
 
   Future<String> _getMusicDirectoryPath() async {
     if (Platform.isAndroid) {
-      // 1. Try public shared Downloads folder (/storage/emulated/0/Download/blackmusic)
+      // 1. Try public shared Downloads folder (/storage/emulated/0/Download/vinyl)
       try {
         final publicDownloadDir =
-            Directory('/storage/emulated/0/Download/blackmusic');
+            Directory('/storage/emulated/0/Download/vinyl');
         if (!await publicDownloadDir.exists()) {
           await publicDownloadDir.create(recursive: true);
         }
         return publicDownloadDir.path;
       } catch (e) {
-        _logger.w('Failed creating public Download/blackmusic dir: $e');
+        _logger.w('Failed creating public Download/vinyl dir: $e');
       }
 
-      // 2. Fallback to Android External Storage root / Download / blackmusic
+      // 2. Fallback to Android External Storage root / Download / vinyl
       try {
         final extStorageDir = await getExternalStorageDirectory();
         if (extStorageDir != null) {
@@ -890,7 +890,7 @@ class DownloadService {
           final androidIndex = pathSegments.indexOf('Android');
           if (androidIndex > 0) {
             final rootPath = pathSegments.sublist(0, androidIndex).join('/');
-            final target = Directory('$rootPath/Download/blackmusic');
+            final target = Directory('$rootPath/Download/vinyl');
             if (!await target.exists()) {
               await target.create(recursive: true);
             }
@@ -903,7 +903,7 @@ class DownloadService {
     }
 
     final appDir = await getApplicationDocumentsDirectory();
-    final target = Directory('${appDir.path}/blackmusic');
+    final target = Directory('${appDir.path}/vinyl');
     if (!await target.exists()) {
       await target.create(recursive: true);
     }

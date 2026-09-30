@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:pixel_player/services/sleep_timer_service.dart';
+import 'package:vinyl/services/sleep_timer_service.dart';
 import 'helpers/mock_audio_service.dart';
 
 void main() {

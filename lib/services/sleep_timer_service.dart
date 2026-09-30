@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:pixel_player/services/audio_service.dart';
+import 'package:vinyl/services/audio_service.dart';
 
 enum SleepTimerMode {
   off,

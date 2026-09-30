@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'package:pixel_player/data/datasources/local/music_local_datasource.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/data/models/playlist_model.dart';
+import 'package:vinyl/data/datasources/local/music_local_datasource.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/data/models/playlist_model.dart';
 import 'package:logger/logger.dart';
 
 final _logger = Logger();

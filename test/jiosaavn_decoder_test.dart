@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
+import 'package:vinyl/core/utils/jiosaavn_decoder.dart';
 
 void main() {
   group('JioSaavnDecoder Unit Tests', () {

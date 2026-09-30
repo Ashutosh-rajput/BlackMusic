@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pixel_player/data/models/playlist_model.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
-import 'package:pixel_player/presentation/bloc/library/library_event.dart';
-import 'package:pixel_player/presentation/bloc/library/library_state.dart';
-import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
+import 'package:vinyl/data/models/playlist_model.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/presentation/bloc/library/library_bloc.dart';
+import 'package:vinyl/presentation/bloc/library/library_event.dart';
+import 'package:vinyl/presentation/bloc/library/library_state.dart';
+import 'package:vinyl/presentation/widgets/album_art_widget.dart';
 
 class AddToPlaylistSheet extends StatelessWidget {
   final Song song;

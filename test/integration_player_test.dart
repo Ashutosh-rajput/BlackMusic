@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bloc_test/bloc_test.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
-import 'package:pixel_player/presentation/bloc/player/player_event.dart';
-import 'package:pixel_player/presentation/bloc/player/player_state.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
+import 'package:vinyl/presentation/bloc/player/player_event.dart';
+import 'package:vinyl/presentation/bloc/player/player_state.dart';
 import 'helpers/mock_audio_service.dart';
 
 void main() {

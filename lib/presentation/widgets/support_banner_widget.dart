@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:pixel_player/core/di/injection_container.dart';
-import 'package:pixel_player/services/settings_service.dart';
+import 'package:vinyl/core/di/injection_container.dart';
+import 'package:vinyl/services/settings_service.dart';
 
 class SupportBannerWidget extends StatefulWidget {
   final VoidCallback? onDismissed;

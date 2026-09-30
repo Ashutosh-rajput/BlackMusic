@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:pixel_player/data/repositories/music_repository.dart';
-import 'package:pixel_player/services/file_service.dart';
-import 'package:pixel_player/services/stream_cache_service.dart';
+import 'package:vinyl/data/repositories/music_repository.dart';
+import 'package:vinyl/services/file_service.dart';
+import 'package:vinyl/services/stream_cache_service.dart';
 import 'package:logger/logger.dart';
 
 final _logger = Logger();
@@ -228,10 +228,10 @@ class SettingsService {
       if (Platform.isAndroid) {
         final downloadsDir = await getDownloadsDirectory();
         if (downloadsDir != null) {
-          musicDir = Directory('${downloadsDir.path}/blackmusic');
+          musicDir = Directory('${downloadsDir.path}/vinyl');
         }
       }
-      musicDir ??= Directory('${(await getApplicationDocumentsDirectory()).path}/blackmusic');
+      musicDir ??= Directory('${(await getApplicationDocumentsDirectory()).path}/vinyl');
       if (await musicDir.exists()) {
         musicSize = await _getDirSizeMb(musicDir);
       }

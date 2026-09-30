@@ -4,12 +4,12 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:pixel_player/core/di/injection_container.dart';
-import 'package:pixel_player/core/utils/hash_utils.dart';
-import 'package:pixel_player/data/models/jiosaavn_item.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/data/repositories/music_repository.dart';
-import 'package:pixel_player/services/settings_service.dart';
+import 'package:vinyl/core/di/injection_container.dart';
+import 'package:vinyl/core/utils/hash_utils.dart';
+import 'package:vinyl/data/models/jiosaavn_item.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/data/repositories/music_repository.dart';
+import 'package:vinyl/services/settings_service.dart';
 
 class StreamCacheEntry {
   final int songId;
@@ -422,7 +422,7 @@ class StreamCacheService {
     if (Platform.isAndroid) {
       try {
         final publicDownloadDir =
-            Directory('/storage/emulated/0/Download/blackmusic');
+            Directory('/storage/emulated/0/Download/vinyl');
         if (!await publicDownloadDir.exists()) {
           await publicDownloadDir.create(recursive: true);
         }
@@ -436,7 +436,7 @@ class StreamCacheService {
           final androidIndex = pathSegments.indexOf('Android');
           if (androidIndex > 0) {
             final rootPath = pathSegments.sublist(0, androidIndex).join('/');
-            final target = Directory('$rootPath/Download/blackmusic');
+            final target = Directory('$rootPath/Download/vinyl');
             if (!await target.exists()) {
               await target.create(recursive: true);
             }
@@ -447,7 +447,7 @@ class StreamCacheService {
     }
 
     final appDir = await getApplicationDocumentsDirectory();
-    final target = Directory('${appDir.path}/blackmusic');
+    final target = Directory('${appDir.path}/vinyl');
     if (!await target.exists()) {
       await target.create(recursive: true);
     }

@@ -1,15 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:drift/native.dart';
-import 'package:pixel_player/data/database/app_database.dart' hide Song;
-import 'package:pixel_player/data/datasources/local/music_local_datasource.dart';
-import 'package:pixel_player/data/repositories/music_repository.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/services/file_service.dart';
-import 'package:pixel_player/services/permission_service.dart';
-import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
-import 'package:pixel_player/presentation/bloc/library/library_event.dart';
-import 'package:pixel_player/presentation/bloc/library/library_state.dart';
+import 'package:vinyl/data/database/app_database.dart' hide Song;
+import 'package:vinyl/data/datasources/local/music_local_datasource.dart';
+import 'package:vinyl/data/repositories/music_repository.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/services/file_service.dart';
+import 'package:vinyl/services/permission_service.dart';
+import 'package:vinyl/presentation/bloc/library/library_bloc.dart';
+import 'package:vinyl/presentation/bloc/library/library_event.dart';
+import 'package:vinyl/presentation/bloc/library/library_state.dart';
 
 class MockFileService implements FileService {
   @override

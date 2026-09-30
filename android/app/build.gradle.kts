@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.muskmelon.blackmusic"
+    namespace = "com.muskmelon.vinyl"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -16,7 +16,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.muskmelon.blackmusic"
+        applicationId = "com.muskmelon.vinyl"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

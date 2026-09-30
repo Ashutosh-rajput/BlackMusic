@@ -1,8 +1,8 @@
 import 'package:equatable/equatable.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/data/models/playlist_model.dart';
-import 'package:pixel_player/data/models/youtube_video_item.dart';
-import 'package:pixel_player/data/models/jiosaavn_item.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/data/models/playlist_model.dart';
+import 'package:vinyl/data/models/youtube_video_item.dart';
+import 'package:vinyl/data/models/jiosaavn_item.dart';
 
 abstract class LibraryState extends Equatable {
   const LibraryState();

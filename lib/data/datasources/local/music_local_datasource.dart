@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart';
-import 'package:pixel_player/data/database/app_database.dart' as db;
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/data/models/playlist_model.dart';
+import 'package:vinyl/data/database/app_database.dart' as db;
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/data/models/playlist_model.dart';
 import 'package:logger/logger.dart';
 
 final logger = Logger();
@@ -61,7 +61,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
             resolvedQuality ??= 'HD Audio';
           } else if (row.album == 'JioSaavn' ||
               row.genre == 'Downloaded' ||
-              lowerPath.contains('blackmusic') ||
+              lowerPath.contains('vinyl') ||
               lowerPath.contains('saavn')) {
             resolvedSource = 'jiosaavn';
             resolvedQuality ??= '320 kbps';
@@ -319,8 +319,8 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
               (existing?.album == 'JioSaavn') ||
               song.genre == 'Downloaded' ||
               (existing?.genre == 'Downloaded') ||
-              lowerPath.contains('blackmusic') ||
-              existingLowerPath.contains('blackmusic') ||
+              lowerPath.contains('vinyl') ||
+              existingLowerPath.contains('vinyl') ||
               lowerPath.contains('saavn') ||
               existingLowerPath.contains('saavn')) {
             mergedSource = 'jiosaavn';

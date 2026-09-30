@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pixel_player/core/di/injection_container.dart';
-import 'package:pixel_player/data/models/lyrics_model.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
-import 'package:pixel_player/presentation/bloc/player/player_event.dart';
-import 'package:pixel_player/services/audio_service.dart';
-import 'package:pixel_player/services/lyrics_service.dart';
+import 'package:vinyl/core/di/injection_container.dart';
+import 'package:vinyl/data/models/lyrics_model.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
+import 'package:vinyl/presentation/bloc/player/player_event.dart';
+import 'package:vinyl/services/audio_service.dart';
+import 'package:vinyl/services/lyrics_service.dart';
 
 class LyricsView extends StatefulWidget {
   final Song song;

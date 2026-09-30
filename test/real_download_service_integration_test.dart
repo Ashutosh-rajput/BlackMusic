@@ -1,11 +1,11 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
-import 'package:pixel_player/data/database/app_database.dart' hide Song;
-import 'package:pixel_player/data/datasources/local/music_local_datasource.dart';
-import 'package:pixel_player/data/repositories/music_repository.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/services/download_service.dart';
+import 'package:vinyl/data/database/app_database.dart' hide Song;
+import 'package:vinyl/data/datasources/local/music_local_datasource.dart';
+import 'package:vinyl/data/repositories/music_repository.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/services/download_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -74,7 +74,7 @@ void main() {
       expect((await repository.getAllSongs()).isEmpty, isTrue);
 
       // Create a temporary file to simulate an existing download
-      final tempDir = await Directory.systemTemp.createTemp('blackmusic_test');
+      final tempDir = await Directory.systemTemp.createTemp('vinyl_test');
       final tempFile = File('${tempDir.path}/Existing Song.mp3');
       await tempFile.writeAsBytes([1, 2, 3, 4, 5]);
 
@@ -99,7 +99,7 @@ void main() {
     });
 
     test('skipAlreadyDownloaded setting skips re-downloading if song already exists in library', () async {
-      final tempDir = await Directory.systemTemp.createTemp('blackmusic_test');
+      final tempDir = await Directory.systemTemp.createTemp('vinyl_test');
       final tempFile = File('${tempDir.path}/Existing Track.mp3');
       await tempFile.writeAsBytes([1, 2, 3]);
 

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pixel_player/core/di/injection_container.dart';
-import 'package:pixel_player/services/audio_service.dart';
-import 'package:pixel_player/services/sleep_timer_service.dart';
+import 'package:vinyl/core/di/injection_container.dart';
+import 'package:vinyl/services/audio_service.dart';
+import 'package:vinyl/services/sleep_timer_service.dart';
 
 class SleepTimerDialog extends StatelessWidget {
   const SleepTimerDialog({super.key});

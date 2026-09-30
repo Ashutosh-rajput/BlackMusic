@@ -1,6 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:pixel_player/services/settings_service.dart';
+import 'package:vinyl/services/settings_service.dart';
 
 class ThemeSettingsState extends Equatable {
   final String themeMode;

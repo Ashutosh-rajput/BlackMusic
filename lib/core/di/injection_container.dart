@@ -1,22 +1,22 @@
 import 'package:get_it/get_it.dart';
-import 'package:pixel_player/data/database/app_database.dart';
-import 'package:pixel_player/data/datasources/local/music_local_datasource.dart';
-import 'package:pixel_player/data/repositories/music_repository.dart';
-import 'package:pixel_player/services/audio_service.dart';
-import 'package:pixel_player/services/file_service.dart';
-import 'package:pixel_player/services/permission_service.dart';
-import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
-import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
+import 'package:vinyl/data/database/app_database.dart';
+import 'package:vinyl/data/datasources/local/music_local_datasource.dart';
+import 'package:vinyl/data/repositories/music_repository.dart';
+import 'package:vinyl/services/audio_service.dart';
+import 'package:vinyl/services/file_service.dart';
+import 'package:vinyl/services/permission_service.dart';
+import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
+import 'package:vinyl/presentation/bloc/library/library_bloc.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:pixel_player/services/settings_service.dart';
-import 'package:pixel_player/services/download_service.dart';
-import 'package:pixel_player/services/lyrics_service.dart';
-import 'package:pixel_player/services/stream_cache_service.dart';
-import 'package:pixel_player/services/user_taste_service.dart';
-import 'package:pixel_player/services/stream_favorites_service.dart';
+import 'package:vinyl/services/settings_service.dart';
+import 'package:vinyl/services/download_service.dart';
+import 'package:vinyl/services/lyrics_service.dart';
+import 'package:vinyl/services/stream_cache_service.dart';
+import 'package:vinyl/services/user_taste_service.dart';
+import 'package:vinyl/services/stream_favorites_service.dart';
 
-import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
+import 'package:vinyl/presentation/bloc/theme/theme_cubit.dart';
 
 final getIt = GetIt.instance;
 

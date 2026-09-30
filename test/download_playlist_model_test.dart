@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/data/models/playlist_model.dart';
-import 'package:pixel_player/services/download_service.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/data/models/playlist_model.dart';
+import 'package:vinyl/services/download_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

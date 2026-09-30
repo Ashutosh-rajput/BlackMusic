@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
+import 'package:vinyl/presentation/widgets/album_art_widget.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

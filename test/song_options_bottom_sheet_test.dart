@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/presentation/widgets/song_options_bottom_sheet.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/presentation/widgets/song_options_bottom_sheet.dart';
 
 void main() {
   testWidgets('SongOptionsBottomSheet renders song details and action options', (tester) async {

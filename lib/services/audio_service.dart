@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/services/stream_cache_service.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/services/stream_cache_service.dart';
 import 'package:logger/logger.dart';
 
 final _logger = Logger();

@@ -5,19 +5,19 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
-import 'package:pixel_player/core/di/injection_container.dart';
-import 'package:pixel_player/core/theme/app_theme.dart';
-import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
-import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
-import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
-import 'package:pixel_player/presentation/screens/splash_screen.dart';
-import 'package:pixel_player/services/download_background_service.dart';
-import 'package:pixel_player/services/download_notification_service.dart';
-import 'package:pixel_player/services/download_service.dart';
-import 'package:pixel_player/services/stream_cache_service.dart';
-import 'package:pixel_player/services/user_taste_service.dart';
-import 'package:pixel_player/services/stream_favorites_service.dart';
-import 'package:pixel_player/services/settings_service.dart';
+import 'package:vinyl/core/di/injection_container.dart';
+import 'package:vinyl/core/theme/app_theme.dart';
+import 'package:vinyl/presentation/bloc/library/library_bloc.dart';
+import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
+import 'package:vinyl/presentation/bloc/theme/theme_cubit.dart';
+import 'package:vinyl/presentation/screens/splash_screen.dart';
+import 'package:vinyl/services/download_background_service.dart';
+import 'package:vinyl/services/download_notification_service.dart';
+import 'package:vinyl/services/download_service.dart';
+import 'package:vinyl/services/stream_cache_service.dart';
+import 'package:vinyl/services/user_taste_service.dart';
+import 'package:vinyl/services/stream_favorites_service.dart';
+import 'package:vinyl/services/settings_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -77,7 +77,7 @@ void main() async {
 
   try {
     await JustAudioBackground.init(
-      androidNotificationChannelId: 'com.muskmelon.blackmusic.playback',
+      androidNotificationChannelId: 'com.muskmelon.vinyl.playback',
       androidNotificationChannelName: 'Audio Playback',
       androidNotificationChannelDescription:
           'Controls and track details for music currently playing',

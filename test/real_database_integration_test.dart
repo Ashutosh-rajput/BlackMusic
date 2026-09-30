@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
-import 'package:pixel_player/data/database/app_database.dart' hide Song;
-import 'package:pixel_player/data/datasources/local/music_local_datasource.dart';
-import 'package:pixel_player/data/repositories/music_repository.dart';
-import 'package:pixel_player/data/models/song_model.dart';
+import 'package:vinyl/data/database/app_database.dart' hide Song;
+import 'package:vinyl/data/datasources/local/music_local_datasource.dart';
+import 'package:vinyl/data/repositories/music_repository.dart';
+import 'package:vinyl/data/models/song_model.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

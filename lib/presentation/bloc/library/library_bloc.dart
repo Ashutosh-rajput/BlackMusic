@@ -1,17 +1,17 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pixel_player/data/models/jiosaavn_item.dart';
-import 'package:pixel_player/data/models/playlist_model.dart';
-import 'package:pixel_player/data/repositories/music_repository.dart';
-import 'package:pixel_player/services/file_service.dart';
-import 'package:pixel_player/services/permission_service.dart';
-import 'package:pixel_player/services/settings_service.dart';
+import 'package:vinyl/data/models/jiosaavn_item.dart';
+import 'package:vinyl/data/models/playlist_model.dart';
+import 'package:vinyl/data/repositories/music_repository.dart';
+import 'package:vinyl/services/file_service.dart';
+import 'package:vinyl/services/permission_service.dart';
+import 'package:vinyl/services/settings_service.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
-import 'package:pixel_player/data/models/youtube_video_item.dart';
-import 'package:pixel_player/presentation/bloc/library/library_event.dart';
-import 'package:pixel_player/presentation/bloc/library/library_state.dart';
-import 'package:pixel_player/services/user_taste_service.dart';
+import 'package:vinyl/data/models/youtube_video_item.dart';
+import 'package:vinyl/presentation/bloc/library/library_event.dart';
+import 'package:vinyl/presentation/bloc/library/library_state.dart';
+import 'package:vinyl/services/user_taste_service.dart';
 
 class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   final MusicRepository _repository;

@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
-import 'package:pixel_player/presentation/bloc/library/library_event.dart';
-import 'package:pixel_player/presentation/screens/home_screen.dart';
+import 'package:vinyl/presentation/bloc/library/library_bloc.dart';
+import 'package:vinyl/presentation/bloc/library/library_event.dart';
+import 'package:vinyl/presentation/screens/home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -112,7 +112,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Column(
                   children: [
                     Text(
-                      'blackmusic',
+                      'vinyl',
                       style: GoogleFonts.outfit(
                         fontSize: 38,
                         fontWeight: FontWeight.bold,

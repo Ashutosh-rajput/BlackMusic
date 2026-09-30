@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
-import 'package:pixel_player/core/utils/hash_utils.dart';
-import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
-import 'package:pixel_player/data/models/song_model.dart';
+import 'package:vinyl/core/utils/hash_utils.dart';
+import 'package:vinyl/core/utils/jiosaavn_decoder.dart';
+import 'package:vinyl/data/models/song_model.dart';
 
 /// Represents a JioSaavn search result (song, album, artist or playlist).
 class JioSaavnItem extends Equatable {

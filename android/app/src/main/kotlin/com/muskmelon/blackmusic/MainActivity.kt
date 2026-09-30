@@ -1,4 +1,4 @@
-package com.muskmelon.blackmusic
+package com.muskmelon.vinyl
 
 import com.ryanheise.audioservice.AudioServiceActivity
 

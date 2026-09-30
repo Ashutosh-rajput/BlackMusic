@@ -52,7 +52,7 @@ class Song extends Equatable {
     final lowerPath = filePath.toLowerCase();
     if (album == 'JioSaavn' ||
         genre == 'Downloaded' ||
-        lowerPath.contains('blackmusic') ||
+        lowerPath.contains('vinyl') ||
         lowerPath.contains('saavn')) {
       return 'jiosaavn';
     }

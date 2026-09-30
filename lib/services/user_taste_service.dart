@@ -4,9 +4,9 @@ import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
-import 'package:pixel_player/data/models/jiosaavn_item.dart';
-import 'package:pixel_player/data/models/song_model.dart';
+import 'package:vinyl/core/utils/jiosaavn_decoder.dart';
+import 'package:vinyl/data/models/jiosaavn_item.dart';
+import 'package:vinyl/data/models/song_model.dart';
 
 /// Context for generating recommendations.
 enum RecommendationContext {

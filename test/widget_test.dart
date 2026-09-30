@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/presentation/bloc/player/player_state.dart';
-import 'package:pixel_player/presentation/bloc/library/library_state.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/presentation/bloc/player/player_state.dart';
+import 'package:vinyl/presentation/bloc/library/library_state.dart';
 
 void main() {
   test('Song model serialization and value equality test', () {

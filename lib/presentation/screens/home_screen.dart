@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
-import 'package:pixel_player/presentation/bloc/player/player_event.dart';
-import 'package:pixel_player/presentation/bloc/player/player_state.dart';
-import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
-import 'package:pixel_player/presentation/screens/library_screen.dart';
-import 'package:pixel_player/presentation/screens/stream_screen.dart';
-import 'package:pixel_player/presentation/screens/player_screen.dart';
-import 'package:pixel_player/presentation/screens/playlists_screen.dart';
-import 'package:pixel_player/presentation/screens/settings_screen.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
+import 'package:vinyl/presentation/bloc/player/player_event.dart';
+import 'package:vinyl/presentation/bloc/player/player_state.dart';
+import 'package:vinyl/presentation/widgets/album_art_widget.dart';
+import 'package:vinyl/presentation/screens/library_screen.dart';
+import 'package:vinyl/presentation/screens/stream_screen.dart';
+import 'package:vinyl/presentation/screens/player_screen.dart';
+import 'package:vinyl/presentation/screens/playlists_screen.dart';
+import 'package:vinyl/presentation/screens/settings_screen.dart';
 
-import 'package:pixel_player/core/di/injection_container.dart';
-import 'package:pixel_player/services/audio_service.dart';
+import 'package:vinyl/core/di/injection_container.dart';
+import 'package:vinyl/services/audio_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});

@@ -2,8 +2,8 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/services/audio_service.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/services/audio_service.dart';
 
 /// Mock AudioPlayerService for headless unit & integration tests
 class MockAudioPlayerService implements AudioPlayerService {

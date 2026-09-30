@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
-import 'package:pixel_player/services/user_taste_service.dart';
+import 'package:vinyl/presentation/widgets/album_art_widget.dart';
+import 'package:vinyl/services/user_taste_service.dart';
 
 class TasteProfileScreen extends StatefulWidget {
   const TasteProfileScreen({super.key});

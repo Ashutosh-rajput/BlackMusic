@@ -116,8 +116,8 @@ Financial support isn't the only way to help! You can also support the project f
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/Ashutosh-rajput/flutter_application_1.git
-   cd blackmusic
+   git clone https://github.com/Ashutosh-rajput/Vinyl.git
+   cd vinyl
    ```
 
 2. **Install dependencies**:

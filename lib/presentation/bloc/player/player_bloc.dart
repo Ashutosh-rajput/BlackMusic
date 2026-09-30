@@ -6,15 +6,15 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerEvent, PlayerState;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:rxdart/rxdart.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/data/repositories/music_repository.dart';
-import 'package:pixel_player/services/audio_service.dart';
-import 'package:pixel_player/services/settings_service.dart';
-import 'package:pixel_player/presentation/bloc/player/player_event.dart';
-import 'package:pixel_player/presentation/bloc/player/player_state.dart';
-import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
-import 'package:pixel_player/services/stream_cache_service.dart';
-import 'package:pixel_player/services/user_taste_service.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/data/repositories/music_repository.dart';
+import 'package:vinyl/services/audio_service.dart';
+import 'package:vinyl/services/settings_service.dart';
+import 'package:vinyl/presentation/bloc/player/player_event.dart';
+import 'package:vinyl/presentation/bloc/player/player_state.dart';
+import 'package:vinyl/core/utils/jiosaavn_decoder.dart';
+import 'package:vinyl/services/stream_cache_service.dart';
+import 'package:vinyl/services/user_taste_service.dart';
 
 /// Restartable event transformer using RxDart's switchMap to drop superseded play events.
 EventTransformer<E> restartable<E>() {

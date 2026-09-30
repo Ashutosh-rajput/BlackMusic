@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pixel_player/core/di/injection_container.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/presentation/bloc/library/library_bloc.dart';
-import 'package:pixel_player/presentation/bloc/library/library_event.dart';
-import 'package:pixel_player/presentation/bloc/library/library_state.dart';
-import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
-import 'package:pixel_player/presentation/bloc/player/player_event.dart';
-import 'package:pixel_player/presentation/widgets/add_to_playlist_sheet.dart';
-import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
-import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
-import 'package:pixel_player/services/download_service.dart';
-import 'package:pixel_player/services/stream_favorites_service.dart';
+import 'package:vinyl/core/di/injection_container.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/presentation/bloc/library/library_bloc.dart';
+import 'package:vinyl/presentation/bloc/library/library_event.dart';
+import 'package:vinyl/presentation/bloc/library/library_state.dart';
+import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
+import 'package:vinyl/presentation/bloc/player/player_event.dart';
+import 'package:vinyl/presentation/widgets/add_to_playlist_sheet.dart';
+import 'package:vinyl/presentation/widgets/album_art_widget.dart';
+import 'package:vinyl/presentation/widgets/download_queue_snackbar.dart';
+import 'package:vinyl/services/download_service.dart';
+import 'package:vinyl/services/stream_favorites_service.dart';
 
 /// Modal bottom sheet presenting all actions for a song:
 /// 1. Start Radio

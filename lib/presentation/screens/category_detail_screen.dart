@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/presentation/bloc/player/player_bloc.dart';
-import 'package:pixel_player/presentation/bloc/player/player_event.dart';
-import 'package:pixel_player/presentation/screens/player_screen.dart';
-import 'package:pixel_player/presentation/widgets/album_art_widget.dart';
-import 'package:pixel_player/presentation/widgets/song_options_bottom_sheet.dart';
-import 'package:pixel_player/presentation/bloc/theme/theme_cubit.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
+import 'package:vinyl/presentation/bloc/player/player_event.dart';
+import 'package:vinyl/presentation/screens/player_screen.dart';
+import 'package:vinyl/presentation/widgets/album_art_widget.dart';
+import 'package:vinyl/presentation/widgets/song_options_bottom_sheet.dart';
+import 'package:vinyl/presentation/bloc/theme/theme_cubit.dart';
 
 class CategoryDetailScreen extends StatelessWidget {
   final String title;

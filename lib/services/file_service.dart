@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:on_audio_query/on_audio_query.dart';
-import 'package:pixel_player/core/utils/hash_utils.dart';
-import 'package:pixel_player/data/models/song_model.dart';
+import 'package:vinyl/core/utils/hash_utils.dart';
+import 'package:vinyl/data/models/song_model.dart';
 import 'package:logger/logger.dart';
 
 final _logger = Logger();

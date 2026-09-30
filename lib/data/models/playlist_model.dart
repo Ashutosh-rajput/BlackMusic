@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import 'package:pixel_player/data/models/song_model.dart';
+import 'package:vinyl/data/models/song_model.dart';
 
 class PlaylistModel extends Equatable {
   final int id;

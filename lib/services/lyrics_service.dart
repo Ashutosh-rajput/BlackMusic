@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:logger/logger.dart';
-import 'package:pixel_player/data/database/app_database.dart' hide Song;
-import 'package:pixel_player/data/models/lyrics_model.dart';
-import 'package:pixel_player/data/models/song_model.dart';
+import 'package:vinyl/data/database/app_database.dart' hide Song;
+import 'package:vinyl/data/models/lyrics_model.dart';
+import 'package:vinyl/data/models/song_model.dart';
 
 class LyricSearchResultItem {
   final String id;
@@ -78,7 +78,7 @@ class LyricsService {
   static const String _binimumApiBase = 'https://lyrics-api.binimum.org';
   static const String _lrclibBaseUrl = 'https://lrclib.net';
   static const String _userAgent =
-      'PixelPlayer/1.0 (https://github.com/Ashutosh-rajput/flutter_application_1; contact: support@pixelplayer.app)';
+      'Vinyl/1.0 (https://https://github.com/Ashutosh-rajput/Vinyl; contact: support@vinyl.app)';
 
   LyricsService(this._database, [Dio? dio])
       : _dio = dio ??

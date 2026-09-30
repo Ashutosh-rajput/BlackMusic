@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:dart_des/dart_des.dart';
 import 'package:dio/dio.dart';
-import 'package:pixel_player/data/models/jiosaavn_item.dart';
+import 'package:vinyl/data/models/jiosaavn_item.dart';
 
 class JioSaavnDecoder {
   // Key documented for JioSaavn DES-ECB media decryption

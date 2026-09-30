@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pixel_player/data/models/jiosaavn_item.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/services/stream_favorites_service.dart';
-import 'package:pixel_player/services/user_taste_service.dart';
+import 'package:vinyl/data/models/jiosaavn_item.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/services/stream_favorites_service.dart';
+import 'package:vinyl/services/user_taste_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

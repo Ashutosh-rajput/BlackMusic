@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
-import 'package:pixel_player/core/di/injection_container.dart';
-import 'package:pixel_player/core/utils/duration_formatter.dart';
-import 'package:pixel_player/data/models/jiosaavn_item.dart';
-import 'package:pixel_player/core/utils/jiosaavn_decoder.dart';
-import 'package:pixel_player/data/models/youtube_video_item.dart';
-import 'package:pixel_player/services/download_service.dart';
-import 'package:pixel_player/presentation/widgets/download_queue_snackbar.dart';
+import 'package:vinyl/core/di/injection_container.dart';
+import 'package:vinyl/core/utils/duration_formatter.dart';
+import 'package:vinyl/data/models/jiosaavn_item.dart';
+import 'package:vinyl/core/utils/jiosaavn_decoder.dart';
+import 'package:vinyl/data/models/youtube_video_item.dart';
+import 'package:vinyl/services/download_service.dart';
+import 'package:vinyl/presentation/widgets/download_queue_snackbar.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 
 // ─── Public API ───────────────────────────────────────────────────────────────

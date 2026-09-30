@@ -1,6 +1,6 @@
 {
-    "name": "blackmusic",
-    "short_name": "blackmusic",
+    "name": "vinyl",
+    "short_name": "vinyl",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:pixel_player/core/utils/hash_utils.dart';
-import 'package:pixel_player/data/models/jiosaavn_item.dart';
-import 'package:pixel_player/data/models/song_model.dart';
-import 'package:pixel_player/services/user_taste_service.dart';
+import 'package:vinyl/core/utils/hash_utils.dart';
+import 'package:vinyl/data/models/jiosaavn_item.dart';
+import 'package:vinyl/data/models/song_model.dart';
+import 'package:vinyl/services/user_taste_service.dart';
 
 /// Service managing stream-only favorite tracks, keeping them completely
 /// separate from local offline library favorites.
