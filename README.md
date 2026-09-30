@@ -2,7 +2,17 @@
 
 > A modern, privacy-first offline & online music streaming app with an on-device recommendation engine (**PulseIQ**), high-fidelity 320 kbps streaming, background downloads, synchronized lyrics, and Material 3 design — built with Flutter & BLoC.
 
----
+<p align="center">
+    <a href="https://github.com/Ashutosh-rajput/Vinyl/releases/latest">
+        <img src="https://img.shields.io/github/v/release/Ashutosh-rajput/Vinyl?include_prereleases&logo=github&style=for-the-badge&label=Latest%20Release" alt="Latest Release">
+    </a>
+    <a href="https://github.com/Ashutosh-rajput/Vinyl/releases">
+        <img src="https://img.shields.io/github/downloads/Ashutosh-rajput/Vinyl/total?logo=github&style=for-the-badge" alt="Total Downloads">
+    </a>
+    <img src="https://img.shields.io/badge/Android-11%2B-green?style=for-the-badge&logo=android" alt="Android 11+">
+    <img src="https://img.shields.io/badge/Flutter-100%25-blue?style=for-the-badge&logo=flutter" alt="Flutter">
+</p>
+
 
 ### ☕ Support the Developer
 Maintaining **Vinyl**, implementing new features (like PulseIQ and high-fidelity streaming), and keeping up with API updates takes continuous effort. Your support helps keep this project independent, ad-free, and privacy-focused!
@@ -15,10 +25,7 @@ Maintaining **Vinyl**, implementing new features (like PulseIQ and high-fidelity
 
 ### India
 
-***👇Click Here***
-
 [![Pay via UPI](https://img.shields.io/badge/🇮🇳%20Pay%20via%20UPI-sliceashutoshrajput%40ybl-FFB000?style=for-the-badge)](https://tinyurl.com/Vinyl-support-upi)
-
 
 
 <p align="left">
