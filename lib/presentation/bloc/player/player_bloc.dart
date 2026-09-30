@@ -196,14 +196,25 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     return true;
   }
 
+  DateTime _lastResumePointSave = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Saves the "resume last song" point. Position ticks arrive many times a
+  /// second, so writes are throttled; pausing saves immediately.
+  void _saveResumePoint(Song song, Duration position, {bool force = false}) {
+    final now = DateTime.now();
+    if (!force && now.difference(_lastResumePointSave) < const Duration(seconds: 5)) return;
+    _lastResumePointSave = now;
+    _settingsService?.setLastPlayedSongId(song.id);
+    _settingsService?.setLastPlayedPositionMs(position.inMilliseconds);
+  }
+
   void _onPositionChanged(PositionChangedEvent event, Emitter<PlayerState> emit) {
     if (_isChangingSong || !_isPlayerOnCurrentSong()) return;
 
     if (state is PlayerPlaying) {
       final current = state as PlayerPlaying;
       _currentSong = current.song;
-      _settingsService?.setLastPlayedSongId(current.song.id);
-      _settingsService?.setLastPlayedPositionMs(event.position.inMilliseconds);
+      _saveResumePoint(current.song, event.position);
       UserTasteService.instance.onPlaybackProgress(current.song, event.position, current.duration);
 
       if (!_audioService.isPlaying) {
@@ -222,8 +233,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     } else if (state is PlayerPaused) {
       final current = state as PlayerPaused;
       _currentSong = current.song;
-      _settingsService?.setLastPlayedSongId(current.song.id);
-      _settingsService?.setLastPlayedPositionMs(event.position.inMilliseconds);
+      _saveResumePoint(current.song, event.position);
       emit(current.copyWith(position: event.position));
     }
   }
@@ -481,16 +491,19 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       return;
     }
 
-    final currentIndex = _currentSong != null ? _queue.indexWhere((s) => s.id == _currentSong!.id) : -1;
-    final targetIndex = currentIndex != -1 ? currentIndex + 1 : _queue.length;
-
-    // Remove if already in queue to prevent duplicate confusion
+    // Remove if already in queue to prevent duplicate confusion. This must
+    // happen before locating the current song: removing an earlier entry
+    // shifts the current song's index down by one.
     _queue.removeWhere((s) => s.id == event.song.id);
     _originalQueue.removeWhere((s) => s.id == event.song.id);
 
-    final safeTarget = targetIndex.clamp(0, _queue.length);
-    _queue.insert(safeTarget, event.song);
-    _originalQueue.insert(safeTarget, event.song);
+    int indexAfterCurrent(List<Song> list) {
+      final i = _currentSong != null ? list.indexWhere((s) => s.id == _currentSong!.id) : -1;
+      return i != -1 ? i + 1 : list.length;
+    }
+
+    _queue.insert(indexAfterCurrent(_queue), event.song);
+    _originalQueue.insert(indexAfterCurrent(_originalQueue), event.song);
 
     _emitUpdatedQueueState(emit);
   }
@@ -622,7 +635,21 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
   }
 
+  /// Pushes the app queue's upcoming order into the player's playlist, so a
+  /// song that ends naturally is followed by the right next song.
+  void _syncPlayerUpcoming() {
+    final current = _currentSong;
+    if (current == null || _isChangingSong) return;
+    final index = _queue.indexWhere((s) => s.id == current.id);
+    if (index == -1) return;
+    unawaited(_audioService.syncUpcoming(current, _queue.sublist(index + 1)));
+  }
+
+  /// Emits the new queue and syncs it into the player. Every queue mutation
+  /// (play next, add, remove, reorder, clear, shuffle, auto-expand) goes
+  /// through here.
   void _emitUpdatedQueueState(Emitter<PlayerState> emit) {
+    _syncPlayerUpcoming();
     if (state is PlayerPlaying) {
       emit((state as PlayerPlaying).copyWith(
         queue: List.from(_queue),
@@ -658,6 +685,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       _currentSong = song;
       final pos = _audioService.player.position;
       final dur = _audioService.player.duration ?? song.duration;
+      _saveResumePoint(song, pos, force: true);
       emit(PlayerPaused(
         song: song,
         position: pos,

@@ -104,6 +104,14 @@ class MockAudioPlayerService implements AudioPlayerService {
     _queue.addAll(songs);
   }
 
+  /// Upcoming order most recently pushed to the "player" via [syncUpcoming].
+  List<Song>? lastSyncedUpcoming;
+
+  @override
+  Future<void> syncUpcoming(Song current, List<Song> upcoming) async {
+    lastSyncedUpcoming = List.from(upcoming);
+  }
+
   @override
   Future<void> pause() async {
     _isPlaying = false;

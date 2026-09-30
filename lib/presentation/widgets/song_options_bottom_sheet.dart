@@ -14,6 +14,7 @@ import 'package:vinyl/presentation/widgets/add_to_playlist_sheet.dart';
 import 'package:vinyl/presentation/widgets/album_art_widget.dart';
 import 'package:vinyl/presentation/widgets/download_queue_snackbar.dart';
 import 'package:vinyl/services/download_service.dart';
+import 'package:vinyl/services/media_delete_service.dart';
 import 'package:vinyl/services/stream_cache_service.dart';
 import 'package:vinyl/services/stream_favorites_service.dart';
 
@@ -210,10 +211,29 @@ class SongOptionsBottomSheet extends StatelessWidget {
     }
   }
 
+  /// Removes [song] from the play queue. If it is the song playing now, the
+  /// queue removal itself moves playback on, so no separate "next" is sent
+  /// (sending both could skip two songs).
+  void _removeFromPlayer(PlayerBloc playerBloc) {
+    final playerState = playerBloc.state;
+    final queue = playerState is PlayerPlaying
+        ? playerState.queue
+        : (playerState is PlayerPaused ? playerState.queue : null);
+    if (queue == null) return;
+    final qIndex = queue.indexWhere((s) => s.id == song.id);
+    if (qIndex != -1) playerBloc.add(RemoveFromQueueEvent(qIndex));
+  }
+
+  SnackBar _snackBar(String text) => SnackBar(
+        content: Text(text, style: GoogleFonts.outfit()),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      );
+
   /// Delete from local library (removes DB record and the physical audio file).
   Future<void> _handleDeleteFromLibrary(BuildContext context) async {
-    Navigator.pop(context);
-
+    // Confirm while the sheet is still open: once the sheet is popped its
+    // context is unmounted and nothing after the dialog could run.
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -242,56 +262,44 @@ class SongOptionsBottomSheet extends StatelessWidget {
 
     if (confirm != true || !context.mounted) return;
 
+    final messenger = ScaffoldMessenger.of(context);
+    final playerBloc = context.read<PlayerBloc>();
+    final libraryBloc = context.read<LibraryBloc>();
+    Navigator.pop(context);
+
     if (onDelete != null) {
       onDelete!();
       return;
     }
 
     try {
-      // Remove from player queue/playback if currently playing
-      final playerBloc = context.read<PlayerBloc>();
-      final playerState = playerBloc.state;
-      final currentPlayingId = playerState is PlayerPlaying
-          ? playerState.song.id
-          : (playerState is PlayerPaused ? playerState.song.id : null);
-      if (currentPlayingId == song.id) {
-        playerBloc.add(const NextSongEvent());
-      }
-      final queue = playerState is PlayerPlaying
-          ? playerState.queue
-          : (playerState is PlayerPaused ? playerState.queue : null);
-      if (queue != null) {
-        final qIndex = queue.indexWhere((s) => s.id == song.id);
-        if (qIndex != -1) playerBloc.add(RemoveFromQueueEvent(qIndex));
+      // Delete the audio file first. For music another app put on the phone,
+      // Android shows its own "Allow Vinyl to delete…" prompt here. Only touch
+      // the library and the queue once the file is really gone.
+      final path = song.filePath.trim();
+      if (path.isNotEmpty && !path.startsWith('http')) {
+        final result = await MediaDeleteService.deleteAudioFile(path);
+        if (result == MediaDeleteResult.cancelled) {
+          messenger.showSnackBar(_snackBar('Delete cancelled. "${song.title}" was kept.'));
+          return;
+        }
+        if (result == MediaDeleteResult.failed) {
+          messenger.showSnackBar(_snackBar(
+              'Android did not allow deleting "${song.title}". It was kept in your library.'));
+          return;
+        }
       }
 
-      // Delete from local DB + physical file
-      context.read<LibraryBloc>().add(DeleteSongEvent(song, deleteFile: true));
-
-      // Also clear from stream cache if it happened to be cached
+      _removeFromPlayer(playerBloc);
+      // The audio file is already gone; this removes the library entry and
+      // the downloaded artwork.
+      libraryBloc.add(DeleteSongEvent(song, deleteFile: true));
       if (StreamCacheService.instance.isSongCached(song.id)) {
         await StreamCacheService.instance.removeCachedSong(song.id);
       }
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Deleted "${song.title}" from library', style: GoogleFonts.outfit()),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      messenger.showSnackBar(_snackBar('Deleted "${song.title}" from library'));
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to delete: $e', style: GoogleFonts.outfit()),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      messenger.showSnackBar(_snackBar('Failed to delete: $e'));
     }
   }
 
@@ -302,33 +310,13 @@ class SongOptionsBottomSheet extends StatelessWidget {
     final playerBloc = context.read<PlayerBloc>();
     Navigator.pop(context);
 
-    SnackBar bar(String text) => SnackBar(
-          content: Text(text, style: GoogleFonts.outfit()),
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        );
-
     try {
-      final playerState = playerBloc.state;
-      final currentPlayingId = playerState is PlayerPlaying
-          ? playerState.song.id
-          : (playerState is PlayerPaused ? playerState.song.id : null);
-      if (currentPlayingId == song.id) {
-        playerBloc.add(const NextSongEvent());
-      }
-      final queue = playerState is PlayerPlaying
-          ? playerState.queue
-          : (playerState is PlayerPaused ? playerState.queue : null);
-      if (queue != null) {
-        final qIndex = queue.indexWhere((s) => s.id == song.id);
-        if (qIndex != -1) playerBloc.add(RemoveFromQueueEvent(qIndex));
-      }
-
+      _removeFromPlayer(playerBloc);
       await StreamCacheService.instance.removeCachedSong(song.id);
       onCacheRemoved?.call();
-      messenger.showSnackBar(bar('Removed "${song.title}" from offline cache'));
+      messenger.showSnackBar(_snackBar('Removed "${song.title}" from offline cache'));
     } catch (e) {
-      messenger.showSnackBar(bar('Failed to remove from cache: $e'));
+      messenger.showSnackBar(_snackBar('Failed to remove from cache: $e'));
     }
   }
 

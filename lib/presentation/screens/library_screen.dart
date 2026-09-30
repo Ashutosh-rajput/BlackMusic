@@ -15,6 +15,7 @@ import 'package:vinyl/presentation/bloc/library/library_state.dart';
 import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
 import 'package:vinyl/presentation/bloc/player/player_event.dart';
 import 'package:vinyl/presentation/bloc/player/player_state.dart';
+import 'package:vinyl/presentation/screens/home_screen.dart';
 import 'package:vinyl/presentation/screens/player_screen.dart';
 import 'package:vinyl/presentation/screens/playlists_screen.dart';
 import 'package:vinyl/presentation/screens/category_detail_screen.dart';
@@ -40,14 +41,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   void initState() {
     super.initState();
-    // Rebuild on focus change so back-press handling stays in sync
-    _searchFocusNode.addListener(() {
-      if (mounted) setState(() {});
-    });
+    // Rebuild on focus or tab change so back-press handling stays in sync
+    _searchFocusNode.addListener(_rebuild);
+    HomeScreen.tabNotifier.addListener(_rebuild);
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    HomeScreen.tabNotifier.removeListener(_rebuild);
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -59,9 +64,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return PopScope(
-      // Back closes search (focus and/or results) instead of exiting the app
-      canPop: !_searchFocusNode.hasFocus &&
-          _searchController.text.trim().isEmpty,
+      // Back closes search (focus and/or results) instead of exiting the app.
+      // Tabs live in an IndexedStack, so only intercept while Library is shown.
+      canPop: HomeScreen.tabNotifier.value != 0 ||
+          (!_searchFocusNode.hasFocus && _searchController.text.trim().isEmpty),
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         _searchFocusNode.unfocus();

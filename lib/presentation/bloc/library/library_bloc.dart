@@ -100,9 +100,8 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     ScanStorageEvent event,
     Emitter<LibraryState> emit,
   ) async {
-    final currentPlaylists = state is LibraryLoaded
-        ? (state as LibraryLoaded).playlists
-        : const <PlaylistModel>[];
+    final previous = state is LibraryLoaded ? state as LibraryLoaded : null;
+    final currentPlaylists = previous?.playlists ?? const <PlaylistModel>[];
     emit(const LibraryLoading());
     try {
       await _permissionService.requestMusicPermission();
@@ -114,10 +113,21 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
       await _repository.saveSongsBatch(scannedSongs);
       // Reload all songs from repository (includes both scanned and previously saved songs)
       final allSongs = await _repository.getAllSongs();
+      // Keep the chip and any active search the user had before the rescan;
+      // otherwise the search box shows a query while the list shows everything.
+      final activeQuery = previous?.searchQuery.trim() ?? '';
+      final displayed = activeQuery.isEmpty
+          ? allSongs
+          : await _repository.searchSongs(activeQuery);
       emit(LibraryLoaded(
-          allSongs: allSongs,
-          displayedSongs: allSongs,
-          playlists: currentPlaylists));
+        allSongs: allSongs,
+        displayedSongs: displayed,
+        playlists: currentPlaylists,
+        searchQuery: activeQuery,
+        selectedCategory: previous?.selectedCategory ?? 'All',
+        onlineResults: previous?.onlineResults ?? const [],
+        jiosaavnResults: previous?.jiosaavnResults ?? const [],
+      ));
     } catch (e) {
       emit(LibraryError('Failed to scan storage: $e'));
     }

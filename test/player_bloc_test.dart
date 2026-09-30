@@ -247,6 +247,41 @@ void main() {
       expect((playerBloc.state as PlayerPlaying).song.id, equals(testSong2.id));
     });
 
+    Song track(int id) => Song(
+          id: id,
+          title: 'Track $id',
+          artist: 'Artist',
+          album: 'Album',
+          filePath: '/music/track$id.mp3',
+          duration: const Duration(minutes: 3),
+          dateModified: DateTime.now(),
+        );
+
+    test('Play Next on a song earlier in the queue puts it right after the current song', () async {
+      final a = track(10), b = track(11), c = track(12), d = track(13);
+      playerBloc.add(PlaySongEvent(c, queue: [a, b, c, d]));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      playerBloc.add(InsertNextEvent(a));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      final queue = (playerBloc.state as PlayerPlaying).queue.map((s) => s.id).toList();
+      expect(queue, equals([11, 12, 10, 13]));
+      // The player's own playlist must follow the same upcoming order.
+      expect(audioService.lastSyncedUpcoming?.map((s) => s.id).toList(), equals([10, 13]));
+    });
+
+    test('removing an upcoming song also removes it from the player playlist', () async {
+      final a = track(20), b = track(21), c = track(22);
+      playerBloc.add(PlaySongEvent(a, queue: [a, b, c]));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      playerBloc.add(const RemoveFromQueueEvent(1));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(audioService.lastSyncedUpcoming?.map((s) => s.id).toList(), equals([22]));
+    });
+
     test('a stale "completed" event during a new load does not skip the new song', () async {
       playerBloc.add(PlaySongEvent(testSong, queue: [testSong, testSong2]));
       await Future.delayed(const Duration(milliseconds: 50));

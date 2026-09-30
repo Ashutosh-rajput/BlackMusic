@@ -250,6 +250,34 @@ class AudioPlayerService {
     }
   }
 
+  /// Replaces everything after [current] in the player's playlist with
+  /// [upcoming], so natural track changes follow the app's queue order after
+  /// "Play Next", removals, reordering or shuffle. The playing item is never
+  /// touched, so playback does not restart.
+  Future<void> syncUpcoming(Song current, List<Song> upcoming) async {
+    if (_audioPlayer == null) return;
+    final sequence = player.sequence;
+    final index = player.currentIndex;
+    if (sequence.isEmpty || index == null || index >= sequence.length) return;
+    final tag = sequence[index].tag;
+    // Only sync while the player is actually on the app's current song.
+    if (tag is! MediaItem || tag.id != current.id.toString()) return;
+    try {
+      if (index + 1 < sequence.length) {
+        await player.removeAudioSourceRange(index + 1, sequence.length);
+      }
+      final playable = upcoming
+          .where((s) => s.filePath.trim().isNotEmpty && s.id != current.id)
+          .take(_maxWindowSize)
+          .toList();
+      if (playable.isNotEmpty) {
+        await player.addAudioSources(playable.map(_buildAudioSource).toList());
+      }
+    } catch (e) {
+      _logger.w('AudioPlayerService: Error syncing upcoming songs: $e');
+    }
+  }
+
   Future<void> setLoopMode(LoopMode mode) => player.setLoopMode(mode);
 
   Future<void> pause() => player.pause();

@@ -78,7 +78,10 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   }
 
   void _handleTabChange() {
-    if (mounted && HomeScreen.tabNotifier.value == 1) {
+    if (!mounted) return;
+    // Rebuild so the search back-handler only applies while this tab is shown.
+    setState(() {});
+    if (HomeScreen.tabNotifier.value == 1) {
       _loadLastPlayedSongs();
     }
   }
@@ -737,7 +740,9 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
 
     if (_isSearching) {
       return PopScope(
-        canPop: false,
+        // Tabs live in an IndexedStack, so this stays registered while hidden;
+        // only intercept back when the Stream tab is the one on screen.
+        canPop: HomeScreen.tabNotifier.value != 1,
         onPopInvokedWithResult: (didPop, result) {
           if (!didPop) _stopSearch();
         },
@@ -823,6 +828,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         ),
       ),
       body: BlocListener<PlayerBloc, PlayerState>(
+        // Only react when a new song starts. PlayerPlaying is re-emitted for
+        // every position tick; rebuilding this screen and querying the DB on
+        // each tick made the whole app lag.
+        listenWhen: (previous, current) =>
+            current is PlayerPlaying &&
+            (previous is! PlayerPlaying || previous.song.id != current.song.id),
         listener: (context, state) {
           if (state is PlayerPlaying) {
             final song = state.song;
