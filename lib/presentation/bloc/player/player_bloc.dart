@@ -45,6 +45,23 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   // Only that request may clear the flag, so a stale request can't unlock a
   // newer load, and a request cancelled by pause/stop can't leave it stuck.
   int _changingSongOwner = 0;
+  // The song the user last picked themselves (tap in a list, queue jump,
+  // radio). Autoplay seeds from it so recommendations stay on what the user
+  // chose instead of chaining off its own earlier picks.
+  Song? _autoplayAnchor;
+  // Songs Autoplay appended after the user's own queue. Kept apart so they
+  // are never shuffled in among the user's songs.
+  final Set<int> _autoplayIds = {};
+
+  /// True for songs that belong to the Library (imported or downloaded),
+  /// false for Stream songs (including ones cached for offline). Autoplay
+  /// never mixes the two: Library continues from Library, Stream from Stream.
+  static bool _isLibrarySong(Song s) {
+    if (s.genre == 'Downloaded' || s.album == 'YouTube Downloads') return true;
+    if (s.source == 'jiosaavn') return false;
+    final path = s.filePath.trim();
+    return path.isNotEmpty && !path.startsWith('http://') && !path.startsWith('https://');
+  }
   bool _isExpandingQueue = false;
 
   void _showToast(String message) {
@@ -419,13 +436,10 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   Song? _getNextSong(Song current) {
     final validQueue = _queue.where((s) => s.filePath.trim().isNotEmpty || s.source == 'jiosaavn').toList();
     if (validQueue.isEmpty) return null;
-    if (_isShuffle && validQueue.length > 1) {
-      final available = validQueue.where((s) => s.id != current.id).toList();
-      if (available.isNotEmpty) {
-        available.shuffle();
-        return available.first;
-      }
-    }
+    // With shuffle on, _queue itself is already in shuffled order (see
+    // _applyShuffleQueueState / _onPlaySong), so "next" is simply the next
+    // entry. Picking a random song here as well repeated songs and pulled
+    // Autoplay songs in before the user's own songs had finished.
     final currentIndex = validQueue.indexWhere((s) => s.id == current.id);
     if (currentIndex != -1 && currentIndex < validQueue.length - 1) {
       return validQueue[currentIndex + 1];
@@ -445,12 +459,21 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       if (valid.isNotEmpty) {
         _queue = List.from(valid);
         _originalQueue = List.from(valid);
+        _autoplayIds.clear();
+        if (_isShuffle) {
+          // Shuffle order is stored in the queue itself: tapped song first,
+          // then the rest in random order, each played exactly once.
+          _queue.shuffle();
+          _queue.removeWhere((s) => s.id == event.song.id);
+          _queue.insert(0, event.song);
+        }
       }
     } else if (!_queue.any((s) => s.id == event.song.id)) {
       _queue.add(event.song);
       _originalQueue.add(event.song);
     }
     _consecutiveFailures = 0;
+    _autoplayAnchor = event.song;
     await _playSongInternal(event.song, emit);
     add(const AutoExpandQueueEvent());
   }
@@ -460,6 +483,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     if (validSongs.isEmpty) return;
     _queue = List.from(validSongs);
     _originalQueue = List.from(validSongs);
+    _autoplayIds.clear();
 
     final safeIndex = event.initialIndex.clamp(0, validSongs.length - 1);
     final targetSong = validSongs[safeIndex];
@@ -472,6 +496,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
     _consecutiveFailures = 0;
     _currentSong = null;
+    _autoplayAnchor = targetSong;
     await _playSongInternal(targetSong, emit);
     add(const AutoExpandQueueEvent());
   }
@@ -479,6 +504,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   Future<void> _onPlaySongAtIndex(PlaySongAtIndexEvent event, Emitter<PlayerState> emit) async {
     if (event.index < 0 || event.index >= _queue.length) return;
     _consecutiveFailures = 0;
+    _autoplayAnchor = _queue[event.index];
     await _playSongInternal(_queue[event.index], emit);
     add(const AutoExpandQueueEvent());
   }
@@ -584,6 +610,13 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _emitUpdatedQueueState(emit);
   }
 
+  /// The user's Streaming Language setting, read fresh so a change in
+  /// Settings applies to the next Radio / Autoplay fetch.
+  String get _streamLanguage {
+    final lang = _settingsService?.streamLanguage.trim() ?? '';
+    return lang.isNotEmpty ? lang : 'hindi';
+  }
+
   Future<void> _onStartRadio(StartRadioEvent event, Emitter<PlayerState> emit) async {
     final currentSong = _currentSong ?? event.song;
     _showToast('Starting radio for "${currentSong.title}"...');
@@ -597,6 +630,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         currentSong: currentSong,
         queue: _queue,
         recentHistory: recent,
+        lang: _streamLanguage,
         limit: 25,
       );
 
@@ -619,6 +653,8 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       }
 
       // Populate queue with current track followed by radio tracks
+      _autoplayAnchor = currentSong;
+      _autoplayIds.clear();
       _queue = [currentSong, ...radioSongs];
       _originalQueue = List.from(_queue);
 
@@ -788,6 +824,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       }
 
       _currentSong = song;
+      _autoplayAnchor = song;
       _queue = [song];
       _originalQueue = [song];
 
@@ -891,6 +928,15 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _applyShuffleQueueState() {
+    // Drop upcoming Autoplay songs so they are never shuffled in among the
+    // user's own songs. Autoplay adds fresh ones when the user's queue ends.
+    if (_autoplayIds.isNotEmpty) {
+      final currentId = _currentSong?.id;
+      bool isUpcomingAutoplay(Song s) => s.id != currentId && _autoplayIds.contains(s.id);
+      _queue.removeWhere(isUpcomingAutoplay);
+      _originalQueue.removeWhere(isUpcomingAutoplay);
+      _autoplayIds.removeWhere((id) => id != currentId);
+    }
     if (_isShuffle && _queue.isNotEmpty) {
       if (_originalQueue.isEmpty) {
         _originalQueue = List.from(_queue);
@@ -1029,8 +1075,15 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     await _expandQueueInternal(emit);
   }
 
+  /// Whether Autoplay may add songs right now.
+  bool get _autoplaySimilarAllowed =>
+      _autoPlayNext &&
+      (_settingsService?.autoplaySimilar ?? true) &&
+      // Repeat One replays the song; Repeat All loops the user's own queue.
+      _repeatMode == 'Off';
+
   Future<void> _expandQueueInternal(Emitter<PlayerState> emit, {bool force = false}) async {
-    if (!_autoPlayNext || _repeatMode == 'One' || _isExpandingQueue) return;
+    if (!_autoplaySimilarAllowed || _isExpandingQueue) return;
     if (_queue.isEmpty) return;
 
     final currentId = _currentSong?.id;
@@ -1038,50 +1091,28 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         ? _queue.indexWhere((s) => s.id == currentId)
         : -1;
 
-    // Expand whenever we are within 3 tracks of the end of the queue or forced at queue end
+    // Only top up once the user's own queue is about to run out (on its
+    // last song), so Autoplay never lands in the middle of an album,
+    // playlist or folder the user chose. One song of lead time is enough
+    // to have the next track ready.
     final remaining = currentIndex != -1 ? (_queue.length - 1 - currentIndex) : 0;
-    if (!force && remaining > 3) return;
+    if (!force && remaining > 0) return;
 
     _isExpandingQueue = true;
     try {
-      // Use the seed with highest quality: current song if at last position, else last in queue
-      final seedSong = (_queue.isNotEmpty && _queue.last.title.trim().isNotEmpty) ? _queue.last : _currentSong;
+      // Seed from the song the user actually chose, not the last queued song.
+      // The last song is usually one Autoplay added itself, so seeding from
+      // it made each refill a guess based on the previous guess, drifting
+      // further from the user's taste every round.
+      final seedSong = _autoplayAnchor ?? _currentSong;
       if (seedSong == null) return;
 
-      final recent = _repository != null
-          ? await _repository.getLastPlayedStreamSongs(limit: 20)
-          : <Song>[];
-
-      List<Song> recs = await UserTasteService.instance.getRecommendations(
-        context: RecommendationContext.autoplay,
-        currentSong: seedSong,
-        queue: _queue,
-        recentHistory: recent,
-        lang: 'hindi',
-        limit: 15,
-      );
-
-      // Fallback 1: Stream cache (already have resolved URLs)
-      if (recs.isEmpty) {
-        final cached = StreamCacheService.instance.getCachedSongs();
-        if (cached.isNotEmpty) {
-          final existingIds = _queue.map((s) => s.id).toSet();
-          recs = cached.where((s) => !existingIds.contains(s.id)).take(15).toList();
-        }
-      }
-
-      // Fallback 2: Local library songs (already have file paths)
-      if (recs.isEmpty && _repository != null) {
-        final localSongs = await _repository.getAllSongs();
-        if (localSongs.isNotEmpty) {
-          final existingIds = _queue.map((s) => s.id).toSet();
-          final available = localSongs.where((s) => !existingIds.contains(s.id)).toList();
-          if (available.isNotEmpty) {
-            available.shuffle();
-            recs = available.take(15).toList();
-          }
-        }
-      }
+      // Stream ≠ Library: a Library song continues from the Library only
+      // (works offline, never a failing stream URL); a Stream song continues
+      // from Stream only.
+      final recs = _isLibrarySong(seedSong)
+          ? await _libraryAutoplaySongs(seedSong)
+          : await _streamAutoplaySongs(seedSong);
 
       if (recs.isNotEmpty) {
         final existingIds = _queue.map((s) => s.id).toSet();
@@ -1112,6 +1143,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
           _queue.addAll(newTracks);
           _originalQueue.addAll(newTracks);
+          _autoplayIds.addAll(newTracks.map((s) => s.id));
 
           if (playableTracks.isNotEmpty) {
             await _audioService.addSongsToQueue(playableTracks);
@@ -1125,6 +1157,86 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     } finally {
       _isExpandingQueue = false;
     }
+  }
+
+  /// Devotional / kids songs only follow a song of the same kind.
+  static bool _sameContentKind(Song seed, Song candidate) {
+    final category = ContentClassifier.ofSong(candidate);
+    return category == null || category == ContentClassifier.ofSong(seed);
+  }
+
+  /// Autoplay for a Stream song: PulseIQ recommendations, or (offline /
+  /// no results) songs from the offline stream cache. Never Library songs.
+  Future<List<Song>> _streamAutoplaySongs(Song seed) async {
+    final recent = _repository != null
+        ? await _repository.getLastPlayedStreamSongs(limit: 20)
+        : <Song>[];
+
+    final recs = await UserTasteService.instance.getRecommendations(
+      context: RecommendationContext.autoplay,
+      currentSong: seed,
+      queue: _queue,
+      recentHistory: recent,
+      lang: _streamLanguage,
+      limit: 15,
+    );
+    if (recs.isNotEmpty) return recs;
+
+    final existingIds = _queue.map((s) => s.id).toSet();
+    return StreamCacheService.instance
+        .getCachedSongs()
+        .where((s) => !existingIds.contains(s.id) && _sameContentKind(seed, s))
+        .take(15)
+        .toList();
+  }
+
+  /// Autoplay for a Library song, from the Library only: same artist first,
+  /// then the same album, then the user's most-played songs. Never random
+  /// songs, never Stream songs.
+  Future<List<Song>> _libraryAutoplaySongs(Song seed) async {
+    if (_repository == null) return const [];
+    final all = await _repository.getAllSongs();
+    final existingIds = _queue.map((s) => s.id).toSet();
+    final pool = all
+        .where((s) =>
+            !existingIds.contains(s.id) &&
+            _isLibrarySong(s) &&
+            s.duration >= const Duration(seconds: 30) &&
+            _sameContentKind(seed, s))
+        .toList();
+    if (pool.isEmpty) return const [];
+
+    final picked = <Song>[];
+    final pickedIds = <int>{};
+    void take(Iterable<Song> songs, int max) {
+      for (final s in songs) {
+        if (picked.length >= 15 || max <= 0) return;
+        if (pickedIds.add(s.id)) {
+          picked.add(s);
+          max--;
+        }
+      }
+    }
+
+    final seedArtists = UserTasteService.parseArtistTokens(seed.artist).toSet();
+    if (seedArtists.isNotEmpty) {
+      take(
+        pool.where((s) => UserTasteService.parseArtistTokens(s.artist).any(seedArtists.contains)).toList()..shuffle(),
+        8,
+      );
+    }
+
+    const genericAlbums = {'', 'unknown', '<unknown>', 'youtube downloads', 'downloads', 'music', 'download'};
+    final seedAlbum = seed.album.trim().toLowerCase();
+    if (!genericAlbums.contains(seedAlbum)) {
+      take(pool.where((s) => s.album.trim().toLowerCase() == seedAlbum), 4);
+    }
+
+    final mostPlayed = pool.where((s) => s.playCount > 0).toList()
+      ..sort((a, b) => b.playCount.compareTo(a.playCount));
+    take(mostPlayed, 15);
+
+    return picked;
   }
 
   /// Resolves stream URLs for JioSaavn tracks in parallel (at most 6 concurrent).

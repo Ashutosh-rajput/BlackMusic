@@ -773,5 +773,153 @@ void main() {
       expect(service.trackedSongCount, equals(0));
       expect(service.trackedArtistCount, equals(0));
     });
+
+    test('Preferred artist boosts the artist but never appears as a song', () async {
+      await service.init();
+      await service.addPreferredArtist('Arijit Singh');
+
+      // Not a song: not counted, not listed, not a searched song.
+      expect(service.trackedSongCount, equals(0));
+      expect(service.getTrackedSongs(), isEmpty);
+      expect(service.getSearchPlayedInteractions(), isEmpty);
+
+      // Still boosts the artist.
+      expect(service.isSearchPlayedArtist('arijit singh'), isTrue);
+      expect(service.getTopArtists(), contains('arijit singh'));
+
+      // And never leaks into Home recommendations as a fake track.
+      final recs = await service.getCandidateRecommendations(context: RecommendationContext.home);
+      expect(recs.any((r) => r.title == 'Top Artist Selection' || r.id == '0'), isFalse);
+    });
+
+    group('Off-topic content guard', () {
+      JioSaavnItem item(String id, String title, String artist) => JioSaavnItem(
+            type: 'song',
+            id: id,
+            token: id,
+            title: title,
+            subtitle: artist,
+            imageUrl: '',
+            duration: '240',
+            language: 'hindi',
+          );
+
+      final mixedPool = [
+        item('b1', 'Channa Mereya', 'Arijit Singh'),
+        item('b2', 'Tum Se Hi', 'Mohit Chauhan'),
+        item('d1', 'Om Jai Jagdish Hare Aarti', 'Anuradha Paudwal'),
+        item('k1', 'Motu Patlu Title Song', 'Nickelodeon Kids'),
+        item('b3', 'Kabira', 'Tochi Raina, Rekha Bhardwaj'),
+      ];
+
+      UserTasteService serviceWithPool() => UserTasteService(
+            clock: () => currentTime,
+            storageFile: tempFile,
+            searchSongs: (q) async => const [],
+            fetchSuggestions: (id, {limit = 10}) async => mixedPool,
+          );
+
+      final bollywoodSeed = Song(
+        id: 1001,
+        mediaId: 'seed_1',
+        title: 'Kesariya',
+        artist: 'Arijit Singh',
+        album: 'Brahmastra',
+        filePath: 'https://example.com/kesariya.mp4',
+        duration: const Duration(seconds: 268),
+        dateModified: DateTime(2026, 1, 1),
+        source: 'jiosaavn',
+      );
+
+      test('classifier recognises devotional and kids tracks, not film songs', () {
+        expect(ContentClassifier.classify('Om Jai Jagdish Hare Aarti'), ContentCategory.devotional);
+        expect(ContentClassifier.classify('Hanuman Chalisa'), ContentCategory.devotional);
+        expect(ContentClassifier.classify('Motu Patlu Title Song'), ContentCategory.kids);
+        expect(ContentClassifier.classify('Johny Johny Yes Papa Nursery Rhymes'), ContentCategory.kids);
+        expect(ContentClassifier.classify('Channa Mereya Arijit Singh'), isNull);
+        expect(ContentClassifier.classify('Kesariya Brahmastra'), isNull);
+      });
+
+      test('Bollywood autoplay never adds an aarti or a cartoon theme', () async {
+        final svc = serviceWithPool();
+        final recs = await svc.getCandidateRecommendations(
+          context: RecommendationContext.autoplay,
+          currentSong: bollywoodSeed,
+        );
+        final ids = recs.map((r) => r.id).toSet();
+        expect(ids, containsAll(['b1', 'b2', 'b3']));
+        expect(ids.contains('d1'), isFalse);
+        expect(ids.contains('k1'), isFalse);
+      });
+
+      test('devotional autoplay still gets devotional tracks', () async {
+        final svc = serviceWithPool();
+        final aartiSeed = bollywoodSeed.copyWith(
+          id: 1002,
+          mediaId: 'seed_2',
+          title: 'Hanuman Chalisa',
+          artist: 'Hariharan',
+          album: 'Shree Hanuman Chalisa',
+        );
+        final recs = await svc.getCandidateRecommendations(
+          context: RecommendationContext.autoplay,
+          currentSong: aartiSeed,
+        );
+        expect(recs.map((r) => r.id), contains('d1'));
+        expect(recs.map((r) => r.id).contains('k1'), isFalse);
+      });
+
+      test('a kids track the user searched for is allowed in recommendations', () async {
+        final svc = serviceWithPool();
+        svc.recordSearchPlay(Song(
+          id: 1003,
+          title: 'Chhota Bheem Title Track',
+          artist: 'Kids Channel',
+          album: 'Chhota Bheem',
+          filePath: '',
+          duration: const Duration(seconds: 120),
+          dateModified: DateTime(2026, 1, 1),
+          source: 'jiosaavn',
+        ));
+        final recs = await svc.getCandidateRecommendations(
+          context: RecommendationContext.autoplay,
+          currentSong: bollywoodSeed,
+        );
+        expect(recs.map((r) => r.id), contains('k1'));
+        expect(recs.map((r) => r.id).contains('d1'), isFalse);
+      });
+    });
+
+    test('findBestSeedMatch returns null instead of an unrelated first result', () {
+      final seed = Song(
+        id: 900,
+        title: 'Tum Hi Ho',
+        artist: 'Arijit Singh',
+        album: 'Aashiqui 2',
+        filePath: '/music/tum_hi_ho.mp3',
+        duration: const Duration(seconds: 262),
+        dateModified: DateTime.now(),
+      );
+      final unrelated = [
+        JioSaavnItem(
+          type: 'album',
+          id: 'alb_1',
+          token: 'alb_1',
+          title: 'Some Album',
+          subtitle: 'Various',
+          imageUrl: '',
+        ),
+        JioSaavnItem(
+          type: 'song',
+          id: 'x_1',
+          token: 'x_1',
+          title: 'Completely Different Track',
+          subtitle: 'Other Band',
+          imageUrl: '',
+          duration: '100',
+        ),
+      ];
+      expect(UserTasteService.findBestSeedMatch(seed, unrelated), isNull);
+    });
   });
 }

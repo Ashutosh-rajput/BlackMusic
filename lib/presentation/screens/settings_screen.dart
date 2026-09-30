@@ -28,6 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Playback State
   late bool _autoPlayNext;
+  late bool _autoplaySimilar;
   late String _repeatMode;
   late bool _shuffleByDefault;
   late bool _resumeLastSong;
@@ -94,6 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _streamCacheLimit = _settingsService.streamCacheLimit;
     _supportBannerEnabled = _settingsService.isSupportBannerEnabled;
     _autoPlayNext = _settingsService.autoPlayNext;
+    _autoplaySimilar = _settingsService.autoplaySimilar;
     _repeatMode = _settingsService.repeatMode;
     _shuffleByDefault = _settingsService.shuffleByDefault;
     _resumeLastSong = _settingsService.resumeLastSong;
@@ -177,7 +179,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               SwitchListTile(
                 title: _tileTitle('Auto Play Next'),
-                subtitle: _tileSubtitle('Automatically queue next track when current ends'),
+                subtitle: _tileSubtitle('Play the next song in the queue when the current one ends'),
                 value: _autoPlayNext,
                 activeThumbColor: _accentColor,
                 onChanged: (val) {
@@ -185,6 +187,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _settingsService.setAutoPlayNext(val);
                   context.read<PlayerBloc>().add(SetAutoPlayNextEvent(val));
                 },
+              ),
+              _divider(),
+              SwitchListTile(
+                title: _tileTitle('Autoplay Similar Songs'),
+                subtitle: _tileSubtitle(
+                    'When your queue ends, keep playing similar songs. Library songs continue from your library, Stream songs from Stream.'),
+                value: _autoplaySimilar,
+                activeThumbColor: _accentColor,
+                onChanged: _autoPlayNext
+                    ? (val) {
+                        setState(() => _autoplaySimilar = val);
+                        _settingsService.setAutoplaySimilar(val);
+                      }
+                    : null,
               ),
               _divider(),
               ListTile(

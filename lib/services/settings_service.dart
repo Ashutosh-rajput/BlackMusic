@@ -35,6 +35,7 @@ class SettingsService {
 
   // Keys
   static const _keyAutoPlayNext = 'setting_auto_play_next';
+  static const _keyAutoplaySimilar = 'setting_autoplay_similar';
   static const _keyRepeatMode = 'setting_repeat_mode';
   static const _keyShuffleByDefault = 'setting_shuffle_default';
   static const _keyResumeLastSong = 'setting_resume_last';
@@ -98,6 +99,8 @@ class SettingsService {
   bool get hasSeenAppIntro => _prefs.getBool(_keyHasSeenAppIntro) ?? false;
   Future<void> setHasSeenAppIntro(bool value) => _prefs.setBool(_keyHasSeenAppIntro, value);
   bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
+  /// Keep playing similar songs once the user's own queue has finished.
+  bool get autoplaySimilar => _prefs.getBool(_keyAutoplaySimilar) ?? true;
   String get repeatMode => _prefs.getString(_keyRepeatMode) ?? 'Off';
   bool get shuffleByDefault => _prefs.getBool(_keyShuffleByDefault) ?? false;
   bool get resumeLastSong => _prefs.getBool(_keyResumeLastSong) ?? true;
@@ -137,6 +140,7 @@ class SettingsService {
 
   // Setters
   Future<void> setAutoPlayNext(bool value) => _prefs.setBool(_keyAutoPlayNext, value);
+  Future<void> setAutoplaySimilar(bool value) => _prefs.setBool(_keyAutoplaySimilar, value);
   Future<void> setRepeatMode(String value) => _prefs.setString(_keyRepeatMode, value);
   Future<void> setShuffleByDefault(bool value) => _prefs.setBool(_keyShuffleByDefault, value);
   Future<void> setResumeLastSong(bool value) => _prefs.setBool(_keyResumeLastSong, value);

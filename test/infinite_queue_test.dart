@@ -83,10 +83,24 @@ void main() {
       expect(playing.queue.length, equals(10));
     });
 
-    test('Queue automatically expands when remaining songs <= 3', () async {
-      // 5 songs in queue, playing index 2 (Song 3) -> remaining = 5 - 1 - 2 = 2 <= 3
+    test('Queue does not expand while the user\'s own songs are still ahead', () async {
+      // 5 songs, playing index 2 -> 2 of the user's songs still to come.
       final initialQueue = List.generate(5, (i) => createSong(i + 1, 'Song ${i + 1}'));
       playerBloc.add(PlayQueueEvent(initialQueue, initialIndex: 2));
+
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == 3)),
+      );
+      await Future.delayed(const Duration(milliseconds: 150));
+
+      final state = playerBloc.state as PlayerPlaying;
+      expect(state.queue.length, equals(5));
+    });
+
+    test('Queue automatically expands once the last song of the user\'s queue plays', () async {
+      final initialQueue = List.generate(5, (i) => createSong(i + 1, 'Song ${i + 1}'));
+      playerBloc.add(PlayQueueEvent(initialQueue, initialIndex: 4));
 
       await expectLater(
         playerBloc.stream,
@@ -149,7 +163,7 @@ void main() {
         createSong(11, 'Second Song', artist: 'Artist'),
       ];
 
-      playerBloc.add(PlayQueueEvent(initialQueue, initialIndex: 0));
+      playerBloc.add(PlayQueueEvent(initialQueue, initialIndex: 1));
 
       await expectLater(
         playerBloc.stream,
@@ -230,6 +244,74 @@ void main() {
           return false;
         })),
       );
+    });
+
+    test('A Library song never gets Stream songs appended by Autoplay', () async {
+      final librarySong = Song(
+        id: 501,
+        title: 'Local Track',
+        artist: 'Seed Artist',
+        album: 'My Folder',
+        filePath: '/storage/emulated/0/Music/local_track.mp3',
+        duration: const Duration(minutes: 3),
+        dateModified: DateTime.now(),
+        source: 'local',
+      );
+      playerBloc.add(PlaySongEvent(librarySong, queue: [librarySong]));
+
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == 501)),
+      );
+      await Future.delayed(const Duration(milliseconds: 150));
+
+      final state = playerBloc.state as PlayerPlaying;
+      expect(state.queue.any((s) => s.source == 'jiosaavn'), isFalse);
+    });
+
+    test('Repeat All loops the user\'s queue instead of appending Autoplay songs', () async {
+      playerBloc.add(const SetRepeatModeEvent('All'));
+      final initialQueue = List.generate(3, (i) => createSong(i + 1, 'Song ${i + 1}'));
+      playerBloc.add(PlayQueueEvent(initialQueue, initialIndex: 2));
+
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == 3)),
+      );
+      await Future.delayed(const Duration(milliseconds: 150));
+
+      expect((playerBloc.state as PlayerPlaying).queue.length, equals(3));
+
+      playerBloc.add(const NextSongEvent());
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == 1)),
+      );
+    });
+
+    test('Shuffle plays every song of the user\'s queue exactly once before Autoplay', () async {
+      playerBloc.add(const SetShuffleEvent(true));
+      final initialQueue = List.generate(6, (i) => createSong(i + 1, 'Song ${i + 1}'));
+      playerBloc.add(PlaySongEvent(initialQueue.first, queue: initialQueue));
+
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == 1)),
+      );
+
+      final played = <int>[1];
+      for (var i = 0; i < 5; i++) {
+        final before = (playerBloc.state as PlayerPlaying).song.id;
+        playerBloc.add(const NextSongEvent());
+        await expectLater(
+          playerBloc.stream,
+          emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id != before)),
+        );
+        played.add((playerBloc.state as PlayerPlaying).song.id);
+      }
+
+      // All six user songs, no repeats, no Autoplay song mixed in.
+      expect(played.toSet(), equals({1, 2, 3, 4, 5, 6}));
     });
 
     test('UserTasteService returns JioSaavn recommendations even when filePath is initially unpopulated', () async {

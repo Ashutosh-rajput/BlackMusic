@@ -95,6 +95,14 @@ class SongInteraction {
   // 30-day half life decay: lambda = ln(2) / 30 ~= 0.0231049
   static const double _lambda = 0.0231049;
 
+  /// Key prefix of entries created by "add preferred artist".
+  static const String artistPreferencePrefix = 'artist_pref:';
+
+  /// True for a manually added preferred artist. These only feed artist
+  /// affinity; they are not real songs and must never be recommended,
+  /// used as a seed, or counted as a tracked song.
+  bool get isArtistPreference => trackKey.startsWith(artistPreferencePrefix);
+
   void _decayAccumulators(DateTime now) {
     if (now.isBefore(lastInteraction)) return;
     final days = now.difference(lastInteraction).inSeconds / 86400.0;
@@ -239,6 +247,42 @@ class SongInteraction {
 
 typedef SearchSongsFn = Future<List<JioSaavnItem>> Function(String query);
 typedef FetchSuggestionsFn = Future<List<JioSaavnItem>> Function(String id, {int limit});
+typedef FetchNewReleasesFn = Future<List<JioSaavnItem>> Function({String lang});
+
+/// Kinds of tracks that should never follow unrelated music (e.g. an aarti or
+/// a cartoon theme after a Bollywood song) unless the user listens to them.
+enum ContentCategory { devotional, kids }
+
+/// Detects devotional and kids content from a track's title / artist / album.
+class ContentClassifier {
+  static final RegExp _devotional = RegExp(
+    r'\b(aarti|arti|aarati|bhajan|bhajans|chalisa|mantra|mantras|stotram|stotra|'
+    r'kirtan|bhakti|amritwani|satsang|jaap|jap|vandana|stuti|aradhana|'
+    r'om jai|jai jagdish|hanuman|ganpati aarti|shiv tandav|gayatri|sai baba|'
+    r'krishna bhajan|mata ki|jai mata|jai ambe|shri ram jai|devotional)\b',
+    caseSensitive: false,
+  );
+
+  static final RegExp _kids = RegExp(
+    r'\b(rhymes?|nursery|lullaby|lori|cartoon|kids|children|baby shark|'
+    r'motu patlu|chhota bheem|chota bheem|doraemon|shinchan|peppa|'
+    r'bal geet|balgeet|poem for kids|theme song|kids song)\b',
+    caseSensitive: false,
+  );
+
+  static ContentCategory? classify(String text) {
+    if (text.trim().isEmpty) return null;
+    if (_kids.hasMatch(text)) return ContentCategory.kids;
+    if (_devotional.hasMatch(text)) return ContentCategory.devotional;
+    return null;
+  }
+
+  static ContentCategory? ofItem(JioSaavnItem item) =>
+      classify('${item.title} ${item.subtitle} ${item.music ?? ''}');
+
+  static ContentCategory? ofSong(Song song) =>
+      classify('${song.title} ${song.artist} ${song.album}');
+}
 
 /// PulseIQ On-Device Taste Profiler and Candidate Recommendation Engine.
 class UserTasteService {
@@ -249,6 +293,7 @@ class UserTasteService {
   final DateTime Function() _clock;
   final SearchSongsFn _searchSongs;
   final FetchSuggestionsFn _fetchSuggestions;
+  final FetchNewReleasesFn _fetchNewReleases;
   File? _storageFile;
 
   // Stored by canonical trackKey
@@ -268,10 +313,15 @@ class UserTasteService {
     DateTime Function()? clock,
     SearchSongsFn? searchSongs,
     FetchSuggestionsFn? fetchSuggestions,
+    FetchNewReleasesFn? fetchNewReleases,
     File? storageFile,
   })  : _clock = clock ?? DateTime.now,
         _searchSongs = searchSongs ?? JioSaavnDecoder.searchSongs,
         _fetchSuggestions = fetchSuggestions ?? JioSaavnDecoder.fetchSongSuggestions,
+        // When search is injected (tests) and no chart source is, don't hit
+        // the network for charts; fall back to the injected search instead.
+        _fetchNewReleases = fetchNewReleases ??
+            (searchSongs == null ? JioSaavnDecoder.fetchNewReleases : ({String lang = ''}) async => const []),
         _storageFile = storageFile {
     _instance = this;
   }
@@ -419,10 +469,10 @@ class UserTasteService {
     debugPrint('PulseIQ: High-intent search play recorded for "${song.title}" (searchCount: ${interaction.searchPlayCount})');
   }
 
-  /// Returns all interactions that have been searched and played, ordered by recency.
+  /// Returns all songs that have been searched and played, ordered by recency.
   List<SongInteraction> getSearchPlayedInteractions() {
     return _interactions.values
-        .where((i) => i.searchPlayCount > 0)
+        .where((i) => i.searchPlayCount > 0 && !i.isArtistPreference)
         .toList()
       ..sort((a, b) => b.lastInteraction.compareTo(a.lastInteraction));
   }
@@ -544,7 +594,8 @@ class UserTasteService {
 
   // --- Taste Metrics & Candidate Scoring ---
 
-  int get trackedSongCount => _interactions.length;
+  int get trackedSongCount =>
+      _interactions.values.where((i) => !i.isArtistPreference).length;
   int get trackedArtistCount {
     _recalculateArtistAffinities();
     return _artistAffinities.length;
@@ -553,7 +604,7 @@ class UserTasteService {
   /// Returns tracked songs sorted by affinity score descending.
   List<SongInteraction> getTrackedSongs({String? query}) {
     final now = _clock();
-    var list = _interactions.values.toList()
+    var list = _interactions.values.where((i) => !i.isArtistPreference).toList()
       ..sort((a, b) => b.computeAffinityScore(now).compareTo(a.computeAffinityScore(now)));
 
     if (query != null && query.trim().isNotEmpty) {
@@ -636,7 +687,7 @@ class UserTasteService {
     if (tokens.isEmpty) return;
 
     final primaryToken = tokens.first;
-    final dummyKey = 'artist_pref:$primaryToken';
+    final dummyKey = '${SongInteraction.artistPreferencePrefix}$primaryToken';
     final now = _clock();
 
     _interactions[dummyKey] = SongInteraction(
@@ -841,10 +892,14 @@ class UserTasteService {
     // Phase 2: Fill exploration slots with novel artists not yet selected (Finding 4)
     if (totalExplorationSlots > 0 && selected.length < maxResults && remaining.isNotEmpty) {
       final existingArtists = selected.map((s) => parseArtistTokens(s.subtitle).firstOrNull ?? '').toSet();
+      // Best-scoring new artists first, not whatever happens to be first in
+      // the pool (that picked the least related songs on purpose).
       final novelCandidates = remaining.where((c) {
         final artist = parseArtistTokens(c.subtitle).firstOrNull ?? '';
         return artist.isNotEmpty && !existingArtists.contains(artist);
-      }).take(totalExplorationSlots).toList();
+      }).toList()
+        ..sort((a, b) => (normalizedScores[b] ?? 0.0).compareTo(normalizedScores[a] ?? 0.0));
+      novelCandidates.removeRange(min(totalExplorationSlots, novelCandidates.length), novelCandidates.length);
 
       for (final novel in novelCandidates) {
         if (selected.length >= maxResults) break;
@@ -951,7 +1006,10 @@ class UserTasteService {
       }
     }
 
-    return bestScore >= 0.40 ? bestMatch : candidates.first;
+    // No convincing match: return nothing rather than an unrelated first
+    // result (which could even be an album/artist). Callers then fall back to
+    // artist / language based candidates instead of seeding from a wrong song.
+    return bestScore >= 0.40 ? bestMatch : null;
   }
 
   static String _cleanText(String text) {
@@ -1135,22 +1193,29 @@ class UserTasteService {
           }
         }
 
-        // Fallback to top artist if single-seed suggestions are sparse
+        // Fallback to the user's top artist if single-seed suggestions are
+        // sparse. The playing song's own artist field is only trusted for
+        // JioSaavn songs: for YouTube downloads it is the channel name (e.g.
+        // "T-Series"), and searching that returns aartis and bhajans.
         if (pool.length < 5) {
           final topArtists = getTopArtists(limit: 3);
           final fallbackArtist = topArtists.isNotEmpty
               ? topArtists.first
-              : (currentSong != null ? currentSong.artist : lang);
+              : (currentSong != null && currentSong.source == 'jiosaavn' ? currentSong.artist : '');
           if (fallbackArtist.isNotEmpty && fallbackArtist.toLowerCase() != 'unknown') {
             final artistResults = await _searchSongs(fallbackArtist);
             pool.addAll(artistResults.where((i) => i.isSong));
           }
         }
 
-        // Fallback to preferred language songs if pool is still empty
+        // Last resort: current releases in the user's language. Searching the
+        // literal word ("hindi") matched random devotional / kids tracks.
         if (pool.isEmpty) {
           final effectiveLang = lang.isNotEmpty ? lang : 'hindi';
-          final langResults = await _searchSongs(effectiveLang);
+          var langResults = await _fetchNewReleases(lang: effectiveLang);
+          if (langResults.where((i) => i.isSong).isEmpty) {
+            langResults = await _searchSongs(effectiveLang);
+          }
           pool.addAll(langResults.where((i) => i.isSong));
         }
       } else {
@@ -1173,7 +1238,8 @@ class UserTasteService {
 
         if (seeds.isEmpty) {
           try {
-            final popular = await _searchSongs(lang);
+            var popular = (await _fetchNewReleases(lang: lang)).where((i) => i.isSong).toList();
+            if (popular.isEmpty) popular = await _searchSongs(lang);
             seeds.addAll(popular.take(3).map((item) => item.toSong()));
           } catch (_) {}
         }
@@ -1206,6 +1272,16 @@ class UserTasteService {
           pool = deduplicated.values.toList();
         }
       }
+
+      // Content-type guard: devotional / kids tracks only when the song being
+      // played is that kind, or the user has explicitly chosen that kind.
+      final allowedCategories = _explicitlyChosenCategories();
+      final seedCategory = currentSong != null ? ContentClassifier.ofSong(currentSong) : null;
+      if (seedCategory != null) allowedCategories.add(seedCategory);
+      pool = pool.where((item) {
+        final category = ContentClassifier.ofItem(item);
+        return category == null || allowedCategories.contains(category);
+      }).toList();
 
       var candidateList = pool.where((item) {
         if (!item.isSong || item.title.trim().isEmpty) return false;
@@ -1250,6 +1326,9 @@ class UserTasteService {
         lambda: 0.7,
         maxPerArtist: 2,
         maxResults: limit,
+        // Autoplay / Radio continue what the user is listening to, so no
+        // deliberate "discovery" picks there; Home keeps a little exploration.
+        explorationRate: context == RecommendationContext.home ? 0.15 : 0.0,
         coOccurrenceMap: coOccurrences,
       );
 
@@ -1259,6 +1338,20 @@ class UserTasteService {
       debugPrint('PulseIQ getCandidateRecommendations error: $e');
       return [];
     }
+  }
+
+  /// Content categories of songs the user deliberately chose (searched and
+  /// played, or favorited). Plain plays don't count: an autoplayed aarti that
+  /// slipped through once must not unlock more of them.
+  Set<ContentCategory> _explicitlyChosenCategories() {
+    final categories = <ContentCategory>{};
+    for (final inter in _interactions.values) {
+      if (inter.isArtistPreference) continue;
+      if (inter.searchPlayCount == 0 && !inter.isFavorite) continue;
+      final category = ContentClassifier.classify('${inter.title} ${inter.artist}');
+      if (category != null) categories.add(category);
+    }
+    return categories;
   }
 
   /// Backward-compatible wrapper for StreamScreen.
