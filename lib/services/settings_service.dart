@@ -73,6 +73,7 @@ class SettingsService {
   static const _keyStreamCacheLimit = 'setting_stream_cache_limit';
   static const _keyAppLaunchCount = 'setting_app_launch_count';
   static const _keySupportBannerDismissed = 'setting_support_banner_dismissed';
+  static const _keyHasSeenAppIntro = 'setting_has_seen_app_intro';
 
   static const Map<String, String> supportedStreamLanguages = {
     'hindi': 'Hindi',
@@ -97,6 +98,8 @@ class SettingsService {
   bool get supportBannerDismissed => _prefs.getBool(_keySupportBannerDismissed) ?? false;
   bool get isSupportBannerEnabled => !supportBannerDismissed;
   bool get shouldShowSupportBanner => !supportBannerDismissed;
+  bool get hasSeenAppIntro => _prefs.getBool(_keyHasSeenAppIntro) ?? false;
+  Future<void> setHasSeenAppIntro(bool value) => _prefs.setBool(_keyHasSeenAppIntro, value);
   bool get autoPlayNext => _prefs.getBool(_keyAutoPlayNext) ?? true;
   String get repeatMode => _prefs.getString(_keyRepeatMode) ?? 'Off';
   bool get shuffleByDefault => _prefs.getBool(_keyShuffleByDefault) ?? false;

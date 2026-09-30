@@ -132,9 +132,9 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
             }
           }
         }
-        // Fallback to _queue[index] if sequence is uninitialized/empty (e.g. test mock)
-        // or has the exact same length as _queue, preventing windowed stream playback mismatch.
-        if ((sequence.isEmpty || sequence.length == _queue.length) && index < _queue.length) {
+        // Fallback for tests/mocks: only if sequence is uninitialized but playback is already actively running
+        // and index is valid in _queue, and newSong is actually different from _currentSong.
+        if (sequence.isEmpty && state is PlayerPlaying && index < _queue.length) {
           final newSong = _queue[index];
           if (_currentSong?.id != newSong.id) {
             add(TrackChangedEvent(
@@ -167,19 +167,15 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         return;
       }
 
+      // Do not process intermediate buffering/loading states while a song is transitioning
+      if (_isChangingSong) return;
+
       if (!isPlaying) {
-        _isChangingSong = false;
         if (state is PlayerPlaying || state is PlayerLoading) {
           add(const PauseEvent());
         }
         return;
       }
-
-      if (procState == ProcessingState.ready && isPlaying) {
-        _isChangingSong = false;
-      }
-
-      if (_isChangingSong) return;
 
       if (isPlaying && (state is PlayerPaused || state is PlayerStopped)) {
         add(const ResumeEvent());
@@ -854,7 +850,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Future<void> _onTrackChanged(TrackChangedEvent event, Emitter<PlayerState> emit) async {
-    if (_currentSong?.id == event.song.id && state is PlayerPlaying) return;
+    if (_isChangingSong || _currentSong?.id == event.song.id) return;
     _currentSong = event.song;
     _settingsService?.setLastPlayedSongId(event.song.id);
     _settingsService?.setLastPlayedPositionMs(0);

@@ -85,3 +85,12 @@ class ToggleFavoriteEvent extends LibraryEvent {
   @override
   List<Object?> get props => [song];
 }
+
+class DeleteSongEvent extends LibraryEvent {
+  final Song song;
+  final bool deleteFile;
+  const DeleteSongEvent(this.song, {this.deleteFile = true});
+
+  @override
+  List<Object?> get props => [song, deleteFile];
+}

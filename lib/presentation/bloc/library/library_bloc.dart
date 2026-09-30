@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:vinyl/data/models/jiosaavn_item.dart';
 import 'package:vinyl/data/models/playlist_model.dart';
@@ -41,6 +43,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
     on<AddSongToPlaylistEvent>(_onAddSongToPlaylist);
     on<RemoveSongFromPlaylistEvent>(_onRemoveSongFromPlaylist);
     on<ToggleFavoriteEvent>(_onToggleFavorite);
+    on<DeleteSongEvent>(_onDeleteSong);
 
     _librarySubscription = _repository.onLibraryChanged.listen((_) {
       add(const LoadLibraryEvent());
@@ -339,6 +342,34 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         final updatedPlaylists = await _repository.getPlaylists();
         emit(current.copyWith(playlists: updatedPlaylists));
       }
+    }
+  }
+
+  Future<void> _onDeleteSong(
+    DeleteSongEvent event,
+    Emitter<LibraryState> emit,
+  ) async {
+    try {
+      if (event.deleteFile &&
+          event.song.filePath.isNotEmpty &&
+          !event.song.filePath.startsWith('http')) {
+        final file = File(event.song.filePath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+      if (event.deleteFile &&
+          event.song.albumArt != null &&
+          event.song.albumArt!.isNotEmpty &&
+          !event.song.albumArt!.startsWith('http')) {
+        final artFile = File(event.song.albumArt!);
+        if (await artFile.exists()) {
+          await artFile.delete();
+        }
+      }
+      await _repository.deleteSong(event.song.id);
+    } catch (e) {
+      debugPrint('Error deleting song from library: $e');
     }
   }
 }

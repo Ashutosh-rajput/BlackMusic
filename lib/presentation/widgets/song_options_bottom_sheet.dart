@@ -9,10 +9,12 @@ import 'package:vinyl/presentation/bloc/library/library_event.dart';
 import 'package:vinyl/presentation/bloc/library/library_state.dart';
 import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
 import 'package:vinyl/presentation/bloc/player/player_event.dart';
+import 'package:vinyl/presentation/bloc/player/player_state.dart';
 import 'package:vinyl/presentation/widgets/add_to_playlist_sheet.dart';
 import 'package:vinyl/presentation/widgets/album_art_widget.dart';
 import 'package:vinyl/presentation/widgets/download_queue_snackbar.dart';
 import 'package:vinyl/services/download_service.dart';
+import 'package:vinyl/services/stream_cache_service.dart';
 import 'package:vinyl/services/stream_favorites_service.dart';
 
 /// Modal bottom sheet presenting all actions for a song:
@@ -21,20 +23,24 @@ import 'package:vinyl/services/stream_favorites_service.dart';
 /// 3. Add to Playlist
 /// 4. Favorite (Add/Remove)
 /// 5. Download
+/// 6. Delete
 class SongOptionsBottomSheet extends StatelessWidget {
   final Song song;
   final VoidCallback? onDownload;
+  final VoidCallback? onDelete;
 
   const SongOptionsBottomSheet({
     super.key,
     required this.song,
     this.onDownload,
+    this.onDelete,
   });
 
   static Future<void> show(
     BuildContext context, {
     required Song song,
     VoidCallback? onDownload,
+    VoidCallback? onDelete,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -43,14 +49,22 @@ class SongOptionsBottomSheet extends StatelessWidget {
       builder: (ctx) => SongOptionsBottomSheet(
         song: song,
         onDownload: onDownload,
+        onDelete: onDelete,
       ),
     );
   }
 
   bool _isStreamSong(Song s) {
-    return s.filePath.startsWith('http://') ||
-        s.filePath.startsWith('https://') ||
-        s.source == 'jiosaavn';
+    if (s.filePath.startsWith('http://') || s.filePath.startsWith('https://')) {
+      return true;
+    }
+    if (s.filePath.isEmpty) {
+      return s.source == 'jiosaavn';
+    }
+    if (File(s.filePath).existsSync()) {
+      return false;
+    }
+    return s.source == 'jiosaavn';
   }
 
   bool _checkIsFavorite(BuildContext context, bool isStream) {
@@ -150,6 +164,92 @@ class SongOptionsBottomSheet extends StatelessWidget {
     }
   }
 
+  Future<void> _handleDeleteSong(BuildContext context) async {
+    Navigator.pop(context);
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Delete Song',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Are you sure you want to delete "${song.title}"? This will remove the track from your library and delete the audio file from your device.',
+          style: GoogleFonts.outfit(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.outfit()),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !context.mounted) return;
+
+    if (onDelete != null) {
+      onDelete!();
+      return;
+    }
+
+    try {
+      final playerBloc = context.read<PlayerBloc>();
+      final playerState = playerBloc.state;
+      final currentPlayingId = playerState is PlayerPlaying
+          ? playerState.song.id
+          : (playerState is PlayerPaused ? playerState.song.id : null);
+      if (currentPlayingId == song.id) {
+        playerBloc.add(const NextSongEvent());
+      }
+      final queue = playerState is PlayerPlaying
+          ? playerState.queue
+          : (playerState is PlayerPaused ? playerState.queue : null);
+      if (queue != null) {
+        final qIndex = queue.indexWhere((s) => s.id == song.id);
+        if (qIndex != -1) {
+          playerBloc.add(RemoveFromQueueEvent(qIndex));
+        }
+      }
+
+      context.read<LibraryBloc>().add(DeleteSongEvent(song));
+
+      if (StreamCacheService.instance.isSongCached(song.id)) {
+        await StreamCacheService.instance.removeCachedSong(song.id);
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Deleted "${song.title}" from library', style: GoogleFonts.outfit()),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete song: $e', style: GoogleFonts.outfit()),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -157,6 +257,15 @@ class SongOptionsBottomSheet extends StatelessWidget {
     final isStream = _isStreamSong(song);
     final isFav = _checkIsFavorite(context, isStream);
     final canDownload = onDownload != null || (isStream && (song.filePath.startsWith('http') || File(song.filePath).existsSync()));
+    final isLocalOrDownloaded = (!song.filePath.startsWith('http://') && !song.filePath.startsWith('https://') && song.filePath.isNotEmpty) ||
+        File(song.filePath).existsSync() ||
+        song.source == 'youtube' ||
+        song.source == 'local' ||
+        song.genre == 'Downloaded' ||
+        song.album == 'YouTube Downloads' ||
+        song.album == 'JioSaavn' ||
+        StreamCacheService.instance.isSongCached(song.id);
+    final canDelete = onDelete != null || isLocalOrDownloaded || !isStream;
 
     return Container(
       decoration: BoxDecoration(
@@ -291,6 +400,17 @@ class SongOptionsBottomSheet extends StatelessWidget {
                   title: 'Download Song',
                   subtitle: 'Save to device for offline listening',
                   onTap: () => _handleDownload(context, isStream),
+                ),
+
+              // 6. Delete Song (shown for downloaded songs & local library songs)
+              if (canDelete)
+                _buildOptionTile(
+                  context: context,
+                  icon: Icons.delete_outline_rounded,
+                  iconColor: Colors.redAccent,
+                  title: 'Delete Song',
+                  subtitle: 'Remove from library and device',
+                  onTap: () => _handleDeleteSong(context),
                 ),
 
               const SizedBox(height: 12),
