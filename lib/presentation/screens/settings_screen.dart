@@ -738,7 +738,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     tag,
                                     style: GoogleFonts.outfit(
                                       fontSize: 9,
-                                      fontWeight: FontWeight.w500,
+                                      fontWeight: FontWeight.w600,
                                       color: isSelected
                                           ? Colors.white.withValues(alpha: 0.75)
                                           : _accentColor.withValues(alpha: 0.6),

@@ -833,7 +833,7 @@ class _SongListTile extends StatelessWidget {
             icon: const Icon(Icons.more_vert_rounded, size: 20),
             tooltip: 'Song options',
             visualDensity: VisualDensity.compact,
-            onPressed: () => SongOptionsBottomSheet.show(context, song: song),
+            onPressed: () => SongOptionsBottomSheet.show(context, song: song, showDeleteFromLibrary: true),
           ),
         ],
       ),

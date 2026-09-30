@@ -117,7 +117,7 @@ class SleepTimerDialog extends StatelessWidget {
       title: Text(
         title,
         style: GoogleFonts.outfit(
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
           color: isSelected ? theme.colorScheme.primary : null,
         ),
       ),

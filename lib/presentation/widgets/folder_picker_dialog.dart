@@ -118,7 +118,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                     _currentDir.path,
                     style: GoogleFonts.outfit(
                       fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                       color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
                     ),
                     maxLines: 2,
@@ -171,7 +171,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                           title: Text(
                             folderName,
                             style: GoogleFonts.outfit(
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
                               fontSize: 14,
                             ),
                             maxLines: 1,

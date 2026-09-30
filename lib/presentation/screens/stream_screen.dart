@@ -881,7 +881,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               filters[index],
               style: GoogleFonts.outfit(
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                 color: isSelected ? Theme.of(context).colorScheme.onPrimary : null,
               ),
             ),
@@ -1343,6 +1343,10 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               ),
               onDownload: () => _downloadSong(item),
               onAddToQueue: () => _addSongToQueue(item),
+              inCacheSection: true,
+              onCacheRemoved: () {
+                if (mounted) setState(() {});
+              },
             )),
       ],
     );
@@ -1469,6 +1473,10 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                 ),
                 onDownload: () => _downloadSong(item),
                 onAddToQueue: () => _addSongToQueue(item),
+                inCacheSection: true,
+                onCacheRemoved: () {
+                  if (mounted) setState(() {});
+                },
               )),
         ] else ...[
           Center(
@@ -1871,6 +1879,8 @@ class _StreamSongTile extends StatelessWidget {
   final VoidCallback onPlay;
   final VoidCallback onDownload;
   final VoidCallback? onAddToQueue;
+  final bool inCacheSection;
+  final VoidCallback? onCacheRemoved;
 
   const _StreamSongTile({
     required this.item,
@@ -1878,6 +1888,8 @@ class _StreamSongTile extends StatelessWidget {
     required this.onPlay,
     required this.onDownload,
     this.onAddToQueue,
+    this.inCacheSection = false,
+    this.onCacheRemoved,
   });
 
   @override
@@ -1972,6 +1984,8 @@ class _StreamSongTile extends StatelessWidget {
                 context,
                 song: item.toSong(),
                 onDownload: onDownload,
+                showRemoveFromCache: inCacheSection,
+                onCacheRemoved: onCacheRemoved,
               ),
             ),
         ],

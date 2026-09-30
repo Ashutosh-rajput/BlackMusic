@@ -201,7 +201,7 @@ class _DownloadQueueSheetState extends State<DownloadQueueSheet>
                 labelStyle: GoogleFonts.outfit(
                     fontWeight: FontWeight.bold, fontSize: 14),
                 unselectedLabelStyle:
-                    GoogleFonts.outfit(fontWeight: FontWeight.w500, fontSize: 14),
+                    GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 14),
                 tabs: const [
                   Tab(
                     icon: Row(

@@ -17,23 +17,39 @@ import 'package:vinyl/services/download_service.dart';
 import 'package:vinyl/services/stream_cache_service.dart';
 import 'package:vinyl/services/stream_favorites_service.dart';
 
-/// Modal bottom sheet presenting all actions for a song:
-/// 1. Start Radio
-/// 2. Add to Queue
-/// 3. Add to Playlist
-/// 4. Favorite (Add/Remove)
-/// 5. Download
-/// 6. Delete
+/// Modal bottom sheet presenting all actions for a song.
+///
+/// Song classification (drives which actions are shown):
+///   - [_isLocalLibrarySong]  → saved in local DB (youtube/local/downloaded)
+///   - [_isStreamCached]      → a JioSaavn stream song cached to disk (but NOT in local library)
+///   - [_isLiveStream]        → pure live stream URL with no local file
+///
+/// Rules:
+///   - Local library song  → show "Delete from Library" (removes file + DB row)
+///   - Offline-cached only → show "Remove from Cache" (only clears the stream cache)
+///   - Live stream         → no delete / cache-remove (nothing to delete locally)
 class SongOptionsBottomSheet extends StatelessWidget {
   final Song song;
   final VoidCallback? onDownload;
   final VoidCallback? onDelete;
+
+  /// Only true when opened from the Offline Cache section; gates the
+  /// "Remove from Cache" tile.
+  final bool showRemoveFromCache;
+
+  /// Only true when opened from the Library; gates "Delete from Library"
+  /// (removes the DB row and the file from the phone).
+  final bool showDeleteFromLibrary;
+  final VoidCallback? onCacheRemoved;
 
   const SongOptionsBottomSheet({
     super.key,
     required this.song,
     this.onDownload,
     this.onDelete,
+    this.showRemoveFromCache = false,
+    this.showDeleteFromLibrary = false,
+    this.onCacheRemoved,
   });
 
   static Future<void> show(
@@ -41,6 +57,9 @@ class SongOptionsBottomSheet extends StatelessWidget {
     required Song song,
     VoidCallback? onDownload,
     VoidCallback? onDelete,
+    bool showRemoveFromCache = false,
+    bool showDeleteFromLibrary = false,
+    VoidCallback? onCacheRemoved,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -50,37 +69,63 @@ class SongOptionsBottomSheet extends StatelessWidget {
         song: song,
         onDownload: onDownload,
         onDelete: onDelete,
+        showRemoveFromCache: showRemoveFromCache,
+        showDeleteFromLibrary: showDeleteFromLibrary,
+        onCacheRemoved: onCacheRemoved,
       ),
     );
   }
 
-  bool _isStreamSong(Song s) {
-    if (s.filePath.startsWith('http://') || s.filePath.startsWith('https://')) {
-      return true;
-    }
-    if (s.filePath.isEmpty) {
-      return s.source == 'jiosaavn';
-    }
-    if (File(s.filePath).existsSync()) {
+  // ─── Song classification helpers ──────────────────────────────────────────
+
+  /// True when the song lives in the local library (downloaded from YouTube,
+  /// imported local file, or any non-stream source with an on-disk file).
+  bool _isLocalLibrarySong() {
+    // Explicit source flags take priority
+    if (song.source == 'local' || song.source == 'youtube') return true;
+    if (song.genre == 'Downloaded' || song.album == 'YouTube Downloads') return true;
+    // A stream URL can never be local
+    final fp = song.filePath.trim();
+    if (fp.isEmpty) return false;
+    if (fp.startsWith('http://') || fp.startsWith('https://')) return false;
+    // Only check the filesystem as a last resort (may not be available in tests)
+    try {
+      return File(fp).existsSync();
+    } catch (_) {
       return false;
     }
-    return s.source == 'jiosaavn';
   }
 
-  bool _checkIsFavorite(BuildContext context, bool isStream) {
-    if (isStream) {
-      return StreamFavoritesService.instance.isFavorite(song.id);
-    }
-    final libState = context.read<LibraryBloc>().state;
-    if (libState is LibraryLoaded) {
-      final favIndex = libState.playlists
-          .indexWhere((p) => p.name.toLowerCase() == 'favorites');
-      if (favIndex != -1) {
-        return libState.playlists[favIndex].songs.any((s) => s.id == song.id);
-      }
-    }
+  /// True when the song is a JioSaavn stream song that has been cached to disk
+  /// by [StreamCacheService] but is NOT a permanent library download.
+  bool _isStreamCached() => StreamCacheService.instance.isSongCached(song.id);
+
+  /// True when the song is a pure live network stream with no local copy at all.
+  bool _isLiveStream() {
+    final fp = song.filePath.trim();
+    if (fp.startsWith('http://') || fp.startsWith('https://')) return true;
+    if (fp.isEmpty && song.source == 'jiosaavn') return true;
     return false;
   }
+
+  // ─── Favorite helper ──────────────────────────────────────────────────────
+
+  bool _checkIsFavorite(BuildContext context) {
+    if (_isLocalLibrarySong()) {
+      final libState = context.read<LibraryBloc>().state;
+      if (libState is LibraryLoaded) {
+        final favIndex =
+            libState.playlists.indexWhere((p) => p.name.toLowerCase() == 'favorites');
+        if (favIndex != -1) {
+          return libState.playlists[favIndex].songs.any((s) => s.id == song.id);
+        }
+      }
+      return false;
+    }
+    return StreamFavoritesService.instance.isFavorite(song.id);
+  }
+
+  // ─── Action handlers ──────────────────────────────────────────────────────
 
   void _handleStartRadio(BuildContext context) {
     Navigator.pop(context);
@@ -92,10 +137,7 @@ class SongOptionsBottomSheet extends StatelessWidget {
     context.read<PlayerBloc>().add(AddToQueueEvent(song));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          'Added "${song.title}" to queue',
-          style: GoogleFonts.outfit(),
-        ),
+        content: Text('Added "${song.title}" to queue', style: GoogleFonts.outfit()),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
       ),
@@ -104,13 +146,29 @@ class SongOptionsBottomSheet extends StatelessWidget {
 
   void _handleAddToPlaylist(BuildContext context) {
     Navigator.pop(context);
-    AddToPlaylistSheet.show(context, song, isStream: _isStreamSong(song));
+    // Pass isStream=true for any non-library song so it goes to stream playlists
+    AddToPlaylistSheet.show(context, song, isStream: !_isLocalLibrarySong());
   }
 
-  Future<void> _handleToggleFavorite(
-      BuildContext context, bool isStream, bool isFav) async {
+  Future<void> _handleToggleFavorite(BuildContext context, bool isFav) async {
     Navigator.pop(context);
-    if (isStream) {
+    if (_isLocalLibrarySong()) {
+      context.read<LibraryBloc>().add(ToggleFavoriteEvent(song));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isFav
+                  ? 'Removed "${song.title}" from Favorites'
+                  : 'Added "${song.title}" to Favorites',
+              style: GoogleFonts.outfit(),
+            ),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } else {
       final added = await StreamFavoritesService.instance.toggleFavorite(song);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -126,34 +184,20 @@ class SongOptionsBottomSheet extends StatelessWidget {
           ),
         );
       }
-    } else {
-      context.read<LibraryBloc>().add(ToggleFavoriteEvent(song));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isFav
-                ? 'Removed "${song.title}" from Favorites'
-                : 'Added "${song.title}" to Favorites',
-            style: GoogleFonts.outfit(),
-          ),
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     }
   }
 
-  void _handleDownload(BuildContext context, bool isStream) {
+  void _handleDownload(BuildContext context) {
     Navigator.pop(context);
     if (onDownload != null) {
       onDownload!();
       return;
     }
-
-    if (isStream && (song.filePath.startsWith('http') || File(song.filePath).existsSync())) {
+    final fp = song.filePath.trim();
+    if (fp.startsWith('http') || File(fp).existsSync()) {
       final downloadService = getIt<DownloadService>();
       downloadService.enqueueDownload(
-        url: song.filePath,
+        url: fp,
         title: song.title,
         artist: song.artist,
         album: song.album,
@@ -164,19 +208,17 @@ class SongOptionsBottomSheet extends StatelessWidget {
     }
   }
 
-  Future<void> _handleDeleteSong(BuildContext context) async {
+  /// Delete from local library (removes DB record and the physical audio file).
+  Future<void> _handleDeleteFromLibrary(BuildContext context) async {
     Navigator.pop(context);
 
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Delete Song',
-          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-        ),
+        title: Text('Delete Song', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
         content: Text(
-          'Are you sure you want to delete "${song.title}"? This will remove the track from your library and delete the audio file from your device.',
+          'Are you sure you want to delete "${song.title}"? This will permanently remove the track from your library and delete the audio file from your device.',
           style: GoogleFonts.outfit(fontSize: 14),
         ),
         actions: [
@@ -204,6 +246,7 @@ class SongOptionsBottomSheet extends StatelessWidget {
     }
 
     try {
+      // Remove from player queue/playback if currently playing
       final playerBloc = context.read<PlayerBloc>();
       final playerState = playerBloc.state;
       final currentPlayingId = playerState is PlayerPlaying
@@ -217,13 +260,13 @@ class SongOptionsBottomSheet extends StatelessWidget {
           : (playerState is PlayerPaused ? playerState.queue : null);
       if (queue != null) {
         final qIndex = queue.indexWhere((s) => s.id == song.id);
-        if (qIndex != -1) {
-          playerBloc.add(RemoveFromQueueEvent(qIndex));
-        }
+        if (qIndex != -1) playerBloc.add(RemoveFromQueueEvent(qIndex));
       }
 
-      context.read<LibraryBloc>().add(DeleteSongEvent(song));
+      // Delete from local DB + physical file
+      context.read<LibraryBloc>().add(DeleteSongEvent(song, deleteFile: true));
 
+      // Also clear from stream cache if it happened to be cached
       if (StreamCacheService.instance.isSongCached(song.id)) {
         await StreamCacheService.instance.removeCachedSong(song.id);
       }
@@ -241,7 +284,7 @@ class SongOptionsBottomSheet extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to delete song: $e', style: GoogleFonts.outfit()),
+            content: Text('Failed to delete: $e', style: GoogleFonts.outfit()),
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
           ),
@@ -250,22 +293,62 @@ class SongOptionsBottomSheet extends StatelessWidget {
     }
   }
 
+  /// Remove from offline stream cache only (does NOT touch the local library).
+  /// Runs instantly, with no confirmation dialog.
+  Future<void> _handleRemoveFromCache(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final playerBloc = context.read<PlayerBloc>();
+    Navigator.pop(context);
+
+    SnackBar bar(String text) => SnackBar(
+          content: Text(text, style: GoogleFonts.outfit()),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        );
+
+    try {
+      final playerState = playerBloc.state;
+      final currentPlayingId = playerState is PlayerPlaying
+          ? playerState.song.id
+          : (playerState is PlayerPaused ? playerState.song.id : null);
+      if (currentPlayingId == song.id) {
+        playerBloc.add(const NextSongEvent());
+      }
+      final queue = playerState is PlayerPlaying
+          ? playerState.queue
+          : (playerState is PlayerPaused ? playerState.queue : null);
+      if (queue != null) {
+        final qIndex = queue.indexWhere((s) => s.id == song.id);
+        if (qIndex != -1) playerBloc.add(RemoveFromQueueEvent(qIndex));
+      }
+
+      await StreamCacheService.instance.removeCachedSong(song.id);
+      onCacheRemoved?.call();
+      messenger.showSnackBar(bar('Removed "${song.title}" from offline cache'));
+    } catch (e) {
+      messenger.showSnackBar(bar('Failed to remove from cache: $e'));
+    }
+  }
+
+  // ─── Build ────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final isStream = _isStreamSong(song);
-    final isFav = _checkIsFavorite(context, isStream);
-    final canDownload = onDownload != null || (isStream && (song.filePath.startsWith('http') || File(song.filePath).existsSync()));
-    final isLocalOrDownloaded = (!song.filePath.startsWith('http://') && !song.filePath.startsWith('https://') && song.filePath.isNotEmpty) ||
-        File(song.filePath).existsSync() ||
-        song.source == 'youtube' ||
-        song.source == 'local' ||
-        song.genre == 'Downloaded' ||
-        song.album == 'YouTube Downloads' ||
-        song.album == 'JioSaavn' ||
-        StreamCacheService.instance.isSongCached(song.id);
-    final canDelete = onDelete != null || isLocalOrDownloaded || !isStream;
+
+    final isLocal = _isLocalLibrarySong();
+    final isCachedStream = !isLocal && _isStreamCached();
+    final isLive = !isLocal && !isCachedStream && _isLiveStream();
+
+    final isFav = _checkIsFavorite(context);
+
+    // Download button: only show for stream/cached songs that aren't already
+    // in the local library (downloading from a local library song makes no sense).
+    final canDownload = !isLocal &&
+        (onDownload != null ||
+            song.filePath.startsWith('http') ||
+            isCachedStream);
 
     return Container(
       decoration: BoxDecoration(
@@ -286,7 +369,6 @@ class SongOptionsBottomSheet extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Top Drag Handle
               const SizedBox(height: 12),
               Center(
                 child: Container(
@@ -300,7 +382,7 @@ class SongOptionsBottomSheet extends StatelessWidget {
               ),
               const SizedBox(height: 12),
 
-              // Header with song info
+              // Header
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                 child: Row(
@@ -329,15 +411,71 @@ class SongOptionsBottomSheet extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 3),
-                          Text(
-                            song.artist.isNotEmpty ? song.artist : 'Unknown Artist',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.outfit(
-                              fontSize: 13,
-                              color: theme.colorScheme.onSurface
-                                  .withValues(alpha: 0.6),
-                            ),
+                          Row(
+                            children: [
+                              if (isLocal)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'Library',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                                )
+                              else if (isCachedStream)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'Cached',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.greenAccent,
+                                    ),
+                                  ),
+                                )
+                              else if (isLive)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'Stream',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.blueAccent,
+                                    ),
+                                  ),
+                                ),
+                              Expanded(
+                                child: Text(
+                                  song.artist.isNotEmpty ? song.artist : 'Unknown Artist',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 13,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -347,10 +485,7 @@ class SongOptionsBottomSheet extends StatelessWidget {
               ),
 
               const SizedBox(height: 8),
-              Divider(
-                height: 1,
-                color: isDark ? Colors.white10 : Colors.black12,
-              ),
+              Divider(height: 1, color: isDark ? Colors.white10 : Colors.black12),
               const SizedBox(height: 6),
 
               // 1. Start Radio
@@ -376,7 +511,9 @@ class SongOptionsBottomSheet extends StatelessWidget {
                 context: context,
                 icon: Icons.playlist_add_rounded,
                 title: 'Add to Playlist',
-                subtitle: 'Save track to your custom playlists',
+                subtitle: isLocal
+                    ? 'Save to your library playlists'
+                    : 'Save to your stream playlists',
                 onTap: () => _handleAddToPlaylist(context),
               ),
 
@@ -389,28 +526,39 @@ class SongOptionsBottomSheet extends StatelessWidget {
                 subtitle: isFav
                     ? 'Remove this song from favorites'
                     : 'Save this song to favorites',
-                onTap: () => _handleToggleFavorite(context, isStream, isFav),
+                onTap: () => _handleToggleFavorite(context, isFav),
               ),
 
-              // 5. Download (shown if stream song or download callback available)
+              // 5. Download (stream/cached songs only, not local library)
               if (canDownload)
                 _buildOptionTile(
                   context: context,
                   icon: Icons.download_rounded,
                   title: 'Download Song',
-                  subtitle: 'Save to device for offline listening',
-                  onTap: () => _handleDownload(context, isStream),
+                  subtitle: 'Save permanently to device',
+                  onTap: () => _handleDownload(context),
                 ),
 
-              // 6. Delete Song (shown for downloaded songs & local library songs)
-              if (canDelete)
+              // 6a. Delete from Library (local library songs only)
+              if (showDeleteFromLibrary && isLocal)
                 _buildOptionTile(
                   context: context,
                   icon: Icons.delete_outline_rounded,
                   iconColor: Colors.redAccent,
-                  title: 'Delete Song',
-                  subtitle: 'Remove from library and device',
-                  onTap: () => _handleDeleteSong(context),
+                  title: 'Delete from Library',
+                  subtitle: 'Remove from library and device storage',
+                  onTap: () => _handleDeleteFromLibrary(context),
+                ),
+
+              // 6b. Remove from Cache (stream-cached songs only, NOT library songs)
+              if (showRemoveFromCache && isCachedStream)
+                _buildOptionTile(
+                  context: context,
+                  icon: Icons.remove_circle_outline_rounded,
+                  iconColor: Colors.orange,
+                  title: 'Remove from Cache',
+                  subtitle: 'Free up offline cache space',
+                  onTap: () => _handleRemoveFromCache(context),
                 ),
 
               const SizedBox(height: 12),
@@ -441,18 +589,11 @@ class SongOptionsBottomSheet extends StatelessWidget {
           color: (iconColor ?? primaryColor).withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(
-          icon,
-          color: iconColor ?? primaryColor,
-          size: 22,
-        ),
+        child: Icon(icon, color: iconColor ?? primaryColor, size: 22),
       ),
       title: Text(
         title,
-        style: GoogleFonts.outfit(
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-        ),
+        style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600),
       ),
       subtitle: subtitle != null
           ? Text(

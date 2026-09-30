@@ -122,7 +122,7 @@ class _TasteProfileScreenState extends State<TasteProfileScreen> with SingleTick
           labelColor: accentColor,
           unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.6),
           labelStyle: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-          unselectedLabelStyle: GoogleFonts.outfit(fontWeight: FontWeight.w500),
+          unselectedLabelStyle: GoogleFonts.outfit(fontWeight: FontWeight.w600),
           tabs: [
             Tab(text: 'Artists (${UserTasteService.instance.trackedArtistCount})'),
             Tab(text: 'Songs (${UserTasteService.instance.trackedSongCount})'),

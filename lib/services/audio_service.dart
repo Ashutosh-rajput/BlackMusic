@@ -24,9 +24,7 @@ class AudioPlayerService {
   }
 
   void _setupAudioPlayer() {
-    _audioPlayer?.playbackEventStream.listen((event) {
-      _logger.d('Playback event: ${event.processingState}');
-    }, onError: (Object e, StackTrace st) {
+    _audioPlayer?.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace st) {
       _logger.e('Audio player playback error: $e');
     });
   }

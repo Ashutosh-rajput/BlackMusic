@@ -216,7 +216,7 @@ class QueueBottomSheet extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.outfit(
-                                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.w600,
                                   color: isCurrent ? theme.colorScheme.primary : null,
                                 ),
                               ),
