@@ -184,6 +184,14 @@ class AppDatabase extends _$AppDatabase {
       if (existing == null && filePath.isNotEmpty) {
         existing = await (select(songs)..where((t) => t.filePath.equals(filePath))..limit(1)).getSingleOrNull();
       }
+      if (existing == null && title.trim().isNotEmpty && artist.trim().isNotEmpty) {
+        existing = await (select(songs)
+              ..where((t) =>
+                  t.title.lower().equals(title.toLowerCase().trim()) &
+                  t.artist.lower().equals(artist.toLowerCase().trim()))
+              ..limit(1))
+            .getSingleOrNull();
+      }
     } catch (_) {}
 
     final existingSong = existing;

@@ -495,7 +495,7 @@ class DownloadService {
           final list = List<ActiveDownload>.from(downloadQueueNotifier.value);
           bool changed = false;
           for (int i = 0; i < list.length; i++) {
-            if (list[i].status == DownloadStatus.queued) {
+            if (list[i].status == DownloadStatus.queued && !File(list[i].url).existsSync()) {
               list[i] = list[i].copyWith(
                 status: DownloadStatus.paused,
                 statusMessage: 'Paused: Waiting for Wi-Fi',
@@ -822,7 +822,7 @@ class DownloadService {
 
     if (_settingsService?.downloadOnlyOnWifi == true) {
       final isWifi = await _isWifiOrEthernetAvailable();
-      if (!isWifi) {
+      if (!isWifi && !File(cleanUrl).existsSync()) {
         throw Exception('Download blocked: Wi-Fi only policy is active, but Wi-Fi/Ethernet is unavailable.');
       }
     }
@@ -1521,7 +1521,7 @@ class DownloadService {
       final itemAlbumArt = active?.albumArt;
       final itemDuration = active?.duration;
 
-      final rawFileName = url.split('/').last.split('?').first;
+      final rawFileName = url.split(RegExp(r'[/\\]')).last.split('?').first;
       final rawExt = rawFileName.contains('.') ? rawFileName.split('.').last.toLowerCase() : 'm4a';
       final actualExt = (rawExt == 'mp4' || rawExt == 'm4a') ? 'm4a' : 'mp3';
       final displayFileName = itemTitle != null ? '$itemTitle.$actualExt' : rawFileName;
@@ -1550,7 +1550,9 @@ class DownloadService {
         final isJioSaavn = source == 'jiosaavn' ||
             url.contains('saavncdn.com') ||
             url.contains('jiosaavn') ||
-            (active?.album == 'JioSaavn');
+            (active?.album == 'JioSaavn') ||
+            (active?.album == 'Cached Stream') ||
+            url.contains('stream_cache');
 
         final finalSource = isJioSaavn ? 'jiosaavn' : (source ?? 'direct');
         final finalQuality = isJioSaavn ? '320 kbps' : audioQuality;
@@ -1600,33 +1602,43 @@ class DownloadService {
         ));
       }
 
-      await _dio.download(
-        url,
-        savePath,
-        cancelToken: cancelToken,
-        onReceiveProgress: (received, total) {
-          if (total > 0) {
-            final p = (received / total);
-            onProgress(
-              p,
-              'Downloading $displayFileName... (${(p * 100).toInt()}%)',
-            );
-            if (_settingsService?.downloadNotifications ?? true) {
-              final progressInt = (p * 100).toInt();
-              final recMb = (received / 1024 / 1024).toStringAsFixed(1);
-              final totMb = (total / 1024 / 1024).toStringAsFixed(1);
-              unawaited(_notificationService.showDownloadProgress(
-                id: notifId,
-                title: displayFileName,
-                statusText: '$recMb MB / $totMb MB ($progressInt%)',
-                progress: progressInt,
-              ).catchError((_) {}));
+      final sourceLocalFile = File(url);
+      final isLocalSource = await sourceLocalFile.exists() && await sourceLocalFile.length() > 0;
+
+      if (isLocalSource) {
+        onProgress(0.50, 'Saving to downloads...');
+        if (sourceLocalFile.path != savePath) {
+          await sourceLocalFile.copy(savePath);
+        }
+      } else {
+        await _dio.download(
+          url,
+          savePath,
+          cancelToken: cancelToken,
+          onReceiveProgress: (received, total) {
+            if (total > 0) {
+              final p = (received / total);
+              onProgress(
+                p,
+                'Downloading $displayFileName... (${(p * 100).toInt()}%)',
+              );
+              if (_settingsService?.downloadNotifications ?? true) {
+                final progressInt = (p * 100).toInt();
+                final recMb = (received / 1024 / 1024).toStringAsFixed(1);
+                final totMb = (total / 1024 / 1024).toStringAsFixed(1);
+                unawaited(_notificationService.showDownloadProgress(
+                  id: notifId,
+                  title: displayFileName,
+                  statusText: '$recMb MB / $totMb MB ($progressInt%)',
+                  progress: progressInt,
+                ).catchError((_) {}));
+              }
+            } else {
+              onProgress(0.50, 'Downloading $displayFileName...');
             }
-          } else {
-            onProgress(0.50, 'Downloading $displayFileName...');
-          }
-        },
-      );
+          },
+        );
+      }
 
       final file = File(savePath);
       final length = await file.length();

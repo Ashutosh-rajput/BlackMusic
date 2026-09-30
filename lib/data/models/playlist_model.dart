@@ -36,6 +36,27 @@ class PlaylistModel extends Equatable {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'description': description,
+        'dateCreated': dateCreated.toIso8601String(),
+        'dateModified': dateModified.toIso8601String(),
+        'songs': songs.map((s) => s.toJson()).toList(),
+      };
+
+  factory PlaylistModel.fromJson(Map<String, dynamic> json) => PlaylistModel(
+        id: json['id'] as int? ?? 0,
+        name: json['name'] as String? ?? 'Playlist',
+        description: json['description'] as String?,
+        dateCreated: DateTime.tryParse(json['dateCreated']?.toString() ?? '') ?? DateTime.now(),
+        dateModified: DateTime.tryParse(json['dateModified']?.toString() ?? '') ?? DateTime.now(),
+        songs: (json['songs'] as List<dynamic>?)
+                ?.map((e) => Song.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+      );
+
   @override
   List<Object?> get props => [id, name, description, dateCreated, dateModified, songs];
 }

@@ -17,6 +17,7 @@ import 'package:vinyl/services/download_service.dart';
 import 'package:vinyl/services/stream_cache_service.dart';
 import 'package:vinyl/services/user_taste_service.dart';
 import 'package:vinyl/services/stream_favorites_service.dart';
+import 'package:vinyl/services/stream_playlists_service.dart';
 import 'package:vinyl/services/settings_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
@@ -55,6 +56,11 @@ void main() async {
     await getIt<StreamFavoritesService>().init();
   } catch (e) {
     debugPrint('StreamFavoritesService init error: $e');
+  }
+  try {
+    await getIt<StreamPlaylistsService>().init();
+  } catch (e) {
+    debugPrint('StreamPlaylistsService init error: $e');
   }
   try {
     await getIt<SettingsService>().incrementAppLaunchCount();

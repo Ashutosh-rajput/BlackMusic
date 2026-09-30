@@ -320,12 +320,13 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         dur = _audioService.player.duration!;
       }
 
-      Song activeSong = songToPlay;
-      if (dur > Duration.zero && songToPlay.duration != dur) {
-        activeSong = songToPlay.copyWith(duration: dur);
-      }
+      final Song activeSong = (dur > Duration.zero && songToPlay.duration != dur)
+          ? songToPlay.copyWith(duration: dur)
+          : songToPlay;
       _currentSong = activeSong;
       _repository?.updateSong(activeSong, notify: false);
+      await _repository?.recordSongPlay(activeSong);
+      UserTasteService.instance.onSongStarted(activeSong);
 
       emit(PlayerPlaying(
         song: activeSong,
@@ -336,8 +337,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         repeatMode: _repeatMode,
         queue: _queue,
       ));
-      _repository?.recordSongPlay(activeSong);
-      UserTasteService.instance.onSongStarted(activeSong);
       if ((_settingsService?.cacheStreamSongs ?? true) &&
           isRemoteStream &&
           songToPlay.filePath == song.filePath) {
@@ -668,6 +667,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         : ((state is PlayerLoading) ? (state as PlayerLoading).song : _currentSong);
     if (song != null) {
       _currentSong = song;
+      await _repository?.recordSongPlay(song);
       final pos = _audioService.player.position;
       final dur = _audioService.player.duration ?? song.duration;
       emit(PlayerPlaying(
@@ -859,7 +859,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     _settingsService?.setLastPlayedSongId(event.song.id);
     _settingsService?.setLastPlayedPositionMs(0);
     _repository?.updateSong(event.song, notify: false);
-    _repository?.recordSongPlay(event.song);
+    await _repository?.recordSongPlay(event.song);
     UserTasteService.instance.onSongStarted(event.song);
     add(const AutoExpandQueueEvent());
     _preResolveNextTrack();

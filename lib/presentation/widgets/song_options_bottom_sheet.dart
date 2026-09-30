@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -89,7 +90,7 @@ class SongOptionsBottomSheet extends StatelessWidget {
 
   void _handleAddToPlaylist(BuildContext context) {
     Navigator.pop(context);
-    AddToPlaylistSheet.show(context, song);
+    AddToPlaylistSheet.show(context, song, isStream: _isStreamSong(song));
   }
 
   Future<void> _handleToggleFavorite(
@@ -135,7 +136,7 @@ class SongOptionsBottomSheet extends StatelessWidget {
       return;
     }
 
-    if (isStream && song.filePath.startsWith('http')) {
+    if (isStream && (song.filePath.startsWith('http') || File(song.filePath).existsSync())) {
       final downloadService = getIt<DownloadService>();
       downloadService.enqueueDownload(
         url: song.filePath,
@@ -155,7 +156,7 @@ class SongOptionsBottomSheet extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final isStream = _isStreamSong(song);
     final isFav = _checkIsFavorite(context, isStream);
-    final canDownload = onDownload != null || (isStream && song.filePath.startsWith('http'));
+    final canDownload = onDownload != null || (isStream && (song.filePath.startsWith('http') || File(song.filePath).existsSync()));
 
     return Container(
       decoration: BoxDecoration(

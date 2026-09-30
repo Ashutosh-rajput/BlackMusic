@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -18,6 +19,9 @@ import 'package:vinyl/services/settings_service.dart';
 import 'package:vinyl/services/stream_cache_service.dart';
 import 'package:vinyl/services/user_taste_service.dart';
 import 'package:vinyl/services/stream_favorites_service.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:vinyl/data/models/playlist_model.dart';
+import 'package:vinyl/services/stream_playlists_service.dart';
 import 'package:vinyl/presentation/widgets/support_banner_widget.dart';
 import 'package:vinyl/presentation/widgets/song_options_bottom_sheet.dart';
 
@@ -58,6 +62,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   @override
   void initState() {
     super.initState();
+    HomeScreen.tabNotifier.addListener(_handleTabChange);
     final settings = getIt<SettingsService>();
     _currentLang = settings.streamLanguage;
     _loadStreamData();
@@ -65,10 +70,17 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
 
   @override
   void dispose() {
+    HomeScreen.tabNotifier.removeListener(_handleTabChange);
     _searchDebounce?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _handleTabChange() {
+    if (mounted && HomeScreen.tabNotifier.value == 1) {
+      _loadLastPlayedSongs();
+    }
   }
 
   Future<void> _loadLastPlayedSongs() async {
@@ -337,6 +349,63 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
     );
   }
 
+  void _openUserPlaylistDetails(PlaylistModel playlist) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _UserStreamPlaylistSheet(
+        playlistId: playlist.id,
+      ),
+    );
+  }
+
+  void _showCreateStreamPlaylistDialog(BuildContext context, {Song? initialSong}) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(
+          'Create Stream Playlist',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Playlist Title (e.g. Chill Beats)',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                final playlist = await StreamPlaylistsService.instance.createPlaylist(name);
+                if (initialSong != null) {
+                  await StreamPlaylistsService.instance.addSongToPlaylist(playlist.id, initialSong);
+                }
+                Fluttertoast.showToast(
+                  msg: 'Created "$name"',
+                  toastLength: Toast.LENGTH_SHORT,
+                );
+                if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openSuggestedSongsDetails() {
     showModalBottomSheet(
       context: context,
@@ -460,7 +529,19 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
 
   Future<void> _downloadSong(JioSaavnItem track, {String? overrideUrl}) async {
     final downloadService = getIt<DownloadService>();
-    var directUrl = overrideUrl ?? track.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
+    var directUrl = overrideUrl;
+    if (directUrl == null || directUrl.isEmpty) {
+      if (track.directMediaUrl != null && track.directMediaUrl!.isNotEmpty) {
+        if (track.directMediaUrl!.startsWith('http://') || track.directMediaUrl!.startsWith('https://')) {
+          directUrl = track.directMediaUrl;
+        } else if (File(track.directMediaUrl!).existsSync()) {
+          directUrl = track.directMediaUrl;
+        }
+      }
+    }
+    if (directUrl == null || directUrl.isEmpty) {
+      directUrl = JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
+    }
     if (directUrl == null || directUrl.isEmpty) {
       final details = await JioSaavnDecoder.fetchSongDetails(track.token);
       directUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
@@ -738,10 +819,20 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       body: BlocListener<PlayerBloc, PlayerState>(
         listener: (context, state) {
           if (state is PlayerPlaying) {
+            final song = state.song;
+            setState(() {
+              _lastPlayedStreamSongs = [
+                song,
+                ..._lastPlayedStreamSongs.where((s) =>
+                    s.id != song.id &&
+                    (s.title.toLowerCase().trim() != song.title.toLowerCase().trim() ||
+                     s.artist.toLowerCase().trim() != song.artist.toLowerCase().trim())),
+              ];
+            });
             _loadLastPlayedSongs();
           }
         },
-        child: _isLoading
+        child: (_isLoading && _selectedFilter < 3)
             ? Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -752,7 +843,7 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
                   ],
                 ),
               )
-            : _errorMessage != null
+            : (_errorMessage != null && _selectedFilter == 0)
                 ? _buildStreamFailureView()
                 : RefreshIndicator(
                     color: theme.colorScheme.primary,
@@ -915,6 +1006,39 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
               )),
           const SizedBox(height: 16),
         ],
+
+        // User Stream Playlists in Feed
+        StreamBuilder<List<PlaylistModel>>(
+          stream: StreamPlaylistsService.instance.onPlaylistsChanged,
+          initialData: StreamPlaylistsService.instance.playlists,
+          builder: (context, snap) {
+            final userPlaylists = snap.data ?? StreamPlaylistsService.instance.playlists;
+            if (userPlaylists.isEmpty) return const SizedBox.shrink();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  title: 'My Stream Playlists',
+                  subtitle: 'Your custom streaming collections',
+                  icon: Icons.playlist_add_check_circle_rounded,
+                  actionLabel: 'See All',
+                  onAction: () => setState(() => _selectedFilter = 3),
+                ),
+                SizedBox(
+                  height: 185,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: userPlaylists.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 14),
+                    itemBuilder: (context, index) => _buildUserPlaylistCard(userPlaylists[index]),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            );
+          },
+        ),
 
         // 2. Recommended For You (based on top 5 most played songs)
         if (_relatedAlbums.isNotEmpty) ...[
@@ -1428,29 +1552,227 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
   }
 
   Widget _buildPlaylistsOnlyGrid() {
-    final playlists = _allPlaylists;
-    if (playlists.isEmpty) {
-      return Center(
-        child: Text('No playlists found.', style: GoogleFonts.outfit()),
-      );
-    }
+    final curatedPlaylists = _allPlaylists;
 
-    return GridView.builder(
-      padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 120),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.72,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 14,
-      ),
-      itemCount: playlists.length,
-      itemBuilder: (ctx, idx) {
-        final item = playlists[idx];
-        return _StreamCard(
-          item: item,
-          onTap: () => _openAlbumDetails(item),
+    return StreamBuilder<List<PlaylistModel>>(
+      stream: StreamPlaylistsService.instance.onPlaylistsChanged,
+      initialData: StreamPlaylistsService.instance.playlists,
+      builder: (context, snapshot) {
+        final userPlaylists = snapshot.data ?? StreamPlaylistsService.instance.playlists;
+
+        if (userPlaylists.isEmpty && curatedPlaylists.isEmpty) {
+          return Center(
+            child: Text('No playlists found.', style: GoogleFonts.outfit()),
+          );
+        }
+
+        return ListView(
+          padding: const EdgeInsets.only(top: 8, bottom: 120),
+          children: [
+            // User Stream Playlists Header
+            _buildSectionHeader(
+              title: 'My Stream Playlists (${userPlaylists.length})',
+              subtitle: 'Your personal streaming collections',
+              icon: Icons.playlist_add_check_circle_rounded,
+              actionLabel: '+ New Playlist',
+              onAction: () => _showCreateStreamPlaylistDialog(context),
+            ),
+
+            if (userPlaylists.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Card(
+                  elevation: 0,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.15)),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    leading: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.playlist_add_rounded, color: Theme.of(context).colorScheme.primary),
+                    ),
+                    title: Text(
+                      'Create Your First Stream Playlist',
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 15),
+                    ),
+                    subtitle: Text(
+                      'Group songs together and stream them anytime',
+                      style: GoogleFonts.outfit(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+                    ),
+                    trailing: FilledButton.tonal(
+                      onPressed: () => _showCreateStreamPlaylistDialog(context),
+                      child: const Text('Create'),
+                    ),
+                  ),
+                ),
+              )
+            else
+              SizedBox(
+                height: 185,
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: userPlaylists.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                  itemBuilder: (context, index) {
+                    final playlist = userPlaylists[index];
+                    return _buildUserPlaylistCard(playlist);
+                  },
+                ),
+              ),
+
+            const SizedBox(height: 16),
+
+            // Curated / Featured JioSaavn Playlists
+            if (curatedPlaylists.isNotEmpty) ...[
+              _buildSectionHeader(
+                title: 'Featured Playlists',
+                subtitle: 'Top charts & editorial picks',
+                icon: Icons.queue_music_rounded,
+              ),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  childAspectRatio: 0.72,
+                  crossAxisSpacing: 14,
+                  mainAxisSpacing: 14,
+                ),
+                itemCount: curatedPlaylists.length,
+                itemBuilder: (ctx, idx) {
+                  final item = curatedPlaylists[idx];
+                  return _StreamCard(
+                    item: item,
+                    onTap: () => _openAlbumDetails(item),
+                  );
+                },
+              ),
+            ],
+          ],
         );
       },
+    );
+  }
+
+  Widget _buildUserPlaylistCard(PlaylistModel playlist) {
+    final theme = Theme.of(context);
+    final songsWithArt = playlist.songs.where((s) => s.albumArt != null && s.albumArt!.isNotEmpty);
+    final firstArt = songsWithArt.isNotEmpty ? songsWithArt.first.albumArt : null;
+
+    return InkWell(
+      onTap: () => _openUserPlaylistDetails(playlist),
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        width: 130,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    width: 130,
+                    height: 130,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          theme.colorScheme.primary.withValues(alpha: 0.25),
+                          theme.colorScheme.primaryContainer.withValues(alpha: 0.6),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: firstArt != null && firstArt.isNotEmpty
+                        ? AlbumArtWidget(
+                            albumArt: firstArt,
+                            width: 130,
+                            height: 130,
+                            fallbackIcon: Icons.playlist_play_rounded,
+                          )
+                        : Icon(
+                            Icons.playlist_play_rounded,
+                            size: 48,
+                            color: theme.colorScheme.primary,
+                          ),
+                  ),
+                ),
+                if (playlist.songs.isNotEmpty)
+                  Positioned(
+                    bottom: 6,
+                    right: 6,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          context.read<PlayerBloc>().add(
+                                PlayQueueEvent(playlist.songs, initialIndex: 0),
+                              );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Playing "${playlist.name}"', style: GoogleFonts.outfit()),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.4),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.play_arrow_rounded,
+                            size: 18,
+                            color: theme.colorScheme.onPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              playlist.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+            Text(
+              '${playlist.songs.length} ${playlist.songs.length == 1 ? 'track' : 'tracks'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.outfit(
+                fontSize: 11,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2237,6 +2559,320 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
                         ),
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+class _UserStreamPlaylistSheet extends StatelessWidget {
+  final int playlistId;
+  const _UserStreamPlaylistSheet({required this.playlistId});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return StreamBuilder<List<PlaylistModel>>(
+      stream: StreamPlaylistsService.instance.onPlaylistsChanged,
+      initialData: StreamPlaylistsService.instance.playlists,
+      builder: (context, snapshot) {
+        final playlist = StreamPlaylistsService.instance.getPlaylist(playlistId);
+        if (playlist == null) {
+          return const SizedBox.shrink();
+        }
+        final songs = playlist.songs;
+        final songsWithArt = songs.where((s) => s.albumArt != null && s.albumArt!.isNotEmpty);
+        final firstArt = songsWithArt.isNotEmpty ? songsWithArt.first.albumArt : null;
+
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (ctx, scrollController) {
+            return Column(
+              children: [
+                const SizedBox(height: 12),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Playlist Header
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                theme.colorScheme.primary.withValues(alpha: 0.3),
+                                theme.colorScheme.primaryContainer,
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: firstArt != null && firstArt.isNotEmpty
+                              ? AlbumArtWidget(
+                                  albumArt: firstArt,
+                                  width: 60,
+                                  height: 60,
+                                  fallbackIcon: Icons.playlist_play_rounded,
+                                )
+                              : Icon(Icons.playlist_play_rounded, size: 32, color: theme.colorScheme.primary),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              playlist.name,
+                              style: GoogleFonts.outfit(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${songs.length} ${songs.length == 1 ? 'track' : 'tracks'} • Stream Playlist',
+                              style: GoogleFonts.outfit(
+                                fontSize: 13,
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert_rounded),
+                        onSelected: (val) async {
+                          if (val == 'delete') {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (dCtx) => AlertDialog(
+                                title: Text('Delete Playlist', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+                                content: Text('Are you sure you want to delete "${playlist.name}"?'),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+                                  FilledButton(
+                                    style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+                                    onPressed: () => Navigator.pop(dCtx, true),
+                                    child: const Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirm == true) {
+                              await StreamPlaylistsService.instance.deletePlaylist(playlist.id);
+                              Fluttertoast.showToast(msg: 'Deleted "${playlist.name}"');
+                              if (context.mounted) Navigator.pop(context);
+                            }
+                          } else if (val == 'rename') {
+                            final renameController = TextEditingController(text: playlist.name);
+                            final newName = await showDialog<String>(
+                              context: context,
+                              builder: (dCtx) => AlertDialog(
+                                title: Text('Rename Playlist', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+                                content: TextField(
+                                  controller: renameController,
+                                  autofocus: true,
+                                  decoration: const InputDecoration(hintText: 'New Playlist Name'),
+                                ),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(dCtx, renameController.text.trim()),
+                                    child: const Text('Rename'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (newName != null && newName.isNotEmpty && newName != playlist.name) {
+                              await StreamPlaylistsService.instance.renamePlaylist(playlist.id, newName);
+                              Fluttertoast.showToast(msg: 'Renamed to "$newName"');
+                            }
+                          }
+                        },
+                        itemBuilder: (ctx) => [
+                          const PopupMenuItem(
+                            value: 'rename',
+                            child: Row(
+                              children: [
+                                Icon(Icons.edit_rounded, size: 20),
+                                SizedBox(width: 10),
+                                Text('Rename Playlist'),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete_outline_rounded, size: 20, color: Colors.redAccent),
+                                SizedBox(width: 10),
+                                Text('Delete Playlist', style: TextStyle(color: Colors.redAccent)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                if (songs.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                            label: const Text('Play All'),
+                            onPressed: () {
+                              context.read<PlayerBloc>().add(PlayQueueEvent(songs, initialIndex: 0));
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Playing "${playlist.name}"', style: GoogleFonts.outfit()),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                          ),
+                          icon: const Icon(Icons.shuffle_rounded, size: 18),
+                          label: const Text('Shuffle'),
+                          onPressed: () {
+                            final shuffled = List<Song>.from(songs)..shuffle();
+                            context.read<PlayerBloc>().add(PlayQueueEvent(shuffled, initialIndex: 0));
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Shuffling "${playlist.name}"', style: GoogleFonts.outfit()),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+
+                const Divider(height: 1),
+
+                // Songs List
+                Expanded(
+                  child: songs.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.playlist_add_rounded, size: 48, color: theme.colorScheme.primary.withValues(alpha: 0.4)),
+                                const SizedBox(height: 12),
+                                Text('This playlist is empty', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Tap the 3 dots on any song in Stream to add it to this playlist',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.outfit(fontSize: 13, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          controller: scrollController,
+                          itemCount: songs.length,
+                          separatorBuilder: (_, __) => Divider(
+                            height: 1,
+                            indent: 72,
+                            color: isDark ? Colors.white10 : Colors.black12,
+                          ),
+                          itemBuilder: (ctx, index) {
+                            final track = songs[index];
+                            return ListTile(
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: AlbumArtWidget(
+                                  albumArt: track.albumArt,
+                                  width: 44,
+                                  height: 44,
+                                  fallbackIcon: Icons.music_note_rounded,
+                                ),
+                              ),
+                              title: Text(
+                                track.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                              ),
+                              subtitle: Text(
+                                track.artist,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(fontSize: 12),
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.close_rounded, size: 18),
+                                    tooltip: 'Remove from playlist',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () async {
+                                      await StreamPlaylistsService.instance.removeSongFromPlaylist(playlist.id, track.id);
+                                      Fluttertoast.showToast(msg: 'Removed from "${playlist.name}"');
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.more_vert_rounded, size: 20),
+                                    tooltip: 'Song options',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => SongOptionsBottomSheet.show(context, song: track),
+                                  ),
+                                ],
+                              ),
+                              onTap: () {
+                                context.read<PlayerBloc>().add(PlayQueueEvent(songs, initialIndex: index));
+                                Navigator.pop(context);
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            );
+          },
         );
       },
     );

@@ -15,6 +15,7 @@ import 'package:vinyl/services/lyrics_service.dart';
 import 'package:vinyl/services/stream_cache_service.dart';
 import 'package:vinyl/services/user_taste_service.dart';
 import 'package:vinyl/services/stream_favorites_service.dart';
+import 'package:vinyl/services/stream_playlists_service.dart';
 
 import 'package:vinyl/presentation/bloc/theme/theme_cubit.dart';
 
@@ -69,6 +70,9 @@ Future<void> getItSetup() async {
   );
   getIt.registerLazySingleton<StreamFavoritesService>(
     () => StreamFavoritesService(),
+  );
+  getIt.registerLazySingleton<StreamPlaylistsService>(
+    () => StreamPlaylistsService(),
   );
 
   // BLoCs & Cubits
