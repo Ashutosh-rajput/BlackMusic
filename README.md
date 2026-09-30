@@ -15,11 +15,11 @@ Maintaining **Vinyl**, implementing new features (like PulseIQ and high-fidelity
 
 ### India
 
-[![Pay via UPI](https://img.shields.io/badge/🇮🇳%20Pay%20via%20UPI-sliceashutoshrajput%40ybl-FFB000?style=for-the-badge)](upi://pay?pa=sliceashutoshrajput@ybl&mode=02)
+***👇Click Here***
 
-[🇮🇳 Pay via UPI](upi://pay?pa=sliceashutoshrajput@ybl&pn=Ashutosh%20Rajput&cu=INR)
+[![Pay via UPI](https://img.shields.io/badge/🇮🇳%20Pay%20via%20UPI-sliceashutoshrajput%40ybl-FFB000?style=for-the-badge)](https://upilinks.in/payment-link/upi1338032236)
 
-[![Pay via UPI](https://img.shields.io/badge/🇮🇳%20Pay%20via%20UPI-Scan%20to%20Pay-FFB000?style=for-the-badge)](upi://pay?pa=sliceashutoshrajput@ybl&pn=Ashutosh%20Rajput&cu=INR)
+
 
 <p align="left">
   <img src=".github/assets/UPI_QR.jpeg" alt="UPI QR Code" width="250">
