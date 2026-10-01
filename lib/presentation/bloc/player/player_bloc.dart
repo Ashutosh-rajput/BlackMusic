@@ -105,6 +105,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<SetRepeatModeEvent>(_onSetRepeatMode);
     on<SetAutoPlayNextEvent>(_onSetAutoPlayNext);
     on<RestoreLastPlayedEvent>(_onRestoreLastPlayed);
+    on<ResyncPlaybackEvent>(_onResyncPlayback);
     on<PositionChangedEvent>(_onPositionChanged);
     on<DurationChangedEvent>(_onDurationChanged);
     on<TrackChangedEvent>(_onTrackChanged);
@@ -762,6 +763,36 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       }
     } catch (e) {
       debugPrint('Error resuming player: $e');
+    }
+  }
+
+  Future<void> _onResyncPlayback(ResyncPlaybackEvent event, Emitter<PlayerState> emit) async {
+    if (_isChangingSong) return;
+    final playerIsPlaying = _audioService.isPlaying;
+
+    if (state is PlayerPlaying && !playerIsPlaying) {
+      // Screen says playing, the player was paused (e.g. by an interruption).
+      add(const PauseEvent());
+      return;
+    }
+    if (state is PlayerPaused && playerIsPlaying) {
+      add(const ResumeEvent());
+      return;
+    }
+    if (state is! PlayerPlaying || !playerIsPlaying) return;
+
+    // Both say "playing". Make sure it is audible: another app may have taken
+    // audio focus meanwhile, which leaves the player running but muted.
+    final hasFocus = await _audioService.ensureAudioFocus();
+    if (!hasFocus) {
+      // Someone else is using audio and refused us: pause so the screen
+      // shows the truth instead of a silent "playing".
+      add(const PauseEvent());
+      return;
+    }
+    final expectedVolume = (state as PlayerPlaying).volume;
+    if ((_audioService.volume - expectedVolume).abs() > 0.01) {
+      await _audioService.setVolume(expectedVolume);
     }
   }
 

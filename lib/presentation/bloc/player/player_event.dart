@@ -162,6 +162,16 @@ class SetAutoPlayNextEvent extends PlayerEvent {
   List<Object?> get props => [autoPlayNext];
 }
 
+/// Re-syncs the app's play/pause state, audio focus and volume with the real
+/// player. Sent when the app returns to the foreground, after other apps
+/// (Instagram, calls, alarms) may have taken audio focus.
+class ResyncPlaybackEvent extends PlayerEvent {
+  const ResyncPlaybackEvent();
+
+  @override
+  List<Object?> get props => [];
+}
+
 class RestoreLastPlayedEvent extends PlayerEvent {
   const RestoreLastPlayedEvent();
 }

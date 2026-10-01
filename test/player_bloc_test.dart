@@ -247,6 +247,43 @@ void main() {
       expect((playerBloc.state as PlayerPlaying).song.id, equals(testSong2.id));
     });
 
+    test('resync: if another app still holds audio focus, a silent "playing" becomes paused', () async {
+      playerBloc.add(PlaySongEvent(testSong, queue: [testSong, testSong2]));
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(playerBloc.state, isA<PlayerPlaying>());
+
+      audioService.focusGranted = false;
+      playerBloc.add(const ResyncPlaybackEvent());
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(playerBloc.state, isA<PlayerPaused>());
+      expect(audioService.isPlaying, isFalse);
+    });
+
+    test('resync: with focus available, playback keeps playing', () async {
+      playerBloc.add(PlaySongEvent(testSong, queue: [testSong, testSong2]));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      playerBloc.add(const ResyncPlaybackEvent());
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      expect(audioService.isPlaying, isTrue);
+    });
+
+    test('resync: screen says playing but the player was paused by an interruption', () async {
+      playerBloc.add(PlaySongEvent(testSong, queue: [testSong, testSong2]));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // The player paused itself (e.g. a call) without the screen finding out.
+      await audioService.pause();
+      await Future.delayed(const Duration(milliseconds: 20));
+      playerBloc.add(const ResyncPlaybackEvent());
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(playerBloc.state, isA<PlayerPaused>());
+    });
+
     Song track(int id) => Song(
           id: id,
           title: 'Track $id',

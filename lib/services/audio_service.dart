@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:vinyl/data/models/song_model.dart';
@@ -7,9 +9,43 @@ import 'package:logger/logger.dart';
 
 final _logger = Logger();
 
+/// What to do with the music when another app's audio starts or stops.
+enum InterruptionAction {
+  /// Nothing to do (including: another app's audio ended — we do NOT resume).
+  none,
+
+  /// Pause and stay paused until the user presses play.
+  pause,
+
+  /// Lower the volume while the other app speaks over us.
+  duck,
+
+  /// Bring the volume back after ducking.
+  unduck,
+}
+
+/// The app's interruption policy, kept separate from the platform so it can be
+/// tested. Music pauses when another app starts playing, and stays paused when
+/// that app stops: the user decides when to play again.
+InterruptionAction interruptionActionFor(AudioInterruptionEvent event) {
+  if (event.begin) {
+    switch (event.type) {
+      case AudioInterruptionType.duck:
+        return InterruptionAction.duck;
+      case AudioInterruptionType.pause:
+      case AudioInterruptionType.unknown:
+        return InterruptionAction.pause;
+    }
+  }
+  return event.type == AudioInterruptionType.duck
+      ? InterruptionAction.unduck
+      : InterruptionAction.none;
+}
+
 class AudioPlayerService {
   static final AudioPlayerService _instance = AudioPlayerService._internal();
   AudioPlayer? _audioPlayer;
+  double? _volumeBeforeDuck;
 
   factory AudioPlayerService() => _instance;
 
@@ -17,8 +53,12 @@ class AudioPlayerService {
 
   AudioPlayer get player {
     if (_audioPlayer == null) {
-      _audioPlayer = AudioPlayer();
+      // just_audio's own interruption handling resumes playback by itself when
+      // the other app stops. We want the opposite (stay paused), so it is
+      // turned off and handled in _listenToInterruptions instead.
+      _audioPlayer = AudioPlayer(handleInterruptions: false);
       _setupAudioPlayer();
+      _listenToInterruptions();
     }
     return _audioPlayer!;
   }
@@ -27,6 +67,40 @@ class AudioPlayerService {
     _audioPlayer?.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace st) {
       _logger.e('Audio player playback error: $e');
     });
+  }
+
+  Future<void> _listenToInterruptions() async {
+    try {
+      final session = await AudioSession.instance;
+      session.interruptionEventStream.listen((event) {
+        final player = _audioPlayer;
+        if (player == null) return;
+        switch (interruptionActionFor(event)) {
+          case InterruptionAction.pause:
+            if (player.playing) unawaited(player.pause());
+            break;
+          case InterruptionAction.duck:
+            _volumeBeforeDuck ??= player.volume;
+            unawaited(player.setVolume(_volumeBeforeDuck! * 0.3));
+            break;
+          case InterruptionAction.unduck:
+            final restore = _volumeBeforeDuck;
+            _volumeBeforeDuck = null;
+            if (restore != null) unawaited(player.setVolume(restore));
+            break;
+          case InterruptionAction.none:
+            break;
+        }
+      });
+      // Headphones unplugged / Bluetooth disconnected: pause, don't blast
+      // the music out of the speaker.
+      session.becomingNoisyEventStream.listen((_) {
+        final player = _audioPlayer;
+        if (player != null && player.playing) unawaited(player.pause());
+      });
+    } catch (e) {
+      _logger.w('AudioPlayerService: could not listen for audio interruptions: $e');
+    }
   }
 
   Uri? _parseArtUri(String? artPath) {
@@ -275,6 +349,23 @@ class AudioPlayerService {
       }
     } catch (e) {
       _logger.w('AudioPlayerService: Error syncing upcoming songs: $e');
+    }
+  }
+
+  double get volume => _audioPlayer?.volume ?? 1.0;
+
+  /// Asks Android for audio focus again. When another app (Instagram, a call)
+  /// takes focus while we keep "playing", Android 12+ silently mutes our
+  /// stream until we hold focus again, leaving the player running with no
+  /// sound. Returns false if focus was refused (someone else is still using
+  /// audio), in which case playback should be paused rather than left silent.
+  Future<bool> ensureAudioFocus() async {
+    try {
+      final session = await AudioSession.instance;
+      return await session.setActive(true);
+    } catch (e) {
+      _logger.w('AudioPlayerService: could not re-request audio focus: $e');
+      return true; // unknown; don't pause on an error
     }
   }
 

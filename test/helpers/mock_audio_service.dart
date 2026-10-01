@@ -163,6 +163,16 @@ class MockAudioPlayerService implements AudioPlayerService {
     _currentIndexController.add(_currentIndex);
   }
 
+  /// What [ensureAudioFocus] reports; set false to simulate another app
+  /// still holding audio focus.
+  bool focusGranted = true;
+
+  @override
+  double get volume => 1.0;
+
+  @override
+  Future<bool> ensureAudioFocus() async => focusGranted;
+
   @override
   Future<void> setLoopMode(LoopMode mode) async {}
 

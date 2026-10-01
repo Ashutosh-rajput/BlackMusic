@@ -9,6 +9,7 @@ import 'package:vinyl/core/di/injection_container.dart';
 import 'package:vinyl/core/theme/app_theme.dart';
 import 'package:vinyl/presentation/bloc/library/library_bloc.dart';
 import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
+import 'package:vinyl/presentation/bloc/player/player_event.dart';
 import 'package:vinyl/presentation/bloc/theme/theme_cubit.dart';
 import 'package:vinyl/presentation/screens/splash_screen.dart';
 import 'package:vinyl/services/download_background_service.dart';
@@ -161,6 +162,11 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> with WidgetsBindingObse
     // downloads that were paused waiting for it.
     if (state == AppLifecycleState.resumed && getIt.isRegistered<DownloadService>()) {
       getIt<DownloadService>().resumePausedDownloads();
+    }
+    // Other apps (Instagram, calls) may have taken audio focus while we were
+    // in the background; make the play state and the sound match again.
+    if (state == AppLifecycleState.resumed && getIt.isRegistered<PlayerBloc>()) {
+      getIt<PlayerBloc>().add(const ResyncPlaybackEvent());
     }
     debugPrint('App lifecycle state changed: $state');
   }
