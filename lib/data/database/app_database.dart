@@ -1,5 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:vinyl/core/utils/hash_utils.dart';
+import 'package:vinyl/core/utils/song_origin.dart';
 import 'package:vinyl/data/database/platform_workaround/platform_workaround.dart';
 
 part 'app_database.g.dart';
@@ -134,6 +136,11 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  Future<int> updateSongFilePath(int id, String filePath) {
+    return (update(songs)..where((t) => t.id.equals(id)))
+        .write(SongsCompanion(filePath: Value(filePath)));
+  }
+
   Future<int> updateSongFull(SongsCompanion song) {
     return (update(songs)..where((t) => t.filePath.equals(song.filePath.value)))
         .write(song);
@@ -156,10 +163,22 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  /// Get most played songs ordered by play count descending
-  Future<List<Song>> getMostPlayedSongs({int limit = 20}) {
+  /// Rows that belong to Stream (web URL, unresolved, or offline stream
+  /// cache), mirroring SongOrigin.isStreamPath for SQL.
+  Expression<bool> _isStreamRow($SongsTable t) =>
+      t.filePath.like('http://%') |
+      t.filePath.like('https://%') |
+      t.filePath.equals('') |
+      t.filePath.like('%/stream_cache/%');
+
+  /// Get most played songs ordered by play count descending.
+  /// With [streamOnly], only Stream songs (used to seed Stream recommendations,
+  /// which must not be driven by Library files).
+  Future<List<Song>> getMostPlayedSongs({int limit = 20, bool streamOnly = false}) {
     return (select(songs)
-          ..where((t) => t.playCount.isBiggerThanValue(0))
+          ..where((t) => streamOnly
+              ? t.playCount.isBiggerThanValue(0) & _isStreamRow(t)
+              : t.playCount.isBiggerThanValue(0))
           ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
           ..limit(limit))
         .get();
@@ -178,27 +197,42 @@ class AppDatabase extends _$AppDatabase {
     String? audioQuality,
   }) async {
     final now = DateTime.now();
+    // A play is only ever credited to a row from the same side: a Stream play
+    // never updates a Library song (or vice versa), even with the same title.
+    final playIsStream = SongOrigin.isStreamPath(filePath);
+    bool sameSide(Song row) => SongOrigin.isStreamPath(row.filePath) == playIsStream;
+
     Song? existing;
     try {
       existing = await (select(songs)..where((t) => t.id.equals(id))..limit(1)).getSingleOrNull();
+      if (existing != null && !sameSide(existing)) existing = null;
       if (existing == null && filePath.isNotEmpty) {
         existing = await (select(songs)..where((t) => t.filePath.equals(filePath))..limit(1)).getSingleOrNull();
       }
       if (existing == null && title.trim().isNotEmpty && artist.trim().isNotEmpty) {
-        existing = await (select(songs)
+        final sameTitle = await (select(songs)
               ..where((t) =>
                   t.title.lower().equals(title.toLowerCase().trim()) &
-                  t.artist.lower().equals(artist.toLowerCase().trim()))
-              ..limit(1))
-            .getSingleOrNull();
+                  t.artist.lower().equals(artist.toLowerCase().trim())))
+            .get();
+        existing = sameTitle.where(sameSide).firstOrNull;
       }
     } catch (_) {}
 
     final existingSong = existing;
+    var recordedId = existingSong?.id ?? id;
     if (existingSong == null) {
+      // If this id is taken by a song from the other side, store the play
+      // under a derived id rather than replacing that song.
+      var insertId = id;
+      final idOwner = await (select(songs)..where((t) => t.id.equals(id))..limit(1)).getSingleOrNull();
+      if (idOwner != null && !sameSide(idOwner)) {
+        insertId = generateStableId('${playIsStream ? 'stream' : 'library'}:$filePath:$title:$artist');
+      }
+      recordedId = insertId;
       await into(songs).insert(
         SongsCompanion.insert(
-          id: Value(id),
+          id: Value(insertId),
           title: title,
           artist: artist,
           album: album,
@@ -214,6 +248,16 @@ class AppDatabase extends _$AppDatabase {
         mode: InsertMode.insertOrReplace,
       );
     } else {
+      // Never replace a song's real on-device file with the path being
+      // played. Streaming a song that is already downloaded matches the
+      // downloaded row (by title + artist); overwriting its local path with
+      // the stream URL made the download vanish from the Library, and a
+      // stream-cache path would break it once the cache is cleared. Only
+      // stream rows (remote or empty path) take the newer path.
+      final existingPath = existingSong.filePath.trim();
+      final existingIsRemote = existingPath.isEmpty ||
+          existingPath.startsWith('http://') ||
+          existingPath.startsWith('https://');
       await (update(songs)..where((t) => t.id.equals(existingSong.id))).write(
         SongsCompanion(
           playCount: Value(existingSong.playCount + 1),
@@ -221,22 +265,24 @@ class AppDatabase extends _$AppDatabase {
           source: Value(existingSong.source ?? source),
           audioQuality: Value(existingSong.audioQuality ?? audioQuality),
           albumArt: Value(existingSong.albumArt ?? albumArt),
-          filePath: filePath.isNotEmpty ? Value(filePath) : const Value.absent(),
+          filePath: (filePath.isNotEmpty && existingIsRemote) ? Value(filePath) : const Value.absent(),
         ),
       );
     }
 
     try {
       await into(playHistory).insert(
-        PlayHistoryCompanion.insert(songId: existing?.id ?? id, playedAt: now),
+        PlayHistoryCompanion.insert(songId: recordedId, playedAt: now),
       );
     } catch (_) {}
   }
 
-  /// Get stream songs that were played, ordered by lastPlayedAt descending
+  /// Get stream songs that were played, ordered by lastPlayedAt descending.
+  /// Library songs are excluded: Stream's Last Played, Autoplay and Radio must
+  /// only see Stream songs.
   Future<List<Song>> getLastPlayedStreamSongs({int limit = 50}) {
     return (select(songs)
-          ..where((t) => t.lastPlayedAt.isNotNull())
+          ..where((t) => t.lastPlayedAt.isNotNull() & _isStreamRow(t))
           ..orderBy([(t) => OrderingTerm.desc(t.lastPlayedAt)])
           ..limit(limit))
         .get();

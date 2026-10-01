@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart';
+import 'package:vinyl/core/utils/song_origin.dart';
 import 'package:vinyl/data/database/app_database.dart' as db;
 import 'package:vinyl/data/models/song_model.dart';
 import 'package:vinyl/data/models/playlist_model.dart';
@@ -38,6 +41,26 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
         song.filePath.contains('raw.githubusercontent.com');
   }
 
+  /// Locates the audio file of a download in the app's download folder by the
+  /// names DownloadService saves files under ("Title.ext", "Title - Artist.ext").
+  String? _findDownloadedFile(db.Song row) {
+    if (!Platform.isAndroid) return null;
+    String clean(String s) => s.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    const dir = '/storage/emulated/0/Download/vinyl';
+    final title = clean(row.title);
+    final artist = clean(row.artist);
+    for (final base in [title, '$title - $artist']) {
+      for (final ext in const ['m4a', 'mp3', 'webm']) {
+        final path = '$dir/$base.$ext';
+        try {
+          final file = File(path);
+          if (file.existsSync() && file.lengthSync() > 0) return path;
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+
   @override
   Future<List<Song>> getAllSongs() async {
     try {
@@ -46,9 +69,15 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
       final List<int> seedIdsToDelete = [];
 
       for (var row in rows) {
-        // Skip remote stream URLs from local library listing (stream-only tracks)
-        if (row.filePath.startsWith('http://') || row.filePath.startsWith('https://')) {
-          continue;
+        // Stream rows (web URL, unresolved, or offline stream cache) are kept
+        // in the same table for play history but never belong to the Library.
+        if (SongOrigin.isStreamPath(row.filePath)) {
+          // A download whose path was overwritten by a stream URL (old
+          // recordSongPlay bug): point it back at its file if it still exists.
+          final repaired = row.genre == 'Downloaded' ? _findDownloadedFile(row) : null;
+          if (repaired == null) continue;
+          await _db.updateSongFilePath(row.id, repaired);
+          row = row.copyWith(filePath: repaired);
         }
 
         String? resolvedSource = row.source;
@@ -234,9 +263,9 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
     }
   }
 
-  Future<List<Song>> getMostPlayedSongs({int limit = 20}) async {
+  Future<List<Song>> getMostPlayedSongs({int limit = 20, bool streamOnly = false}) async {
     try {
-      final rows = await _db.getMostPlayedSongs(limit: limit);
+      final rows = await _db.getMostPlayedSongs(limit: limit, streamOnly: streamOnly);
       return rows.map((row) => Song(
         id: row.id,
         title: row.title,

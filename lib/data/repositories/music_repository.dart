@@ -16,7 +16,8 @@ abstract class MusicRepository {
   Future<void> saveSongsBatch(List<Song> songs, {bool notify = true});
   Future<void> incrementPlayCount(int songId);
   Future<void> recordSongPlay(Song song);
-  Future<List<Song>> getMostPlayedSongs({int limit = 20});
+  /// With [streamOnly], only Stream songs (for seeding Stream recommendations).
+  Future<List<Song>> getMostPlayedSongs({int limit = 20, bool streamOnly = false});
   Future<List<Song>> getLastPlayedStreamSongs({int limit = 50});
 
   Future<List<PlaylistModel>> getPlaylists();
@@ -125,9 +126,9 @@ class MusicRepositoryImpl implements MusicRepository {
   }
 
   @override
-  Future<List<Song>> getMostPlayedSongs({int limit = 20}) async {
+  Future<List<Song>> getMostPlayedSongs({int limit = 20, bool streamOnly = false}) async {
     try {
-      return await (_localDatasource as dynamic).getMostPlayedSongs(limit: limit) as List<Song>;
+      return await (_localDatasource as dynamic).getMostPlayedSongs(limit: limit, streamOnly: streamOnly) as List<Song>;
     } catch (e) {
       _logger.e('Error fetching most played songs: $e');
       return [];

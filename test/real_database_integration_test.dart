@@ -139,6 +139,97 @@ void main() {
       final historyAfter = await db.getPlayHistory();
       expect(historyAfter.any((h) => h.songId == song1.id), isFalse);
     });
+
+    test('streaming a song that is already downloaded keeps the download in the Library', () async {
+      // The downloaded copy, saved to the device.
+      final downloaded = Song(
+        id: 7001,
+        title: 'Kesariya',
+        artist: 'Arijit Singh',
+        album: 'Brahmastra',
+        filePath: '/storage/emulated/0/Download/vinyl/Kesariya.m4a',
+        duration: const Duration(seconds: 268),
+        dateModified: DateTime.now(),
+        genre: 'Downloaded',
+        source: 'jiosaavn',
+      );
+      await repository.addSong(downloaded);
+
+      // The same song played again from Stream: different id, stream URL.
+      final streamed = Song(
+        id: 7002,
+        title: 'Kesariya',
+        artist: 'Arijit Singh',
+        album: 'Brahmastra',
+        filePath: 'https://aac.saavncdn.com/123/kesariya_320.mp4',
+        duration: const Duration(seconds: 268),
+        dateModified: DateTime.now(),
+        source: 'jiosaavn',
+      );
+      await repository.recordSongPlay(streamed);
+
+      final library = await repository.getAllSongs();
+      final kept = library.where((s) => s.title == 'Kesariya').toList();
+      expect(kept, hasLength(1));
+      expect(kept.single.filePath, equals('/storage/emulated/0/Download/vinyl/Kesariya.m4a'));
+      // The Stream play is counted on the Stream side, not on the download.
+      final streamHistory = await repository.getLastPlayedStreamSongs();
+      expect(streamHistory.map((s) => s.title), contains('Kesariya'));
+    });
+
+    group('Library and Stream stay separate', () {
+      Song streamSong(int id, String title, String path) => Song(
+            id: id,
+            title: title,
+            artist: 'Stream Artist',
+            album: 'JioSaavn',
+            filePath: path,
+            duration: const Duration(seconds: 200),
+            dateModified: DateTime.now(),
+            source: 'jiosaavn',
+          );
+
+      test('a song played from the offline stream cache never appears in the Library', () async {
+        await repository.recordSongPlay(streamSong(
+          8001,
+          'Cached Stream Song',
+          '/data/user/0/com.muskmelon.vinyl/cache/stream_cache/8001.m4a',
+        ));
+        await repository.recordSongPlay(streamSong(8002, 'Unresolved Stream Song', ''));
+
+        final library = await repository.getAllSongs();
+        expect(library.any((s) => s.title.contains('Stream Song')), isFalse);
+        final search = await repository.searchSongs('Stream Song');
+        expect(search, isEmpty);
+      });
+
+      test('Stream "Last Played" contains only Stream songs', () async {
+        await repository.addSong(song1); // a Library file
+        await repository.recordSongPlay(song1);
+        await repository.recordSongPlay(
+            streamSong(8003, 'Online Hit', 'https://aac.saavncdn.com/1/online_hit_320.mp4'));
+
+        final lastPlayed = await repository.getLastPlayedStreamSongs();
+        expect(lastPlayed.map((s) => s.title), contains('Online Hit'));
+        expect(lastPlayed.any((s) => s.title == song1.title), isFalse);
+
+        final topStream = await repository.getMostPlayedSongs(streamOnly: true);
+        expect(topStream.any((s) => s.title == song1.title), isFalse);
+      });
+
+      test('a Library play never updates a Stream song with the same title', () async {
+        await repository.recordSongPlay(streamSong(
+            8004, song1.title, 'https://aac.saavncdn.com/2/midnight_city_320.mp4').copyWith(artist: song1.artist));
+        await repository.addSong(song1);
+        await repository.recordSongPlay(song1);
+
+        // The Library file keeps its own path; the Stream row keeps its URL.
+        final library = await repository.getAllSongs();
+        expect(library.where((s) => s.title == song1.title).single.filePath, equals(song1.filePath));
+        final stream = await repository.getLastPlayedStreamSongs();
+        expect(stream.where((s) => s.title == song1.title).single.filePath, startsWith('https://'));
+      });
+    });
   });
 }
 

@@ -282,7 +282,14 @@ class DownloadService {
 
   ActiveDownload? getDownloadByUrl(String url) {
     final clean = _downloadId(url);
-    final matches = downloadQueueNotifier.value.where((d) => d.id == clean);
+    final cleanUrl = _extractFirstUrl(url.trim());
+    final matches = downloadQueueNotifier.value.where((d) => d.id == clean || d.url == cleanUrl);
+    return matches.isNotEmpty ? matches.last : null;
+  }
+
+  /// The queue entry for a song enqueued with [enqueueDownload]'s songKey.
+  ActiveDownload? getDownloadBySongKey(String songKey) {
+    final matches = downloadQueueNotifier.value.where((d) => d.id == 'song:${songKey.trim()}');
     return matches.isNotEmpty ? matches.last : null;
   }
 
@@ -320,6 +327,11 @@ class DownloadService {
   /// [fromShare] marks downloads that arrived via the OS share sheet, which
   /// are subject to [SettingsService.autoAddSharedSongs] before being added
   /// to the library.
+  ///
+  /// [songKey] identifies the song itself (e.g. its JioSaavn id). The same
+  /// song can reach the queue under different URLs (stream URL, decrypted
+  /// 320 kbps URL, offline-cache file), so with a key the queue treats them
+  /// as one download instead of downloading the song several times.
   Future<void> enqueueDownload({
     required String url,
     String? title,
@@ -328,6 +340,7 @@ class DownloadService {
     String? albumArt,
     Duration? duration,
     bool fromShare = false,
+    String? songKey,
   }) async {
     var cleanUrl = _extractFirstUrl(url.trim());
     if (cleanUrl.isEmpty) return;
@@ -450,9 +463,11 @@ class DownloadService {
       }
     }
 
-    final downloadId = _downloadId(cleanUrl);
+    final key = songKey?.trim() ?? '';
+    final downloadId = key.isNotEmpty ? 'song:$key' : _downloadId(cleanUrl);
     final existingList = List<ActiveDownload>.from(downloadQueueNotifier.value);
-    final existingIndex = existingList.indexWhere((d) => d.id == downloadId);
+    final existingIndex = existingList.indexWhere(
+        (d) => d.id == downloadId || (key.isEmpty && d.url == cleanUrl));
 
     if (existingIndex != -1) {
       final existing = existingList[existingIndex];
@@ -555,6 +570,19 @@ class DownloadService {
           return;
         }
       }
+
+      // Downloads paused while waiting for Wi-Fi can go now (Wi-Fi is back or
+      // the Wi-Fi-only setting was turned off). Nothing else ever resumed
+      // them, so they used to sit paused forever.
+      final pending = List<ActiveDownload>.from(downloadQueueNotifier.value);
+      var resumed = false;
+      for (var i = 0; i < pending.length; i++) {
+        if (pending[i].status == DownloadStatus.paused) {
+          pending[i] = pending[i].copyWith(status: DownloadStatus.queued, statusMessage: 'Queued...');
+          resumed = true;
+        }
+      }
+      if (resumed) downloadQueueNotifier.value = pending;
 
       final maxConcurrent =
           (_settingsService?.maxSimultaneousDownloads ?? 2).clamp(1, 3);
@@ -885,6 +913,18 @@ class DownloadService {
         },
       );
       return songs.isNotEmpty ? songs.first : null;
+    }
+
+    if (cleanUrl.startsWith('jiosaavn-token:')) {
+      // A JioSaavn song with no media URL yet: resolve it from its id/token.
+      // This prefix used to fall through to a plain HTTP download and fail.
+      final token = cleanUrl.substring('jiosaavn-token:'.length);
+      final details = await JioSaavnDecoder.fetchSongDetails(token);
+      final resolved = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
+      if (resolved == null || resolved.isEmpty) {
+        throw Exception('Could not get a download link for this song from JioSaavn.');
+      }
+      return _downloadDirectAudio(resolved, onProgress, id, addToLibrary: addToLibrary, source: 'jiosaavn', audioQuality: '320 kbps');
     }
 
     if (cleanUrl.startsWith('jiosaavn:')) {
@@ -1548,6 +1588,47 @@ class DownloadService {
     }
   }
 
+  /// Streams [url] into [partPath], reporting progress to the queue and the
+  /// download notification.
+  Future<void> _downloadToPartFile(
+    String url,
+    String partPath,
+    CancelToken cancelToken,
+    String displayFileName,
+    int notifId,
+    Function(double progress, String status) onProgress,
+  ) {
+    return _dio.download(
+      url,
+      partPath,
+      cancelToken: cancelToken,
+      onReceiveProgress: (received, total) {
+        if (total > 0) {
+          // Stay below 1.0 until the file is renamed and added to the
+          // library; 1.0 marks the queue entry as completed.
+          final p = (received / total).clamp(0.0, 0.99);
+          onProgress(
+            p,
+            'Downloading $displayFileName... (${(p * 100).toInt()}%)',
+          );
+          if (_settingsService?.downloadNotifications ?? true) {
+            final progressInt = (p * 100).toInt();
+            final recMb = (received / 1024 / 1024).toStringAsFixed(1);
+            final totMb = (total / 1024 / 1024).toStringAsFixed(1);
+            unawaited(_notificationService.showDownloadProgress(
+              id: notifId,
+              title: displayFileName,
+              statusText: '$recMb MB / $totMb MB ($progressInt%)',
+              progress: progressInt,
+            ).catchError((_) {}));
+          }
+        } else {
+          onProgress(0.50, 'Downloading $displayFileName...');
+        }
+      },
+    );
+  }
+
   Future<Song?> _downloadDirectAudio(
     String url,
     Function(double progress, String status) onProgress,
@@ -1663,39 +1744,32 @@ class DownloadService {
       final sourceLocalFile = File(url);
       final isLocalSource = await sourceLocalFile.exists() && await sourceLocalFile.length() > 0;
 
+      // Write to a temporary ".part" file and only rename it to the real name
+      // once it is complete. Otherwise an interrupted download (app killed,
+      // network drop) left a half-written "Title.m4a" behind, and the next
+      // attempt treated it as "already exists" and added a broken song.
+      final partPath = '$savePath.part';
+      final partFile = File(partPath);
+      if (await partFile.exists()) await partFile.delete();
+
       if (isLocalSource) {
         onProgress(0.50, 'Saving to downloads...');
         if (sourceLocalFile.path != savePath) {
-          await sourceLocalFile.copy(savePath);
+          await sourceLocalFile.copy(partPath);
+          await partFile.rename(savePath);
         }
       } else {
-        await _dio.download(
-          url,
-          savePath,
-          cancelToken: cancelToken,
-          onReceiveProgress: (received, total) {
-            if (total > 0) {
-              final p = (received / total);
-              onProgress(
-                p,
-                'Downloading $displayFileName... (${(p * 100).toInt()}%)',
-              );
-              if (_settingsService?.downloadNotifications ?? true) {
-                final progressInt = (p * 100).toInt();
-                final recMb = (received / 1024 / 1024).toStringAsFixed(1);
-                final totMb = (total / 1024 / 1024).toStringAsFixed(1);
-                unawaited(_notificationService.showDownloadProgress(
-                  id: notifId,
-                  title: displayFileName,
-                  statusText: '$recMb MB / $totMb MB ($progressInt%)',
-                  progress: progressInt,
-                ).catchError((_) {}));
-              }
-            } else {
-              onProgress(0.50, 'Downloading $displayFileName...');
-            }
-          },
-        );
+        try {
+          await _downloadToPartFile(url, partPath, cancelToken, displayFileName, notifId, onProgress);
+        } catch (_) {
+          if (await partFile.exists()) await partFile.delete();
+          rethrow;
+        }
+        if (await partFile.length() == 0) {
+          await partFile.delete();
+          throw Exception('Downloaded file is empty.');
+        }
+        await partFile.rename(savePath);
       }
 
       final file = File(savePath);

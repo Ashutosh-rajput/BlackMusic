@@ -1064,6 +1064,7 @@ class _JioSaavnResultTileState extends State<_JioSaavnResultTile> {
               : 'JioSaavn'),
       albumArt: widget.item.imageUrl,
       duration: secs > 0 ? Duration(seconds: secs) : null,
+      songKey: widget.item.isSong ? widget.item.id : null,
     );
     showDownloadQueuedSnackBar(
       context,
@@ -1076,23 +1077,25 @@ class _JioSaavnResultTileState extends State<_JioSaavnResultTile> {
       BuildContext context, DownloadService service, JioSaavnItem track) {
     final directUrl = track.directMediaUrl ??
         JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
-    if (directUrl != null) {
-      final secs = int.tryParse(track.duration ?? '0') ?? 0;
-      service.enqueueDownload(
-        url: directUrl,
-        title: track.title,
-        artist: track.subtitle,
-        album: widget.item.isAlbum ? widget.item.title : track.subtitle,
-        albumArt:
-            track.imageUrl.isNotEmpty ? track.imageUrl : widget.item.imageUrl,
-        duration: secs > 0 ? Duration(seconds: secs) : null,
-      );
-      showDownloadQueuedSnackBar(
-        context,
-        title: track.title,
-        onViewQueue: () => DownloadQueueSheet.show(context),
-      );
-    }
+    final secs = int.tryParse(track.duration ?? '0') ?? 0;
+    service.enqueueDownload(
+      // No URL yet: DownloadService resolves the song from its id.
+      url: (directUrl != null && directUrl.isNotEmpty)
+          ? directUrl
+          : 'jiosaavn-token:${track.token.isNotEmpty ? track.token : track.id}',
+      title: track.title,
+      artist: track.subtitle,
+      album: widget.item.isAlbum ? widget.item.title : track.subtitle,
+      albumArt:
+          track.imageUrl.isNotEmpty ? track.imageUrl : widget.item.imageUrl,
+      duration: secs > 0 ? Duration(seconds: secs) : null,
+      songKey: track.id.isNotEmpty ? track.id : null,
+    );
+    showDownloadQueuedSnackBar(
+      context,
+      title: track.title,
+      onViewQueue: () => DownloadQueueSheet.show(context),
+    );
   }
 
   @override
@@ -1134,14 +1137,16 @@ class _JioSaavnResultTileState extends State<_JioSaavnResultTile> {
               (widget.item.encryptedMediaUrl != null &&
                   (d.url == widget.item.encryptedMediaUrl ||
                       d.url == 'jiosaavn:${widget.item.encryptedMediaUrl}')) ||
-              d.id == widget.item.id).isNotEmpty
+              d.id == widget.item.id ||
+              d.id == 'song:${widget.item.id}').isNotEmpty
               ? queue.lastWhere((d) =>
                   (directUrl != null && d.url == directUrl) ||
                   (widget.item.encryptedMediaUrl != null &&
                       (d.url == widget.item.encryptedMediaUrl ||
                           d.url ==
                               'jiosaavn:${widget.item.encryptedMediaUrl}')) ||
-                  d.id == widget.item.id)
+                  d.id == widget.item.id ||
+              d.id == 'song:${widget.item.id}')
               : null;
 
           if (active == null) {

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:vinyl/core/di/injection_container.dart';
+import 'package:vinyl/core/utils/song_origin.dart';
 import 'package:vinyl/data/models/song_model.dart';
 import 'package:vinyl/presentation/bloc/library/library_bloc.dart';
 import 'package:vinyl/presentation/bloc/library/library_event.dart';
@@ -79,25 +80,9 @@ class SongOptionsBottomSheet extends StatelessWidget {
 
   // ─── Song classification helpers ──────────────────────────────────────────
 
-  /// True when the song lives in the local library (downloaded from YouTube,
-  /// imported local file, or any non-stream source with an on-disk file).
-  bool _isLocalLibrarySong() {
-    // Explicit source flags take priority
-    if (song.source == 'local' || song.source == 'youtube') return true;
-    if (song.genre == 'Downloaded' || song.album == 'YouTube Downloads') return true;
-    // Stream songs (even when cached to disk) are never library songs
-    if (song.source == 'jiosaavn') return false;
-    // A stream URL can never be local
-    final fp = song.filePath.trim();
-    if (fp.isEmpty) return false;
-    if (fp.startsWith('http://') || fp.startsWith('https://')) return false;
-    // Only check the filesystem as a last resort (may not be available in tests)
-    try {
-      return File(fp).existsSync();
-    } catch (_) {
-      return false;
-    }
-  }
+  /// True when the song lives in the local library (imported, scanned or
+  /// downloaded). Decided by the shared [SongOrigin] rule.
+  bool _isLocalLibrarySong() => SongOrigin.isLibrary(song);
 
   /// True when the song is a JioSaavn stream song that has been cached to disk
   /// by [StreamCacheService] but is NOT a permanent library download.
@@ -197,18 +182,33 @@ class SongOptionsBottomSheet extends StatelessWidget {
       return;
     }
     final fp = song.filePath.trim();
-    if (fp.startsWith('http') || File(fp).existsSync()) {
-      final downloadService = getIt<DownloadService>();
-      downloadService.enqueueDownload(
-        url: fp,
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        albumArt: song.albumArt,
-        duration: song.duration,
-      );
-      showDownloadQueuedSnackBar(context, title: song.title);
+    final mediaId = song.mediaId?.trim() ?? '';
+    String? url;
+    if (fp.startsWith('http') || (fp.isNotEmpty && File(fp).existsSync())) {
+      url = fp;
+    } else if (mediaId.isNotEmpty) {
+      // Stream song whose URL isn't resolved yet (e.g. an Autoplay pick):
+      // let DownloadService fetch it instead of silently doing nothing.
+      url = 'jiosaavn-token:$mediaId';
     }
+
+    if (url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        _snackBar('Could not find a download link for "${song.title}"'),
+      );
+      return;
+    }
+
+    getIt<DownloadService>().enqueueDownload(
+      url: url,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      albumArt: song.albumArt,
+      duration: song.duration,
+      songKey: mediaId.isNotEmpty ? mediaId : null,
+    );
+    showDownloadQueuedSnackBar(context, title: song.title);
   }
 
   /// Removes [song] from the play queue. If it is the song playing now, the
@@ -292,11 +292,9 @@ class SongOptionsBottomSheet extends StatelessWidget {
 
       _removeFromPlayer(playerBloc);
       // The audio file is already gone; this removes the library entry and
-      // the downloaded artwork.
+      // the downloaded artwork. The Stream offline cache is left alone:
+      // Library actions never touch Stream data.
       libraryBloc.add(DeleteSongEvent(song, deleteFile: true));
-      if (StreamCacheService.instance.isSongCached(song.id)) {
-        await StreamCacheService.instance.removeCachedSong(song.id);
-      }
       messenger.showSnackBar(_snackBar('Deleted "${song.title}" from library'));
     } catch (e) {
       messenger.showSnackBar(_snackBar('Failed to delete: $e'));

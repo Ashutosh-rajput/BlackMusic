@@ -157,6 +157,11 @@ class _PixelPlayerAppState extends State<PixelPlayerApp> with WidgetsBindingObse
         getIt<UserTasteService>().flush();
       }
     }
+    // Returning to the app is the usual moment Wi-Fi is back; start any
+    // downloads that were paused waiting for it.
+    if (state == AppLifecycleState.resumed && getIt.isRegistered<DownloadService>()) {
+      getIt<DownloadService>().resumePausedDownloads();
+    }
     debugPrint('App lifecycle state changed: $state');
   }
 

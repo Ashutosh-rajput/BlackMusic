@@ -13,6 +13,7 @@ import 'package:vinyl/services/settings_service.dart';
 import 'package:vinyl/presentation/bloc/player/player_event.dart';
 import 'package:vinyl/presentation/bloc/player/player_state.dart';
 import 'package:vinyl/core/utils/jiosaavn_decoder.dart';
+import 'package:vinyl/core/utils/song_origin.dart';
 import 'package:vinyl/services/stream_cache_service.dart';
 import 'package:vinyl/services/user_taste_service.dart';
 
@@ -56,12 +57,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   /// True for songs that belong to the Library (imported or downloaded),
   /// false for Stream songs (including ones cached for offline). Autoplay
   /// never mixes the two: Library continues from Library, Stream from Stream.
-  static bool _isLibrarySong(Song s) {
-    if (s.genre == 'Downloaded' || s.album == 'YouTube Downloads') return true;
-    if (s.source == 'jiosaavn') return false;
-    final path = s.filePath.trim();
-    return path.isNotEmpty && !path.startsWith('http://') && !path.startsWith('https://');
-  }
+  static bool _isLibrarySong(Song s) => SongOrigin.isLibrary(s);
   bool _isExpandingQueue = false;
 
   void _showToast(String message) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:vinyl/core/utils/song_origin.dart';
 import 'package:vinyl/data/models/playlist_model.dart';
 import 'package:vinyl/data/models/song_model.dart';
 import 'package:vinyl/presentation/bloc/library/library_bloc.dart';
@@ -35,11 +36,7 @@ class AddToPlaylistSheet extends StatelessWidget {
     );
   }
 
-  bool get _effectiveIsStream =>
-      isStream ??
-      (song.filePath.startsWith('http://') ||
-          song.filePath.startsWith('https://') ||
-          (song.source == 'jiosaavn' && song.genre != 'Downloaded'));
+  bool get _effectiveIsStream => isStream ?? SongOrigin.isStream(song);
 
   void _createNewPlaylistAndAdd(BuildContext context) {
     final controller = TextEditingController();

@@ -104,7 +104,9 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
 
     try {
       // 1. Fetch top 5 most played songs & last played stream history from repository
-      _topPlayed = await getIt<MusicRepository>().getMostPlayedSongs(limit: 5);
+      // Stream songs only: Stream recommendations must not be seeded by
+      // Library files (whose names are often things like "AUD-2023...").
+      _topPlayed = await getIt<MusicRepository>().getMostPlayedSongs(limit: 5, streamOnly: true);
       _lastPlayedStreamSongs = await getIt<MusicRepository>().getLastPlayedStreamSongs();
 
       // 2. Fetch related albums using top played songs
@@ -546,10 +548,12 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
       directUrl = JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
     }
     if (directUrl == null || directUrl.isEmpty) {
-      final details = await JioSaavnDecoder.fetchSongDetails(track.token);
+      // Some items (e.g. from recommendations) carry no token, only an id.
+      final lookupKey = track.token.isNotEmpty ? track.token : track.id;
+      final details = await JioSaavnDecoder.fetchSongDetails(lookupKey);
       directUrl = details?.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(details?.encryptedMediaUrl);
     }
-    if (directUrl != null && mounted) {
+    if (directUrl != null && directUrl.isNotEmpty && mounted) {
       final secs = int.tryParse(track.duration ?? '0') ?? 0;
       downloadService.enqueueDownload(
         url: directUrl,
@@ -558,6 +562,9 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
         album: track.subtitle.isNotEmpty ? track.subtitle : 'JioSaavn',
         albumArt: track.imageUrl,
         duration: secs > 0 ? Duration(seconds: secs) : null,
+        // One download per song, whichever URL it arrives with (stream URL,
+        // 320 kbps URL, offline-cache file, auto-download + manual tap).
+        songKey: track.id.isNotEmpty ? track.id : track.token,
       );
       showDownloadQueuedSnackBar(context, title: track.title);
     } else if (mounted) {
@@ -1890,6 +1897,15 @@ class _StreamScreenState extends State<StreamScreen> with AutomaticKeepAliveClie
 }
 
 /// Song tile for immediate direct playback
+/// The URL to download [track] from. Falls back to a `jiosaavn-token:` link
+/// that DownloadService resolves itself, instead of silently doing nothing
+/// when the item has no media URL yet.
+String _downloadUrlFor(JioSaavnItem track) {
+  final direct = track.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
+  if (direct != null && direct.isNotEmpty) return direct;
+  return 'jiosaavn-token:${track.token.isNotEmpty ? track.token : track.id}';
+}
+
 class _StreamSongTile extends StatelessWidget {
   final JioSaavnItem item;
   final bool isLoading;
@@ -2182,20 +2198,17 @@ class _SuggestedSongsSheet extends StatelessWidget {
   }
 
   void _downloadTrack(BuildContext context, JioSaavnItem track) {
-    final downloadService = getIt<DownloadService>();
-    final directUrl = track.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
-    if (directUrl != null) {
-      final secs = int.tryParse(track.duration ?? '0') ?? 0;
-      downloadService.enqueueDownload(
-        url: directUrl,
-        title: track.title,
-        artist: track.subtitle,
-        album: 'Song Suggestions',
-        albumArt: track.imageUrl,
-        duration: secs > 0 ? Duration(seconds: secs) : null,
-      );
-      showDownloadQueuedSnackBar(context, title: track.title);
-    }
+    final secs = int.tryParse(track.duration ?? '0') ?? 0;
+    getIt<DownloadService>().enqueueDownload(
+      url: _downloadUrlFor(track),
+      title: track.title,
+      artist: track.subtitle,
+      album: 'Song Suggestions',
+      albumArt: track.imageUrl,
+      duration: secs > 0 ? Duration(seconds: secs) : null,
+      songKey: track.id.isNotEmpty ? track.id : track.token,
+    );
+    showDownloadQueuedSnackBar(context, title: track.title);
   }
 
   @override
@@ -2427,20 +2440,17 @@ class _AlbumTracksSheetState extends State<_AlbumTracksSheet> {
   }
 
   void _downloadTrack(JioSaavnItem track) {
-    final downloadService = getIt<DownloadService>();
-    final directUrl = track.directMediaUrl ?? JioSaavnDecoder.decryptMediaUrl(track.encryptedMediaUrl);
-    if (directUrl != null) {
-      final secs = int.tryParse(track.duration ?? '0') ?? 0;
-      downloadService.enqueueDownload(
-        url: directUrl,
-        title: track.title,
-        artist: track.subtitle,
-        album: widget.item.title,
-        albumArt: track.imageUrl.isNotEmpty ? track.imageUrl : widget.item.imageUrl,
-        duration: secs > 0 ? Duration(seconds: secs) : null,
-      );
-      showDownloadQueuedSnackBar(context, title: track.title);
-    }
+    final secs = int.tryParse(track.duration ?? '0') ?? 0;
+    getIt<DownloadService>().enqueueDownload(
+      url: _downloadUrlFor(track),
+      title: track.title,
+      artist: track.subtitle,
+      album: widget.item.title,
+      albumArt: track.imageUrl.isNotEmpty ? track.imageUrl : widget.item.imageUrl,
+      duration: secs > 0 ? Duration(seconds: secs) : null,
+      songKey: track.id.isNotEmpty ? track.id : track.token,
+    );
+    showDownloadQueuedSnackBar(context, title: track.title);
   }
 
   @override

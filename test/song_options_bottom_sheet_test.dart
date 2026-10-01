@@ -21,7 +21,7 @@ class _NullMusicRepository extends MusicRepository {
   @override Future<void> saveSongsBatch(List<Song> s, {bool notify = true}) async {}
   @override Future<void> incrementPlayCount(int id) async {}
   @override Future<void> recordSongPlay(Song s) async {}
-  @override Future<List<Song>> getMostPlayedSongs({int limit = 20}) async => [];
+  @override Future<List<Song>> getMostPlayedSongs({int limit = 20, bool streamOnly = false}) async => [];
   @override Future<List<Song>> getLastPlayedStreamSongs({int limit = 50}) async => [];
   @override Future<List<PlaylistModel>> getPlaylists() async => [];
   @override Future<PlaylistModel> createPlaylist(String name, String? desc, {bool notify = true}) async =>

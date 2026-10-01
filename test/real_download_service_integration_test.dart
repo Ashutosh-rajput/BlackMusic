@@ -126,6 +126,29 @@ void main() {
 
       await tempDir.delete(recursive: true);
     });
+
+    test('the same Stream song under different URLs is queued only once', () async {
+      // Auto-download on play (stream URL) + a manual tap (320 kbps URL) +
+      // the offline-cache copy: three URLs, one song.
+      for (final url in const [
+        'https://aac.saavncdn.com/123/song_160.mp4',
+        'https://aac.saavncdn.com/123/song_320.mp4',
+        '/data/user/0/com.muskmelon.vinyl/cache/stream_cache/98765.m4a',
+      ]) {
+        await downloadService.enqueueDownload(
+          url: url,
+          title: 'Same Song',
+          artist: 'Same Artist',
+          songKey: 'saavn_abc123',
+        );
+      }
+
+      final entries = downloadService.downloadQueueNotifier.value
+          .where((d) => d.title == 'Same Song')
+          .toList();
+      expect(entries, hasLength(1));
+      expect(downloadService.getDownloadBySongKey('saavn_abc123'), isNotNull);
+    });
   });
 }
 
