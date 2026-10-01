@@ -13,6 +13,7 @@ import 'package:vinyl/presentation/screens/settings_screen.dart';
 
 import 'package:vinyl/core/di/injection_container.dart';
 import 'package:vinyl/services/audio_service.dart';
+import 'package:vinyl/presentation/widgets/update_dialog.dart';
 import 'package:vinyl/presentation/widgets/welcome_intro_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -37,10 +38,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     HomeScreen.tabNotifier.addListener(_handleTabChange);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        WelcomeIntroSheet.show(context);
-      }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      // The first-launch intro goes first; the update popup waits for it.
+      await WelcomeIntroSheet.show(context);
+      if (mounted) UpdateDialog.checkAndShow(context);
     });
   }
 

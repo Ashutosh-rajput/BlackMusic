@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vinyl/data/models/jiosaavn_item.dart';
 import 'package:vinyl/data/models/song_model.dart';
@@ -243,6 +245,37 @@ void main() {
           }
           return false;
         })),
+      );
+    });
+
+    test('Next on the last song while Autoplay is still fetching waits for it and plays on', () async {
+      // Slow recommendation service: the fetch started on the last song is
+      // still running when the user taps Next.
+      final fetchRelease = Completer<void>();
+      UserTasteService(
+        clock: () => DateTime.now(),
+        searchSongs: (q) async => [createItem('seed_1', 'Target Seed', artist: 'Seed Artist')],
+        fetchSuggestions: (id, {limit = 10}) async {
+          await fetchRelease.future;
+          return [createItem('slow_1', 'Slow Track', artist: 'Slow Artist')];
+        },
+      );
+
+      final queue = [createSong(1, 'Only Song', artist: 'Seed Artist')];
+      playerBloc.add(PlaySongEvent(queue.first, queue: queue));
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.id == 1)),
+      );
+      await Future.delayed(const Duration(milliseconds: 50)); // Autoplay fetch is now in flight
+
+      playerBloc.add(const NextSongEvent(isManualSkip: true));
+      await Future.delayed(const Duration(milliseconds: 50));
+      fetchRelease.complete();
+
+      await expectLater(
+        playerBloc.stream,
+        emitsThrough(predicate<PlayerState>((s) => s is PlayerPlaying && s.song.title == 'Slow Track')),
       );
     });
 

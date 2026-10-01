@@ -523,6 +523,90 @@ class JioSaavnDecoder {
     return null;
   }
 
+  static const String _apiPhp = 'https://www.jiosaavn.com/api.php';
+
+  static Future<dynamic> _callApiPhp(Map<String, dynamic> params, {int timeoutSecs = 8}) async {
+    final dio = Dio();
+    try {
+      final resp = await dio.get(
+        _apiPhp,
+        queryParameters: {
+          'api_version': '4',
+          '_format': 'json',
+          '_marker': '0',
+          'ctx': 'android',
+          ...params,
+        },
+        options: Options(receiveTimeout: Duration(seconds: timeoutSecs)),
+      );
+      final raw = resp.data;
+      return raw is String ? jsonDecode(raw) : raw;
+    } finally {
+      dio.close();
+    }
+  }
+
+  /// The primary and featured artists credited on a song (`song.getDetails`),
+  /// with the ids needed to look up their other songs.
+  static Future<List<({String id, String name})>> fetchSongArtists(String songId) async {
+    if (songId.trim().isEmpty) return const [];
+    try {
+      final data = await _callApiPhp({'__call': 'song.getDetails', 'pids': songId.trim()});
+      final Map? song = data is Map
+          ? (data[songId.trim()] is Map
+              ? data[songId.trim()] as Map
+              : (data['songs'] is List && (data['songs'] as List).isNotEmpty
+                  ? (data['songs'] as List).first as Map?
+                  : null))
+          : null;
+      final artistMap = (song?['more_info'] as Map?)?['artistMap'] as Map?;
+      if (artistMap == null) return const [];
+      final seen = <String>{};
+      final out = <({String id, String name})>[];
+      for (final key in const ['primary_artists', 'featured_artists']) {
+        for (final a in (artistMap[key] as List? ?? const []).whereType<Map>()) {
+          final id = a['id']?.toString() ?? '';
+          if (id.isNotEmpty && seen.add(id)) {
+            out.add((id: id, name: a['name']?.toString() ?? ''));
+          }
+        }
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Other songs by one artist (`search.artistOtherTopSongs`), newest first.
+  static Future<List<JioSaavnItem>> fetchArtistOtherSongs(
+    String artistId,
+    String songId, {
+    String lang = 'hindi',
+  }) async {
+    if (artistId.trim().isEmpty) return const [];
+    try {
+      final data = await _callApiPhp({
+        '__call': 'search.artistOtherTopSongs',
+        'artist_ids': artistId.trim(),
+        'song_id': songId.trim(),
+        'language': lang,
+        'category': 'latest',
+        'sort_order': 'asc',
+        'page': '1',
+        'n': '20',
+      });
+      final list = data is List ? data : (data is Map ? data['songs'] : null);
+      if (list is! List) return const [];
+      return list
+          .whereType<Map>()
+          .map((e) => parseItem(Map<String, dynamic>.from(e)))
+          .where((i) => i.title.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Fetches song suggestions/recommendations based on a song ID
   /// using JioSaavn's reco.getreco recommendation engine.
   static Future<List<JioSaavnItem>> fetchSongSuggestions(String songId, {int limit = 10}) async {

@@ -31,7 +31,7 @@ class _SupportBannerWidgetState extends State<SupportBannerWidget> {
     getIt<SettingsService>().dismissSupportBanner();
     setState(() => _visible = false);
     widget.onDismissed?.call();
-    const urlString = 'https://github.com/Ashutosh-rajput/flutter_application_1';
+    const urlString = 'https://github.com/Ashutosh-rajput/Vinyl';
     final url = Uri.parse(urlString);
     try {
       if (await canLaunchUrl(url)) {

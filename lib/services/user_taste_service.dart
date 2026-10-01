@@ -249,6 +249,8 @@ class SongInteraction {
 typedef SearchSongsFn = Future<List<JioSaavnItem>> Function(String query);
 typedef FetchSuggestionsFn = Future<List<JioSaavnItem>> Function(String id, {int limit});
 typedef FetchNewReleasesFn = Future<List<JioSaavnItem>> Function({String lang});
+typedef FetchSongArtistsFn = Future<List<({String id, String name})>> Function(String songId);
+typedef FetchArtistSongsFn = Future<List<JioSaavnItem>> Function(String artistId, String songId, {String lang});
 
 /// Kinds of tracks that should never follow unrelated music (e.g. an aarti or
 /// a cartoon theme after a Bollywood song) unless the user listens to them.
@@ -295,6 +297,8 @@ class UserTasteService {
   final SearchSongsFn _searchSongs;
   final FetchSuggestionsFn _fetchSuggestions;
   final FetchNewReleasesFn _fetchNewReleases;
+  final FetchSongArtistsFn _fetchSongArtists;
+  final FetchArtistSongsFn _fetchArtistSongs;
   File? _storageFile;
 
   // Stored by canonical trackKey
@@ -315,10 +319,19 @@ class UserTasteService {
     SearchSongsFn? searchSongs,
     FetchSuggestionsFn? fetchSuggestions,
     FetchNewReleasesFn? fetchNewReleases,
+    FetchSongArtistsFn? fetchSongArtists,
+    FetchArtistSongsFn? fetchArtistSongs,
     File? storageFile,
   })  : _clock = clock ?? DateTime.now,
         _searchSongs = searchSongs ?? JioSaavnDecoder.searchSongs,
         _fetchSuggestions = fetchSuggestions ?? JioSaavnDecoder.fetchSongSuggestions,
+        // Like charts: when search is injected (tests), don't hit the network.
+        _fetchSongArtists = fetchSongArtists ??
+            (searchSongs == null ? JioSaavnDecoder.fetchSongArtists : (id) async => const []),
+        _fetchArtistSongs = fetchArtistSongs ??
+            (searchSongs == null
+                ? JioSaavnDecoder.fetchArtistOtherSongs
+                : (a, s, {String lang = ''}) async => const []),
         // When search is injected (tests) and no chart source is, don't hit
         // the network for charts; fall back to the injected search instead.
         _fetchNewReleases = fetchNewReleases ??
@@ -1170,6 +1183,27 @@ class UserTasteService {
         .toList();
   }
 
+  /// Other songs by every artist credited on [seedSongId] (JioSaavn
+  /// `search.artistOtherTopSongs`, one call per artist), combined. Failures
+  /// for one artist never affect the others.
+  Future<List<JioSaavnItem>> _fetchCreditedArtistsSongs(String seedSongId, {required String lang}) async {
+    try {
+      final artists = await _fetchSongArtists(seedSongId);
+      if (artists.isEmpty) return const [];
+      final lists = await Future.wait(artists.take(4).map((a) async {
+        try {
+          return await _fetchArtistSongs(a.id, seedSongId, lang: lang);
+        } catch (_) {
+          return <JioSaavnItem>[];
+        }
+      }));
+      return [for (final l in lists) ...l.where((i) => i.isSong && i.title.trim().isNotEmpty)];
+    } catch (e) {
+      debugPrint('PulseIQ: artist songs lookup failed: $e');
+      return const [];
+    }
+  }
+
   /// Retrieves and ranks raw candidate JioSaavnItems through the unified PulseIQ pipeline.
   Future<List<JioSaavnItem>> getCandidateRecommendations({
     required RecommendationContext context,
@@ -1202,6 +1236,7 @@ class UserTasteService {
 
       List<JioSaavnItem> pool = [];
       final Map<String, int> coOccurrences = {};
+      var radioWidened = false;
 
       // 2. Candidate retrieval based on context
       if (context == RecommendationContext.autoplay || context == RecommendationContext.radio) {
@@ -1212,8 +1247,10 @@ class UserTasteService {
               ? currentSong.mediaId!
               : (currentSong.source == 'jiosaavn' && currentSong.id != 0 ? currentSong.id.toString() : null);
 
+          String? resolvedSeedId;
           if (directId != null && directId.isNotEmpty) {
             pool = await _fetchSuggestions(directId, limit: max(30, limit * 2));
+            resolvedSeedId = directId;
           }
 
           if (pool.isEmpty) {
@@ -1224,6 +1261,17 @@ class UserTasteService {
 
             if (seedId != null && seedId.isNotEmpty) {
               pool = await _fetchSuggestions(seedId, limit: max(30, limit * 2));
+              resolvedSeedId = seedId;
+            }
+          }
+
+          // Radio widens the pool with each credited artist's other songs,
+          // because the suggestions alone are usually one artist's catalogue.
+          if (context == RecommendationContext.radio && resolvedSeedId != null) {
+            final more = await _fetchCreditedArtistsSongs(resolvedSeedId, lang: lang);
+            if (more.isNotEmpty) {
+              pool = [...pool, ...more];
+              radioWidened = true;
             }
           }
         }
@@ -1360,7 +1408,9 @@ class UserTasteService {
         candidatesToScore,
         preferredLang: lang,
         lambda: 0.7,
-        maxPerArtist: 2,
+        // A widened radio pool is deliberately artist-heavy (the seed's own
+        // artists), so the usual 2-per-artist cap would throw most of it away.
+        maxPerArtist: radioWidened ? 6 : 2,
         maxResults: limit,
         // Autoplay / Radio continue what the user is listening to, so no
         // deliberate "discovery" picks there; Home keeps a little exploration.

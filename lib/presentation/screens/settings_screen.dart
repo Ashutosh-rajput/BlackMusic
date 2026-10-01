@@ -15,6 +15,9 @@ import 'package:vinyl/presentation/widgets/folder_picker_dialog.dart';
 import 'package:vinyl/services/user_taste_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:vinyl/presentation/widgets/update_dialog.dart';
+import 'package:vinyl/services/update_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -968,7 +971,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Icon(Icons.album_rounded, color: _accentColor, size: 24),
                 ),
                 title: _tileTitle('Vinyl'),
-                subtitle: _tileSubtitle('Version 1.0.0 • Music Player'),
+                subtitle: FutureBuilder<PackageInfo>(
+                  future: PackageInfo.fromPlatform(),
+                  builder: (context, snap) =>
+                      _tileSubtitle('Version ${snap.data?.version ?? ''} • Music Player'),
+                ),
+              ),
+              _divider(),
+              ListTile(
+                leading: const Icon(Icons.system_update_rounded),
+                title: _tileTitle('Check for Updates'),
+                subtitle: _tileSubtitle('See if a newer version of Vinyl is available'),
+                onTap: () async {
+                  final update = await UpdateService.checkForUpdate(ignoreSkipped: true);
+                  if (!context.mounted) return;
+                  if (update == null) {
+                    _showSnackBar('You are on the latest version.');
+                  } else {
+                    showDialog<void>(context: context, builder: (_) => UpdateDialog(update: update));
+                  }
+                },
               ),
               _divider(),
               ListTile(
@@ -977,7 +999,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: _tileSubtitle('View on GitHub'),
                 trailing: const Icon(Icons.open_in_new_rounded, size: 16),
                 onTap: () async {
-                  const url = 'https://github.com/Ashutosh-rajput/flutter_application_1';
+                  const url = 'https://github.com/Ashutosh-rajput/Vinyl';
                   final uri = Uri.parse(url);
                   try {
                     if (await canLaunchUrl(uri)) {
@@ -997,7 +1019,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: _tileSubtitle('Donate via GitHub to keep Vinyl growing'),
                 trailing: const Icon(Icons.open_in_new_rounded, size: 16),
                 onTap: () async {
-                  const url = 'https://github.com/Ashutosh-rajput/flutter_application_1';
+                  const url = 'https://github.com/Ashutosh-rajput/Vinyl';
                   final uri = Uri.parse(url);
                   try {
                     if (await canLaunchUrl(uri)) {

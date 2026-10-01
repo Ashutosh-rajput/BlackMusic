@@ -3,7 +3,7 @@ description: Privacy-first music player built with Flutter
 
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 2.0.0
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
@@ -60,6 +60,7 @@ dependencies:
   fluttertoast: ^9.1.0
   dart_des: ^1.0.2
   url_launcher: ^6.3.2
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:

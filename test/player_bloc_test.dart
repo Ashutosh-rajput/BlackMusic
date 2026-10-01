@@ -319,6 +319,51 @@ void main() {
       expect(audioService.lastSyncedUpcoming?.map((s) => s.id).toList(), equals([22]));
     });
 
+    test('pressing Next again while the next song is still loading moves on instead of getting stuck', () async {
+      final a = track(30), b = track(31), c = track(32);
+      playerBloc.add(PlaySongEvent(a, queue: [a, b, c]));
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(playerBloc.state, isA<PlayerPlaying>());
+
+      // Song b takes a while to load (slow network / large file).
+      final gate = Completer<void>();
+      audioService.playGate = gate;
+      playerBloc.add(const NextSongEvent(isManualSkip: true));
+      await Future.delayed(const Duration(milliseconds: 20));
+      expect(playerBloc.state, isA<PlayerLoading>());
+
+      // The user taps Next again.
+      playerBloc.add(const NextSongEvent(isManualSkip: true));
+      await Future.delayed(const Duration(milliseconds: 20));
+
+      audioService.playGate = null;
+      gate.complete();
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      expect((playerBloc.state as PlayerPlaying).song.id, equals(32));
+    });
+
+    test('Previous while a song is loading also takes effect', () async {
+      final a = track(40), b = track(41), c = track(42);
+      playerBloc.add(PlaySongEvent(b, queue: [a, b, c]));
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      final gate = Completer<void>();
+      audioService.playGate = gate;
+      playerBloc.add(const NextSongEvent(isManualSkip: true)); // loads c
+      await Future.delayed(const Duration(milliseconds: 20));
+      playerBloc.add(const PreviousSongEvent()); // back to b while c loads
+      await Future.delayed(const Duration(milliseconds: 20));
+
+      audioService.playGate = null;
+      gate.complete();
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      expect(playerBloc.state, isA<PlayerPlaying>());
+      expect((playerBloc.state as PlayerPlaying).song.id, equals(41));
+    });
+
     test('a stale "completed" event during a new load does not skip the new song', () async {
       playerBloc.add(PlaySongEvent(testSong, queue: [testSong, testSong2]));
       await Future.delayed(const Duration(milliseconds: 50));

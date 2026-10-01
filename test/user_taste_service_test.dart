@@ -1005,5 +1005,73 @@ void main() {
       ];
       expect(UserTasteService.findBestSeedMatch(seed, unrelated), isNull);
     });
-  });
+  
+    group('Radio widens the pool with other songs by each credited artist', () {
+      JioSaavnItem item(String id, String title, String artist) => JioSaavnItem(
+            type: 'song', id: id, token: id, title: title, subtitle: artist, imageUrl: '',
+            duration: '200', language: 'hindi', directMediaUrl: 'https://x/$id.mp3');
+
+      Song seed() => Song(
+            id: 1, mediaId: 'seed1', title: 'Boom Shaka', artist: 'Dhanda Nyoliwala, KR\$NA',
+            album: 'Boom Shaka', filePath: 'https://x/seed.mp4', duration: const Duration(seconds: 218),
+            dateModified: DateTime(2026), source: 'jiosaavn');
+
+      UserTasteService build({required List<String> calls}) => UserTasteService(
+            storageFile: tempFile,
+            searchSongs: (q) async => const [],
+            // reco.getreco: ten songs, nearly all by one artist
+            fetchSuggestions: (id, {limit = 15}) async {
+              calls.add('reco:$id');
+              return [for (var i = 0; i < 10; i++) item('r$i', 'Reco Song $i', 'Dhanda Nyoliwala')];
+            },
+            fetchSongArtists: (id) async {
+              calls.add('artists:$id');
+              return [(id: 'a1', name: 'Dhanda Nyoliwala'), (id: 'a2', name: 'KR\$NA')];
+            },
+            fetchArtistSongs: (artistId, songId, {lang = ''}) async {
+              calls.add('other:$artistId:$songId');
+              return [for (var i = 0; i < 4; i++) item('$artistId-$i', '$artistId Song $i', artistId == 'a2' ? 'KR\$NA' : 'Dhanda Nyoliwala')];
+            },
+          );
+
+      test('radio calls reco, then the other-songs call once per credited artist, and combines them', () async {
+        final calls = <String>[];
+        final svc = build(calls: calls);
+        final recs = await svc.getCandidateRecommendations(
+            context: RecommendationContext.radio, currentSong: seed(), limit: 25);
+        expect(calls.where((c) => c.startsWith('reco:')), ['reco:seed1']);
+        expect(calls.where((c) => c.startsWith('other:')).toSet(), {'other:a1:seed1', 'other:a2:seed1'});
+        // KR$NA's own songs are now in the result, and so is the reco list.
+        expect(recs.any((r) => r.subtitle == 'KR\$NA'), isTrue);
+        expect(recs.any((r) => r.title.startsWith('Reco Song')), isTrue);
+        // the artist cap no longer cuts a widened pool down to a handful
+        expect(recs.length, greaterThan(6));
+      });
+
+      test('autoplay does NOT make the extra artist calls', () async {
+        final calls = <String>[];
+        final svc = build(calls: calls);
+        await svc.getCandidateRecommendations(
+            context: RecommendationContext.autoplay, currentSong: seed(), limit: 15);
+        expect(calls.where((c) => c.startsWith('other:') || c.startsWith('artists:')), isEmpty);
+      });
+
+      test('one failing artist lookup does not lose the rest', () async {
+        final svc = UserTasteService(
+          storageFile: tempFile,
+          searchSongs: (q) async => const [],
+          fetchSuggestions: (id, {limit = 15}) async => [item('r0', 'Reco Song', 'Dhanda Nyoliwala')],
+          fetchSongArtists: (id) async => [(id: 'a1', name: 'A'), (id: 'a2', name: 'B')],
+          fetchArtistSongs: (artistId, songId, {lang = ''}) async {
+            if (artistId == 'a1') throw Exception('boom');
+            return [item('b-0', 'B Song', 'KR\$NA')];
+          },
+        );
+        final recs = await svc.getCandidateRecommendations(
+            context: RecommendationContext.radio, currentSong: seed(), limit: 10);
+        expect(recs.any((r) => r.title == 'B Song'), isTrue);
+        expect(recs.any((r) => r.title == 'Reco Song'), isTrue);
+      });
+    });
+});
 }

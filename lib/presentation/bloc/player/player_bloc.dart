@@ -60,6 +60,9 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   /// never mixes the two: Library continues from Library, Stream from Stream.
   static bool _isLibrarySong(Song s) => SongOrigin.isLibrary(s);
   bool _isExpandingQueue = false;
+  // Completes when the Autoplay fetch that is running now has finished, so a
+  // Next tap at the end of the queue can wait for it instead of giving up.
+  Completer<void>? _expansionDone;
 
   void _showToast(String message) {
     try {
@@ -898,7 +901,11 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Future<void> _onNextSong(NextSongEvent event, Emitter<PlayerState> emit) async {
-    if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
+    // Not blocked while a song is loading: a new Next cancels the load in
+    // progress (see restartable()) and moves on from the song being loaded.
+    // Ignoring the tap here used to leave the cancelled load unfinished, so
+    // the player stayed on "loading" until the user tapped again.
+    if (_queue.isEmpty || _currentSong == null) return;
     if (event.isManualSkip && _currentSong != null) {
       UserTasteService.instance.onSongSkipped(_currentSong!, isManual: true);
     }
@@ -909,7 +916,15 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       add(const AutoExpandQueueEvent());
     } else if (_autoPlayNext && _currentSong != null) {
       // Reached the end of the queue: fetch more songs immediately and continue playback
-      await _expandQueueInternal(emit, force: true);
+      final fetchInProgress = _expansionDone;
+      if (fetchInProgress != null) {
+        // Autoplay is already fetching songs (it starts on the last song).
+        // Wait for it instead of treating "nothing queued yet" as the end,
+        // which paused the music and made the user tap Next a second time.
+        await fetchInProgress.future.timeout(const Duration(seconds: 15), onTimeout: () {});
+      } else {
+        await _expandQueueInternal(emit, force: true);
+      }
       nextSong = _getNextSong(_currentSong!);
       if (nextSong != null) {
         await _playSongInternal(nextSong, emit);
@@ -925,7 +940,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   Future<void> _onPreviousSong(PreviousSongEvent event, Emitter<PlayerState> emit) async {
-    if (_queue.isEmpty || _currentSong == null || _isChangingSong) return;
+    if (_queue.isEmpty || _currentSong == null) return; // see _onNextSong
     _consecutiveFailures = 0;
 
     Song? prevSong;
@@ -1127,6 +1142,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     if (!force && remaining > 0) return;
 
     _isExpandingQueue = true;
+    _expansionDone = Completer<void>();
     try {
       // Seed from the song the user actually chose, not the last queued song.
       // The last song is usually one Autoplay added itself, so seeding from
@@ -1199,6 +1215,9 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
       debugPrint('Error expanding playback queue: $e');
     } finally {
       _isExpandingQueue = false;
+      final done = _expansionDone;
+      _expansionDone = null;
+      if (done != null && !done.isCompleted) done.complete();
     }
   }
 
