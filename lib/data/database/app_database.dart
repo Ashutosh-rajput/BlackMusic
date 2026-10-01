@@ -26,6 +26,10 @@ class Songs extends Table {
   TextColumn get source => text().nullable()();
   // Audio quality: '320 kbps', '128 kbps', 'HD Audio', etc.
   TextColumn get audioQuality => text().nullable()();
+  // The provider's own id for the song (JioSaavn id). Without it a song read
+  // back from the database could only be found again by its NAME, which picks
+  // same-titled songs by other artists / in other languages.
+  TextColumn get mediaId => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -70,7 +74,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration {
@@ -85,6 +89,9 @@ class AppDatabase extends _$AppDatabase {
           await m.addColumn(songs, songs.source);
           await m.addColumn(songs, songs.audioQuality);
           await m.createTable(playHistory);
+        }
+        if (from < 3) {
+          await m.addColumn(songs, songs.mediaId);
         }
       },
     );
@@ -195,6 +202,7 @@ class AppDatabase extends _$AppDatabase {
     String? albumArt,
     String? source,
     String? audioQuality,
+    String? mediaId,
   }) async {
     final now = DateTime.now();
     // A play is only ever credited to a row from the same side: a Stream play
@@ -242,6 +250,7 @@ class AppDatabase extends _$AppDatabase {
           albumArt: Value(albumArt),
           source: Value(source ?? 'jiosaavn'),
           audioQuality: Value(audioQuality ?? '320 kbps'),
+          mediaId: Value(mediaId),
           playCount: const Value(1),
           lastPlayedAt: Value(now),
         ),
@@ -265,6 +274,8 @@ class AppDatabase extends _$AppDatabase {
           source: Value(existingSong.source ?? source),
           audioQuality: Value(existingSong.audioQuality ?? audioQuality),
           albumArt: Value(existingSong.albumArt ?? albumArt),
+          // Fills in the provider id for rows saved before it was stored.
+          mediaId: Value(existingSong.mediaId ?? mediaId),
           filePath: (filePath.isNotEmpty && existingIsRemote) ? Value(filePath) : const Value.absent(),
         ),
       );

@@ -113,6 +113,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           lastPlayedAt: row.lastPlayedAt,
           source: resolvedSource,
           audioQuality: resolvedQuality,
+          mediaId: row.mediaId,
         );
 
         if (resolvedSource != row.source || resolvedQuality != row.audioQuality) {
@@ -165,6 +166,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           albumArt: Value(song.albumArt),
           source: Value(song.source),
           audioQuality: Value(song.audioQuality),
+          mediaId: Value(song.mediaId),
           playCount: song.playCount > 0 ? Value(song.playCount) : const Value.absent(),
           lastPlayedAt: song.lastPlayedAt != null ? Value(song.lastPlayedAt) : const Value.absent(),
         ),
@@ -215,6 +217,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
         albumArt: song.albumArt,
         source: song.source,
         audioQuality: song.audioQuality,
+        mediaId: song.mediaId,
       );
     } catch (e) {
       logger.e('Error recording song play for "${song.title}": $e');
@@ -245,6 +248,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
             lastPlayedAt: row.lastPlayedAt,
             source: row.source,
             audioQuality: row.audioQuality,
+            mediaId: row.mediaId,
           ));
         }
       }
@@ -282,6 +286,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
         lastPlayedAt: row.lastPlayedAt,
         source: row.source,
         audioQuality: row.audioQuality,
+        mediaId: row.mediaId,
       )).toList();
     } catch (e) {
       logger.e('Error fetching most played songs: $e');
@@ -381,6 +386,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
           albumArt: Value(mergedAlbumArt),
           source: Value(mergedSource),
           audioQuality: Value(mergedQuality),
+          mediaId: Value(existing?.mediaId ?? song.mediaId),
           playCount: Value(existing?.playCount ?? song.playCount),
           lastPlayedAt: Value(existing?.lastPlayedAt ?? song.lastPlayedAt),
         );
@@ -415,6 +421,7 @@ class MusicLocalDatasourceImpl implements MusicLocalDatasource {
         lastPlayedAt: row.lastPlayedAt,
         source: row.source,
         audioQuality: row.audioQuality,
+        mediaId: row.mediaId,
       )).toList();
       final songMap = {for (var s in allSongs) s.id: s};
 

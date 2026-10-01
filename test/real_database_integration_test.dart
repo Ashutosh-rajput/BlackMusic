@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:vinyl/data/database/app_database.dart' hide Song;
 import 'package:vinyl/data/datasources/local/music_local_datasource.dart';
@@ -175,6 +176,53 @@ void main() {
       // The Stream play is counted on the Stream side, not on the download.
       final streamHistory = await repository.getLastPlayedStreamSongs();
       expect(streamHistory.map((s) => s.title), contains('Kesariya'));
+    });
+
+    test('a Stream song keeps its JioSaavn id after being saved and read back', () async {
+      final played = Song(
+        id: 9101,
+        mediaId: 'Jv9R7q1X',
+        title: 'Kesariya',
+        artist: 'Arijit Singh',
+        album: 'Brahmastra',
+        filePath: 'https://aac.saavncdn.com/9/kesariya_320.mp4',
+        duration: const Duration(seconds: 268),
+        dateModified: DateTime.now(),
+        source: 'jiosaavn',
+      );
+      await repository.recordSongPlay(played);
+
+      // Read back from the database (as Autoplay / Last Played do).
+      final history = await repository.getLastPlayedStreamSongs();
+      expect(history.single.mediaId, equals('Jv9R7q1X'));
+
+      // An older row saved without the id gets it filled in on the next play.
+      await db.into(db.songs).insertOnConflictUpdate(
+            SongsCompanion.insert(
+              id: const Value(9102),
+              title: 'Old Row',
+              artist: 'Old Artist',
+              album: 'JioSaavn',
+              filePath: 'https://aac.saavncdn.com/9/old_row.mp4',
+              duration: 180000,
+              dateModified: DateTime.now(),
+              source: const Value('jiosaavn'),
+              lastPlayedAt: Value(DateTime.now()),
+            ),
+          );
+      await repository.recordSongPlay(Song(
+        id: 9102,
+        mediaId: 'OldRowId1',
+        title: 'Old Row',
+        artist: 'Old Artist',
+        album: 'JioSaavn',
+        filePath: 'https://aac.saavncdn.com/9/old_row.mp4',
+        duration: const Duration(seconds: 180),
+        dateModified: DateTime.now(),
+        source: 'jiosaavn',
+      ));
+      final after = await repository.getLastPlayedStreamSongs();
+      expect(after.firstWhere((s) => s.title == 'Old Row').mediaId, equals('OldRowId1'));
     });
 
     group('Library and Stream stay separate', () {

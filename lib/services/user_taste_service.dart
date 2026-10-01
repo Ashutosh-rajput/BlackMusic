@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vinyl/core/utils/jiosaavn_decoder.dart';
+import 'package:vinyl/core/utils/song_dedupe.dart';
 import 'package:vinyl/data/models/jiosaavn_item.dart';
 import 'package:vinyl/data/models/song_model.dart';
 
@@ -326,20 +327,8 @@ class UserTasteService {
     _instance = this;
   }
 
-  static final RegExp _artistSplitRegex = RegExp(
-    r'[,&/]|(?:\s+feat\.?\s+)|\s+ft\.?\s+|\s+featuring\s+|(?:\s+with\s+)',
-    caseSensitive: false,
-  );
-
   /// Splits and normalizes artist names into exact clean tokens.
-  static List<String> parseArtistTokens(String artistsString) {
-    if (artistsString.trim().isEmpty) return const [];
-    return artistsString
-        .split(_artistSplitRegex)
-        .map((t) => t.trim().toLowerCase().replaceAll(RegExp(r'[^\w\s]'), ''))
-        .where((t) => t.isNotEmpty && t != 'unknown' && t != 'various artists')
-        .toList();
-  }
+  static List<String> parseArtistTokens(String artistsString) => parseArtistNames(artistsString);
 
   static String _canonicalKeyForSong(Song song) {
     return song.canonicalKey;
@@ -812,17 +801,45 @@ class UserTasteService {
   }) {
     if (candidates.isEmpty) return const [];
 
-    // Calculate raw scores with co-occurrence boost
-    final scored = candidates
-        .map((item) => (
-              item,
-              scoreCandidate(
-                item,
-                preferredLang: preferredLang,
-                coOccurrences: coOccurrenceMap?[item.canonicalKey] ?? 1,
-              )
-            ))
-        .toList();
+    // JioSaavn lists one song several times (per album / release, with
+    // different ids and slightly different titles or artist credits). Collapse
+    // those into one entry: the listing that scores best represents the song,
+    // and the seeds that suggested any of its listings all count for it.
+    final groups = <List<JioSaavnItem>>[];
+    final groupFingerprints = <List<SongFingerprint>>[];
+    for (final item in candidates) {
+      final fingerprint = _fingerprintOf(item);
+      var placed = false;
+      for (var g = 0; g < groups.length && !placed; g++) {
+        if (groupFingerprints[g].any(fingerprint.isSameSongAs)) {
+          groups[g].add(item);
+          groupFingerprints[g].add(fingerprint);
+          placed = true;
+        }
+      }
+      if (!placed) {
+        groups.add([item]);
+        groupFingerprints.add([fingerprint]);
+      }
+    }
+
+    final scored = <(JioSaavnItem, double)>[];
+    for (final group in groups) {
+      final pooledSeeds = group.fold<int>(0, (sum, m) => sum + (coOccurrenceMap?[m.canonicalKey] ?? 0));
+      final seedCount = max(1, pooledSeeds);
+      JioSaavnItem? best;
+      double bestScore = -double.infinity;
+      for (final member in group) {
+        final s = scoreCandidate(member, preferredLang: preferredLang, coOccurrences: seedCount);
+        if (s > bestScore) {
+          bestScore = s;
+          best = member;
+        }
+      }
+      scored.add((best!, bestScore));
+    }
+    // From here on, every listing of a song other than its representative is gone.
+    candidates = scored.map((p) => p.$1).toList();
 
     double minScore = double.infinity;
     double maxScore = -double.infinity;
@@ -940,6 +957,17 @@ class UserTasteService {
     return selected;
   }
 
+  static SongFingerprint _fingerprintOf(JioSaavnItem item) => SongFingerprint.of(
+        identity: item.canonicalKey,
+        title: item.title,
+        artist: item.subtitle,
+        durationSecs: int.tryParse(item.duration ?? '') ?? 0,
+      );
+
+  /// True when [a] and [b] are two listings of the same song.
+  static bool isSameSong(JioSaavnItem a, JioSaavnItem b) =>
+      _fingerprintOf(a).isSameSongAs(_fingerprintOf(b));
+
   /// Calculates content similarity between two JioSaavn items in [0, 1].
   double _computeSimilarity(JioSaavnItem a, JioSaavnItem b) {
     double sim = 0.0;
@@ -979,8 +1007,15 @@ class UserTasteService {
       // Title match
       final titleSim = _stringSimilarity(seedTitleClean, candTitleClean);
 
-      // Artist overlap
+      // Artist overlap. A song is only the SAME song if an artist agrees:
+      // two songs sharing a title (another artist's "Kesariya", a dub in
+      // another language) are different songs. Without this, a same-titled
+      // song by someone else won the match and became the seed, so the
+      // suggestions came from the wrong song entirely.
       final overlap = seedArtistTokens.intersection(candArtistTokens);
+      if (seedArtistTokens.isNotEmpty && candArtistTokens.isNotEmpty && overlap.isEmpty) {
+        continue;
+      }
       final artistSim = seedArtistTokens.isNotEmpty
           ? overlap.length / seedArtistTokens.length
           : 0.5;
@@ -1221,6 +1256,8 @@ class UserTasteService {
       } else {
         // Home multi-seed mode (Search-played songs highest priority, then favorites, then top history)
         final List<Song> seeds = [];
+        // Seeds are told apart by song identity, not title: two different
+        // songs with the same name must both be able to seed.
         final seenSeedTitles = <String>{};
 
         final searchPlayedSongs = getSearchPlayedInteractions()
@@ -1229,9 +1266,8 @@ class UserTasteService {
 
         for (final song in [...searchPlayedSongs, ...favorites, ...recentHistory]) {
           if (seeds.length >= 4) break;
-          final norm = song.title.toLowerCase().trim();
-          if (!seenSeedTitles.contains(norm) && norm.isNotEmpty) {
-            seenSeedTitles.add(norm);
+          if (song.title.trim().isEmpty) continue;
+          if (seenSeedTitles.add(song.canonicalKey)) {
             seeds.add(song);
           }
         }

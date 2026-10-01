@@ -890,6 +890,90 @@ void main() {
       });
     });
 
+    test('the same song listed several times is suggested only once', () async {
+      JioSaavnItem listing(String id, String title, String artist, String dur) => JioSaavnItem(
+            type: 'song',
+            id: id,
+            token: id,
+            title: title,
+            subtitle: artist,
+            imageUrl: '',
+            duration: dur,
+            language: 'hindi',
+          );
+
+      final svc = UserTasteService(
+        clock: () => currentTime,
+        storageFile: tempFile,
+        searchSongs: (q) async => const [],
+        fetchSuggestions: (id, {limit = 10}) async => [
+          listing('k1', 'Kesariya', 'Arijit Singh', '268'),
+          listing('k2', 'Kesariya (From "Brahmastra")', 'Arijit Singh, Pritam', '268'),
+          listing('k3', 'Kesariya', 'Pritam', '267'),
+          listing('o1', 'Kesariya', 'Sid Sriram', '240'), // a different song, same name
+          listing('c1', 'Channa Mereya', 'Arijit Singh', '289'),
+          listing('c2', 'Channa Mereya', 'Arijit Singh, Pritam', '289'),
+        ],
+      );
+
+      final seed = Song(
+        id: 77,
+        mediaId: 'seed77',
+        title: 'Tum Hi Ho',
+        artist: 'Arijit Singh',
+        album: 'Aashiqui 2',
+        filePath: 'https://example.com/x.mp4',
+        duration: const Duration(seconds: 262),
+        dateModified: DateTime(2026, 1, 1),
+        source: 'jiosaavn',
+      );
+      final recs = await svc.getCandidateRecommendations(
+        context: RecommendationContext.autoplay,
+        currentSong: seed,
+        limit: 10,
+      );
+
+      final kesariya = recs.where((r) => r.title.startsWith('Kesariya')).toList();
+      final channa = recs.where((r) => r.title == 'Channa Mereya').toList();
+      // k1 + k2 + k3 are one song; o1 (other artist, other length) is another.
+      expect(kesariya, hasLength(2));
+      expect(kesariya.map((r) => r.id), contains('o1'));
+      expect(channa, hasLength(1));
+    });
+
+    test('findBestSeedMatch never picks a same-titled song by a different artist', () {
+      final seed = Song(
+        id: 910,
+        title: 'Kesariya',
+        artist: 'Arijit Singh',
+        album: 'Brahmastra',
+        filePath: '/music/kesariya.mp3',
+        duration: const Duration(seconds: 268),
+        dateModified: DateTime.now(),
+      );
+      JioSaavnItem cand(String id, String title, String artist, String lang, String dur) => JioSaavnItem(
+            type: 'song',
+            id: id,
+            token: id,
+            title: title,
+            subtitle: artist,
+            imageUrl: '',
+            duration: dur,
+            language: lang,
+          );
+
+      // Only the Tamil version by other singers is in the search results.
+      final onlyOtherVersion = [cand('t1', 'Kesariya', 'Sid Sriram, Pritam', 'tamil', '262')];
+      expect(UserTasteService.findBestSeedMatch(seed, onlyOtherVersion), isNull);
+
+      // When the real song is there too, it wins over the same-titled one.
+      final both = [
+        cand('t1', 'Kesariya', 'Sid Sriram, Pritam', 'tamil', '262'),
+        cand('h1', 'Kesariya', 'Arijit Singh, Pritam', 'hindi', '268'),
+      ];
+      expect(UserTasteService.findBestSeedMatch(seed, both)?.id, equals('h1'));
+    });
+
     test('findBestSeedMatch returns null instead of an unrelated first result', () {
       final seed = Song(
         id: 900,

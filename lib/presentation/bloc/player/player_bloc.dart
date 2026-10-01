@@ -13,6 +13,7 @@ import 'package:vinyl/services/settings_service.dart';
 import 'package:vinyl/presentation/bloc/player/player_event.dart';
 import 'package:vinyl/presentation/bloc/player/player_state.dart';
 import 'package:vinyl/core/utils/jiosaavn_decoder.dart';
+import 'package:vinyl/core/utils/song_dedupe.dart';
 import 'package:vinyl/core/utils/song_origin.dart';
 import 'package:vinyl/services/stream_cache_service.dart';
 import 'package:vinyl/services/user_taste_service.dart';
@@ -1146,13 +1147,28 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
         final existingKeys = _queue.map((s) => s.canonicalKey).toSet();
         final existingTitles = _queue.map((s) => s.title.trim().toLowerCase()).toSet();
 
-        final newTracks = recs.where((s) {
-          if (existingIds.contains(s.id)) return false;
-          if (existingKeys.contains(s.canonicalKey)) return false;
+        // The same song listed again under another id / title suffix / artist
+        // credit must not be queued twice either.
+        SongFingerprint fingerprintOf(Song s) => SongFingerprint.of(
+              identity: s.canonicalKey,
+              title: s.title,
+              artist: s.artist,
+              durationSecs: s.duration.inSeconds,
+            );
+        final queueFingerprints = _queue.map(fingerprintOf).toList();
+
+        final newTracks = <Song>[];
+        for (final s in recs) {
+          if (existingIds.contains(s.id)) continue;
+          if (existingKeys.contains(s.canonicalKey)) continue;
           final normTitle = s.title.trim().toLowerCase();
-          if (normTitle.isNotEmpty && existingTitles.contains(normTitle)) return false;
-          return s.filePath.trim().isNotEmpty || s.source == 'jiosaavn';
-        }).toList();
+          if (normTitle.isNotEmpty && existingTitles.contains(normTitle)) continue;
+          if (!(s.filePath.trim().isNotEmpty || s.source == 'jiosaavn')) continue;
+          final fp = fingerprintOf(s);
+          if (queueFingerprints.any(fp.isSameSongAs)) continue;
+          queueFingerprints.add(fp); // also catches duplicates inside this batch
+          newTracks.add(s);
+        }
 
         if (newTracks.isNotEmpty) {
           // Pre-resolve stream URLs for JioSaavn tracks in parallel (up to 6 at once)
