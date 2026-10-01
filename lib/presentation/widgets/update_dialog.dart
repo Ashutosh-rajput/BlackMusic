@@ -21,7 +21,8 @@ class UpdateDialog extends StatelessWidget {
   }
 
   Future<void> _openRelease() async {
-    final uri = Uri.parse(update.url);
+    // The repository's main page, not the individual release page.
+    final uri = Uri.parse(UpdateService.repoUrl);
     try {
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
         await launchUrl(uri);

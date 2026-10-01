@@ -1183,6 +1183,22 @@ class UserTasteService {
         .toList();
   }
 
+  /// How many songs by one main artist a result may hold.
+  ///
+  /// The usual cap is 2, to keep a queue varied. But JioSaavn's suggestions
+  /// for a song are often one artist's catalogue (all 20 results by the same
+  /// artist), and a fixed cap of 2 then threw away nearly all of them and
+  /// left Autoplay with 3 songs. When the pool has so few distinct main artists
+  /// that a cap of 2 could not fill [limit] (artists x 2 < limit), the cap is
+  /// lifted so the pool can fill it; a varied pool keeps the cap of 2.
+  int _adaptiveArtistCap(List<JioSaavnItem> candidates, int limit) {
+    final artists = <String>{
+      for (final c in candidates) parseArtistTokens(c.subtitle).firstOrNull ?? '',
+    }..remove('');
+    if (artists.isEmpty) return 2;
+    return artists.length * 2 < limit ? limit : 2;
+  }
+
   /// Other songs by every artist credited on [seedSongId] (JioSaavn
   /// `search.artistOtherTopSongs`, one call per artist), combined. Failures
   /// for one artist never affect the others.
@@ -1410,7 +1426,7 @@ class UserTasteService {
         lambda: 0.7,
         // A widened radio pool is deliberately artist-heavy (the seed's own
         // artists), so the usual 2-per-artist cap would throw most of it away.
-        maxPerArtist: radioWidened ? 6 : 2,
+        maxPerArtist: radioWidened ? max(6, _adaptiveArtistCap(candidatesToScore, limit)) : _adaptiveArtistCap(candidatesToScore, limit),
         maxResults: limit,
         // Autoplay / Radio continue what the user is listening to, so no
         // deliberate "discovery" picks there; Home keeps a little exploration.

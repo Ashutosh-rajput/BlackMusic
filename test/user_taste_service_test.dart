@@ -1073,5 +1073,48 @@ void main() {
         expect(recs.any((r) => r.title == 'Reco Song'), isTrue);
       });
     });
+
+    group('Autoplay artist cap adapts to the suggestion list', () {
+      JioSaavnItem item(String id, String title, String artist) => JioSaavnItem(
+            type: 'song', id: id, token: id, title: title, subtitle: artist, imageUrl: '',
+            duration: '200', language: 'hindi', directMediaUrl: 'https://x/$id.mp3');
+
+      Song seed() => Song(
+            id: 1, mediaId: 'seed1', title: 'Seed Song', artist: 'Someone Else',
+            album: 'A', filePath: 'https://x/seed.mp4', duration: const Duration(seconds: 200),
+            dateModified: DateTime(2026), source: 'jiosaavn');
+
+      test('a list that is nearly all one artist still fills the queue (was cut to 3)', () async {
+        final svc = UserTasteService(
+          storageFile: tempFile,
+          searchSongs: (q) async => const [],
+          fetchSuggestions: (id, {limit = 15}) async => [
+            for (var i = 0; i < 19; i++) item('d$i', 'Dhanda Song $i', 'Dhanda Nyoliwala'),
+            item('o1', 'Other Song', 'Music bm'),
+          ],
+        );
+        final recs = await svc.getCandidateRecommendations(
+            context: RecommendationContext.autoplay, currentSong: seed(), limit: 15);
+        expect(recs.length, greaterThanOrEqualTo(12));
+      });
+
+      test('a varied list keeps the cap of 2 per artist', () async {
+        final svc = UserTasteService(
+          storageFile: tempFile,
+          searchSongs: (q) async => const [],
+          fetchSuggestions: (id, {limit = 15}) async => [
+            for (var a = 0; a < 8; a++)
+              for (var i = 0; i < 3; i++) item('a$a-$i', 'Song $a-$i', 'Artist $a'),
+          ],
+        );
+        final recs = await svc.getCandidateRecommendations(
+            context: RecommendationContext.autoplay, currentSong: seed(), limit: 15);
+        final perArtist = <String, int>{};
+        for (final r in recs) {
+          perArtist[r.subtitle] = (perArtist[r.subtitle] ?? 0) + 1;
+        }
+        expect(perArtist.values.every((n) => n <= 2), isTrue);
+      });
+    });
 });
 }
