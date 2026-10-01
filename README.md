@@ -2,6 +2,10 @@
 
 > A modern, privacy-first offline & online music streaming app with an on-device recommendation engine (**PulseIQ**), high-fidelity 320 kbps streaming, background downloads, synchronized lyrics, and Material 3 design — built with Flutter & BLoC.
 
+## 📱 Download
+
+[![Download APK](https://img.shields.io/badge/Download%20APK-Latest%20Release-brightgreen?style=for-the-badge&logo=android)](https://github.com/Ashutosh-rajput/Vinyl/releases/latest/download/app-release.apk)
+
 Scan, import, and play all the songs stored on your device. Search or explore Top Downloads from YouTube and JioSaavn to download 320kbps tracks permanently into your offline library. Stream millions of songs on demand. Since live stream providers can occasionally experience downtime, downloading favorites is always recommended. But even while streaming, Vinyl automatically caches up to 50 songs so you can play them offline without internet!
 
 
