@@ -504,22 +504,52 @@ class JioSaavnDecoder {
     return searchSongs(t);
   }
 
-  /// Fetches complete details and direct stream URL for a single song
-  static Future<JioSaavnItem?> fetchSongDetails(String token) async {
+  /// Fetches complete details and direct stream URL for a single song.
+  ///
+  /// [tokenOrId] may be the song's perma token (what `/api/song` expects) or
+  /// its JioSaavn id (what the app stores as `Song.mediaId`). The token lookup
+  /// answers "Song not found" for an id, which used to make every song
+  /// resolved by id unplayable, so an id falls back to `song.getDetails`.
+  static Future<JioSaavnItem?> fetchSongDetails(String tokenOrId) async {
+    final key = tokenOrId.trim();
+    if (key.isEmpty) return null;
+
+    // A "Song not found" reply parses into an empty item; only a song with a
+    // title and a playable URL counts as found.
+    JioSaavnItem? usable(JioSaavnItem? item) {
+      if (item == null || item.title.isEmpty) return null;
+      final hasUrl = (item.directMediaUrl?.isNotEmpty ?? false) ||
+          (item.encryptedMediaUrl?.isNotEmpty ?? false);
+      return hasUrl ? item : null;
+    }
+
     final dio = Dio();
     try {
       final resp = await dio.get(
         '$apiBase/api/song',
-        queryParameters: {'token': token},
+        queryParameters: {'token': key},
         options: Options(receiveTimeout: const Duration(seconds: 10)),
       );
       final data = resp.data;
       if (data is Map) {
-        return parseItem(Map<String, dynamic>.from(data));
+        final item = usable(parseItem(Map<String, dynamic>.from(data)));
+        if (item != null) return item;
       }
     } catch (_) {} finally {
       dio.close();
     }
+
+    // Not a token: look it up as an id.
+    try {
+      final data = await _callApiPhp({'__call': 'song.getDetails', 'pids': key}, timeoutSecs: 10);
+      Map? song;
+      if (data is Map) {
+        song = data[key] is Map
+            ? data[key] as Map
+            : (data['songs'] is List && (data['songs'] as List).isNotEmpty ? (data['songs'] as List).first as Map? : null);
+      }
+      if (song != null) return usable(parseItem(Map<String, dynamic>.from(song)));
+    } catch (_) {}
     return null;
   }
 
