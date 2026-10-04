@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -15,6 +14,8 @@ import 'package:vinyl/core/di/injection_container.dart';
 import 'package:vinyl/services/audio_service.dart';
 import 'package:vinyl/services/settings_service.dart';
 import 'package:vinyl/presentation/widgets/album_art_widget.dart';
+import 'package:vinyl/presentation/widgets/swipe_to_skip.dart';
+import 'package:vinyl/presentation/widgets/wavy_slider.dart';
 import 'package:vinyl/presentation/widgets/queue_bottom_sheet.dart';
 import 'package:vinyl/presentation/widgets/sleep_timer_dialog.dart';
 import 'package:vinyl/services/stream_favorites_service.dart';
@@ -282,7 +283,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                               _showLyrics = true;
                             });
                           },
-                          child: Center(
+                          // Swipe the disc: left = next song, right = previous.
+                          child: SwipeToSkip(
+                            child: Center(
                             child: RotationTransition(
                               turns: _rotationController,
                               child: Container(
@@ -310,6 +313,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                 ),
                               ),
                             ),
+                          ),
                           ),
                         ),
                 ),
@@ -464,19 +468,23 @@ class _PlayerScreenState extends State<PlayerScreen>
                           animation: _waveController,
                           builder: (context, child) {
                             final showWave = getIt<SettingsService>().showPlayerWaveform;
-                            return SliderTheme(
+                            final waving = isPlaying && showWave;
+                            // The wave eases in on play and flattens on pause.
+                            return TweenAnimationBuilder<double>(
+                              tween: Tween<double>(end: waving ? 1.0 : 0.0),
+                              duration: const Duration(milliseconds: 450),
+                              curve: Curves.easeInOut,
+                              builder: (context, amplitude, _) => SliderTheme(
                               data: SliderTheme.of(context).copyWith(
-                                trackShape: SineWaveSliderTrackShape(
+                                trackShape: WavySliderTrackShape(
                                   waveAnimationValue: _waveController.value,
-                                  isPlaying: isPlaying && showWave,
+                                  isPlaying: waving,
+                                  amplitude: amplitude,
                                 ),
-                                thumbShape: SnakeHeadSliderThumbShape(
-                                  thumbRadius: 11.0,
-                                  waveAnimationValue: _waveController.value,
-                                  isPlaying: isPlaying && showWave,
-                                ),
+                                thumbShape: const WavyHandleSliderThumbShape(),
+                                overlayShape: SliderComponentShape.noOverlay,
                                 activeTrackColor: theme.colorScheme.primary,
-                                inactiveTrackColor: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                                inactiveTrackColor: theme.colorScheme.primary.withValues(alpha: 0.25),
                                 thumbColor: theme.colorScheme.primary,
                               ),
                               child: Slider(
@@ -502,6 +510,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                         SeekEvent(Duration(milliseconds: value.toInt())),
                                       );
                                 },
+                              ),
                               ),
                             );
                           },
@@ -819,217 +828,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         );
       },
     );
-  }
-}
-
-class SineWaveSliderTrackShape extends RoundedRectSliderTrackShape {
-  final double waveAnimationValue;
-  final bool isPlaying;
-
-  SineWaveSliderTrackShape({
-    required this.waveAnimationValue,
-    required this.isPlaying,
-  });
-
-  @override
-  void paint(
-    PaintingContext context,
-    Offset offset, {
-    required RenderBox parentBox,
-    required SliderThemeData sliderTheme,
-    required Animation<double> enableAnimation,
-    required Offset thumbCenter,
-    Offset? secondaryOffset,
-    bool isEnabled = true,
-    bool isDiscrete = false,
-    required TextDirection textDirection,
-    double additionalActiveTrackHeight = 0,
-  }) {
-    final Rect trackRect = getPreferredRect(
-      parentBox: parentBox,
-      offset: offset,
-      sliderTheme: sliderTheme,
-      isEnabled: isEnabled,
-      isDiscrete: isDiscrete,
-    );
-
-    final Canvas canvas = context.canvas;
-    final activeColor = sliderTheme.activeTrackColor ?? Colors.purpleAccent;
-    final inactiveColor = sliderTheme.inactiveTrackColor ?? Colors.white24;
-
-    // 1. Inactive track (right side of thumb handle)
-    final inactivePaint = Paint()
-      ..color = inactiveColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round;
-
-    if (thumbCenter.dx < trackRect.right) {
-      canvas.drawLine(
-        Offset(thumbCenter.dx, trackRect.center.dy),
-        Offset(trackRect.right, trackRect.center.dy),
-        inactivePaint,
-      );
-    }
-
-    // 2. Active track (left side of thumb handle) with animated Sine Wave
-    final activeWidth = thumbCenter.dx - trackRect.left;
-    if (activeWidth > 0) {
-      final activePaint = Paint()
-        ..color = activeColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = isPlaying ? 3.5 : 3.0
-        ..strokeCap = StrokeCap.round;
-
-      if (!isPlaying || activeWidth < 12) {
-        canvas.drawLine(
-          Offset(trackRect.left, trackRect.center.dy),
-          Offset(thumbCenter.dx, trackRect.center.dy),
-          activePaint,
-        );
-      } else {
-        final path = Path();
-        path.moveTo(trackRect.left, trackRect.center.dy);
-
-        final double amplitude = 5.5;
-        final double frequency = 0.08;
-        final double phase = waveAnimationValue * 2 * math.pi;
-
-        for (double x = trackRect.left; x <= thumbCenter.dx; x += 1.5) {
-          final relativeX = x - trackRect.left;
-          final double edgeFade =
-              math.sin(math.pi * (relativeX / activeWidth)).clamp(0.0, 1.0);
-          final double y = trackRect.center.dy +
-              (math.sin((relativeX * frequency) - phase) * amplitude * edgeFade);
-          path.lineTo(x, y);
-        }
-
-        canvas.drawPath(path, activePaint);
-      }
-    }
-  }
-}
-
-class SnakeHeadSliderThumbShape extends SliderComponentShape {
-  final double thumbRadius;
-  final double waveAnimationValue;
-  final bool isPlaying;
-
-  const SnakeHeadSliderThumbShape({
-    this.thumbRadius = 11.0,
-    required this.waveAnimationValue,
-    required this.isPlaying,
-  });
-
-  @override
-  Size getPreferredSize(bool isEnabled, bool isDiscrete) {
-    return Size.fromRadius(thumbRadius);
-  }
-
-  @override
-  void paint(
-    PaintingContext context,
-    Offset center, {
-    required Animation<double> activationAnimation,
-    required Animation<double> enableAnimation,
-    required bool isDiscrete,
-    required TextPainter labelPainter,
-    required RenderBox parentBox,
-    required SliderThemeData sliderTheme,
-    required TextDirection textDirection,
-    required double value,
-    required double textScaleFactor,
-    required Size sizeWithOverflow,
-  }) {
-    final Canvas canvas = context.canvas;
-    final primaryColor = sliderTheme.thumbColor ?? Colors.purpleAccent;
-
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-
-    if (isPlaying) {
-      final tilt = math.sin(waveAnimationValue * 2 * math.pi) * 0.12;
-      canvas.rotate(tilt);
-    }
-
-    // 1. Draw Snake Head Path (pointing forward ->)
-    final headPath = Path();
-    headPath.moveTo(-thumbRadius * 0.8, -thumbRadius * 0.5);
-    headPath.cubicTo(
-      -thumbRadius * 0.2,
-      -thumbRadius * 0.9,
-      thumbRadius * 0.6,
-      -thumbRadius * 0.7,
-      thumbRadius * 1.2,
-      0.0,
-    );
-    headPath.cubicTo(
-      thumbRadius * 0.6,
-      thumbRadius * 0.7,
-      -thumbRadius * 0.2,
-      thumbRadius * 0.9,
-      -thumbRadius * 0.8,
-      thumbRadius * 0.5,
-    );
-    headPath.close();
-
-    final headPaint = Paint()
-      ..color = primaryColor
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(headPath, headPaint);
-
-    // 2. Draw Snake Eyes
-    final eyePaint = Paint()
-      ..color = isPlaying ? Colors.white : Colors.black87
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(
-      Offset(thumbRadius * 0.4, -thumbRadius * 0.3),
-      1.8,
-      eyePaint,
-    );
-    canvas.drawCircle(
-      Offset(thumbRadius * 0.4, thumbRadius * 0.3),
-      1.8,
-      eyePaint,
-    );
-
-    if (isPlaying) {
-      final pupilPaint = Paint()
-        ..color = Colors.black
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(
-        Offset(thumbRadius * 0.45, -thumbRadius * 0.3),
-        0.8,
-        pupilPaint,
-      );
-      canvas.drawCircle(
-        Offset(thumbRadius * 0.45, thumbRadius * 0.3),
-        0.8,
-        pupilPaint,
-      );
-
-      // Flickering red tongue when playing
-      final tonguePhase = math.sin(waveAnimationValue * 4 * math.pi);
-      if (tonguePhase > 0.2) {
-        final tonguePaint = Paint()
-          ..color = Colors.redAccent
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.4
-          ..strokeCap = StrokeCap.round;
-
-        final tonguePath = Path();
-        tonguePath.moveTo(thumbRadius * 1.2, 0.0);
-        tonguePath.lineTo(thumbRadius * 1.55, 0.0);
-        tonguePath.lineTo(thumbRadius * 1.75, -thumbRadius * 0.22);
-        tonguePath.moveTo(thumbRadius * 1.55, 0.0);
-        tonguePath.lineTo(thumbRadius * 1.75, thumbRadius * 0.22);
-
-        canvas.drawPath(tonguePath, tonguePaint);
-      }
-    }
-
-    canvas.restore();
   }
 }
 

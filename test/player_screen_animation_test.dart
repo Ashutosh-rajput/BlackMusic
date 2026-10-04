@@ -8,7 +8,10 @@ import 'package:vinyl/presentation/bloc/library/library_bloc.dart';
 import 'package:vinyl/presentation/bloc/library/library_state.dart';
 import 'package:vinyl/presentation/bloc/player/player_bloc.dart';
 import 'package:vinyl/presentation/bloc/player/player_event.dart';
+import 'package:vinyl/presentation/bloc/player/player_state.dart';
 import 'package:vinyl/presentation/screens/player_screen.dart';
+import 'package:vinyl/presentation/widgets/album_art_widget.dart';
+import 'package:vinyl/presentation/widgets/wavy_slider.dart';
 import 'package:vinyl/services/audio_service.dart';
 import 'package:vinyl/services/file_service.dart';
 import 'package:vinyl/services/settings_service.dart';
@@ -118,16 +121,21 @@ void main() {
         expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
         expect(find.byType(CircularProgressIndicator), findsNothing);
 
-        // Verify Slider has SineWaveSliderTrackShape with isPlaying == true
+        // Verify Slider has WavySliderTrackShape with isPlaying == true
         final sliderFinder = find.byType(Slider);
         expect(sliderFinder, findsOneWidget);
         SliderTheme sliderTheme = tester.widget<SliderTheme>(
           find.ancestor(of: sliderFinder, matching: find.byType(SliderTheme)),
         );
-        final activeTrack = sliderTheme.data.trackShape as SineWaveSliderTrackShape;
-        final thumb = sliderTheme.data.thumbShape as SnakeHeadSliderThumbShape;
+        // The wave eases in: after the animation settles it is at full height.
+        await tester.pump(const Duration(milliseconds: 600));
+        sliderTheme = tester.widget<SliderTheme>(
+          find.ancestor(of: sliderFinder, matching: find.byType(SliderTheme)),
+        );
+        final activeTrack = sliderTheme.data.trackShape as WavySliderTrackShape;
+        expect(sliderTheme.data.thumbShape, isA<WavyHandleSliderThumbShape>());
         expect(activeTrack.isPlaying, isTrue);
-        expect(thumb.isPlaying, isTrue);
+        expect(activeTrack.amplitude, closeTo(1.0, 0.01));
 
         // 2. Simulate user pausing from notification panel / bluetooth
         await tester.runAsync(() async {
@@ -143,18 +151,68 @@ void main() {
         // - CircularProgressIndicator is NOT shown
         expect(find.byType(CircularProgressIndicator), findsNothing);
 
-        // - Seeker track and snake head isPlaying are false
+        // - The wave flattens to a straight line (eases out, then amplitude 0)
+        await tester.pump(const Duration(milliseconds: 600));
         sliderTheme = tester.widget<SliderTheme>(
           find.ancestor(of: sliderFinder, matching: find.byType(SliderTheme)),
         );
-        final pausedTrack = sliderTheme.data.trackShape as SineWaveSliderTrackShape;
-        final pausedThumb = sliderTheme.data.thumbShape as SnakeHeadSliderThumbShape;
+        final pausedTrack = sliderTheme.data.trackShape as WavySliderTrackShape;
         expect(pausedTrack.isPlaying, isFalse);
-        expect(pausedThumb.isPlaying, isFalse);
+        expect(pausedTrack.amplitude, closeTo(0.0, 0.01));
 
         // Clean unmount
         await tester.pumpWidget(const SizedBox());
       },
     );
-  });
+  
+    group('Swiping the disc changes song', () {
+      Song song(int id) => Song(
+            id: id, title: 'Track $id', artist: 'Artist', album: 'Album',
+            filePath: '/music/t$id.mp3', duration: const Duration(seconds: 200),
+            dateModified: DateTime.now());
+
+      Future<void> openPlayerOnSecondSong(WidgetTester tester) async {
+        final queue = [song(1), song(2), song(3)];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MultiBlocProvider(
+              providers: [
+                BlocProvider<PlayerBloc>.value(value: playerBloc),
+                BlocProvider<LibraryBloc>.value(value: libraryBloc),
+              ],
+              child: PlayerScreen(song: queue[1]),
+            ),
+          ),
+        );
+        await tester.runAsync(() async {
+          playerBloc.add(PlaySongEvent(queue[1], queue: queue));
+          await Future.delayed(const Duration(milliseconds: 200));
+        });
+        await tester.pump();
+      }
+
+      Future<String?> titleAfterSwipe(WidgetTester tester, Offset by) async {
+        await openPlayerOnSecondSong(tester);
+        final disc = find.byType(AlbumArtWidget);
+        expect(disc, findsOneWidget);
+        await tester.drag(disc, by);
+        await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 250)));
+        await tester.pump(const Duration(milliseconds: 300));
+        final state = playerBloc.state;
+        return state is PlayerPlaying ? state.song.title : null;
+      }
+
+      testWidgets('swipe left plays the next song', (tester) async {
+        expect(await titleAfterSwipe(tester, const Offset(-200, 0)), 'Track 3');
+      });
+
+      testWidgets('swipe right plays the previous song', (tester) async {
+        expect(await titleAfterSwipe(tester, const Offset(200, 0)), 'Track 1');
+      });
+
+      testWidgets('a tiny drag does nothing and the disc springs back', (tester) async {
+        expect(await titleAfterSwipe(tester, const Offset(-20, 0)), 'Track 2');
+      });
+    });
+});
 }

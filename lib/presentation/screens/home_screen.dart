@@ -13,6 +13,7 @@ import 'package:vinyl/presentation/screens/settings_screen.dart';
 
 import 'package:vinyl/core/di/injection_container.dart';
 import 'package:vinyl/services/audio_service.dart';
+import 'package:vinyl/presentation/widgets/swipe_to_skip.dart';
 import 'package:vinyl/presentation/widgets/update_dialog.dart';
 import 'package:vinyl/presentation/widgets/welcome_intro_sheet.dart';
 
@@ -249,7 +250,10 @@ class _MiniPlayerDock extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
+              // Swipe the bar: left = next song, right = previous.
+              SwipeToSkip(
+                maxTravel: 90,
+                child: Container(
                 height: 60,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
@@ -332,6 +336,7 @@ class _MiniPlayerDock extends StatelessWidget {
                       },
                     ),
                   ],
+                ),
                 ),
               ),
               StreamBuilder<Duration>(
